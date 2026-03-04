@@ -1,0 +1,43 @@
+{
+  "appId": "com.myopenclaw.app",
+  "productName": "MyOpenClaw",
+  "artifactName": "${productName}-${version}-${env.BUILD_VARIANT}-${env.TARGET_LABEL}.${ext}",
+  "files": [
+    "main.js",
+    "preload.js",
+    "index.html",
+    "setup.html",
+    "loading.html",
+    "start-myopenclaw.cmd",
+    "resources/gateway.cmd",
+    "resources/runtime-manifest.json",
+    "resources/.openclaw-myopenclaw/openclaw.json",
+    "build/**/*",
+    "package.json"
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      }
+    ]
+  },
+  "mac": {
+    "target": [
+      {
+        "target": "dmg",
+        "arch": [
+          "x64",
+          "arm64"
+        ]
+      }
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  }
+}

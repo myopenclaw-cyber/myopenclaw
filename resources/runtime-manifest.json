@@ -1,0 +1,11 @@
+{
+  "windows": {
+    "url": ""
+  },
+  "mac_silicon": {
+    "url": ""
+  },
+  "mac_intel": {
+    "url": ""
+  }
+}
