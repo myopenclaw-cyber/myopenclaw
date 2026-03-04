@@ -10,11 +10,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setPremiumStatus: (isPremium) => ipcRenderer.invoke('set-premium-status', isPremium),
   setPremiumTier: (tier) => ipcRenderer.invoke('set-premium-tier', tier),
   listAgents: () => ipcRenderer.invoke('list-agents'),
-  addAgent: (name) => ipcRenderer.invoke('add-agent', name),
+  addAgent: (payload) => ipcRenderer.invoke('add-agent', payload),
   renameAgent: (payload) => ipcRenderer.invoke('rename-agent', payload),
   setAgentChannels: (payload) => ipcRenderer.invoke('set-agent-channels', payload),
   deleteAgent: (id) => ipcRenderer.invoke('delete-agent', id),
   setActiveAgent: (id) => ipcRenderer.invoke('set-active-agent', id),
   saveProviderConfig: (payload) => ipcRenderer.invoke('save-provider-config', payload),
-  saveAgentChannelConfig: (payload) => ipcRenderer.invoke('save-agent-channel-config', payload)
+  saveAgentChannelConfig: (payload) => ipcRenderer.invoke('save-agent-channel-config', payload),
+  getStartupError: () => ipcRenderer.invoke('get-startup-error')
 });

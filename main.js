@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -303,6 +303,8 @@ async function smokeTestChat() {
 }
 
 function createWindow() {
+  Menu.setApplicationMenu(null);
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -334,8 +336,8 @@ function createWindow() {
       })
       .catch(err => {
         console.error('Gateway startup failed:', err);
-        // 即使失败也显示界面，让用户看到错误
-        mainWindow.loadFile('index.html');
+        global.__MYOPENCLAW_STARTUP_ERROR__ = err?.message || String(err);
+        mainWindow.loadFile('error.html');
       });
   }
 }
@@ -396,6 +398,10 @@ ipcMain.handle('open-external', async (event, url) => {
   } catch (error) {
     return { success: false, error: error.message };
   }
+});
+
+ipcMain.handle('get-startup-error', async () => {
+  return { error: global.__MYOPENCLAW_STARTUP_ERROR__ || '' };
 });
 
 // 发送消息到 main agent
@@ -499,7 +505,7 @@ ipcMain.handle('list-agents', async () => {
   return state.agents;
 });
 
-ipcMain.handle('add-agent', async (event, name) => {
+ipcMain.handle('add-agent', async (event, payload) => {
   const state = loadAppState();
   const totalAgents = state.agents.length;
 
@@ -510,8 +516,19 @@ ipcMain.handle('add-agent', async (event, name) => {
     return { success: false, premiumRequired: true, error: 'Premium supports up to 5 agents. Upgrade to Pro for unlimited agents.' };
   }
 
-  const id = `agent-${Date.now()}`;
-  state.agents.push({ id, name: name || `Agent ${state.agents.length + 1}`, channels: [] });
+  const nextNum = state.agents.filter(a => /^agent\d+$/.test(a.id)).length + 1;
+  const inputId = (payload?.id || '').trim();
+  const id = inputId || `agent${nextNum}`;
+  const name = (payload?.name || '').trim() || `Agent ${state.agents.length + 1}`;
+
+  if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+    return { success: false, error: 'Agent id supports only letters/numbers/_/-' };
+  }
+  if (state.agents.some(a => a.id === id)) {
+    return { success: false, error: 'Agent id already exists' };
+  }
+
+  state.agents.push({ id, name, channels: [] });
   saveAppState(state);
   return { success: true, agents: state.agents };
 });
@@ -519,8 +536,10 @@ ipcMain.handle('add-agent', async (event, name) => {
 ipcMain.handle('rename-agent', async (event, payload) => {
   const state = loadAppState();
   const agent = state.agents.find(a => a.id === payload.id);
-  if (!agent) return { success: false, error: 'Agent 不存在' };
-  agent.name = payload.name || agent.name;
+  if (!agent) return { success: false, error: 'Agent not found' };
+  const newName = (payload?.name || '').trim();
+  if (!newName) return { success: false, error: 'Agent name cannot be empty' };
+  agent.name = newName;
   saveAppState(state);
   return { success: true, agents: state.agents };
 });

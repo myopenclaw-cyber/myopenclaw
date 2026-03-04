@@ -1,62 +1,82 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MyOpenClaw - 启动中</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MyOpenClaw Loading</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #fff;
-    }
-    .loading-container {
-      text-align: center;
-    }
-    .logo {
-      font-size: 64px;
-      margin-bottom: 20px;
-      animation: bounce 2s infinite;
-    }
-    @keyframes bounce {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-20px); }
-    }
-    h1 {
-      font-size: 28px;
-      margin-bottom: 10px;
-    }
-    .status {
-      color: rgba(255,255,255,0.7);
-      font-size: 16px;
-      margin-bottom: 30px;
-    }
-    .spinner {
-      width: 50px;
-      height: 50px;
-      margin: 0 auto;
-      border: 4px solid rgba(255,255,255,0.1);
-      border-top: 4px solid #4f9eff;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-    }
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Inter,Segoe UI,Arial,sans-serif;background:#f6f7fb;min-height:100vh;display:grid;place-items:center;color:#1f2430}
+    .wrap{width:min(760px,92vw);text-align:center;padding:28px 20px}
+    .rings{position:relative;width:140px;height:140px;margin:0 auto 18px}
+    .ring{position:absolute;inset:0;border-radius:50%;border:4px solid transparent;border-top-color:#6f63dd;border-right-color:#7e8ef6;animation:spin 2.6s linear infinite;opacity:.9}
+    .r2{inset:14px;animation-duration:2s;opacity:.7}.r3{inset:28px;animation-duration:1.5s;opacity:.5}
+    .bot{position:absolute;inset:42px;display:grid;place-items:center;border-radius:50%;background:#fff;box-shadow:0 8px 24px rgba(99,90,200,.2);font-size:28px}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    h1{font-size:44px;line-height:1.15;margin-bottom:10px;color:#2d2f47;font-weight:750}
+    .checks{margin:0 auto 14px;width:fit-content;text-align:left;color:#2f3348;font-size:28px;line-height:1.55}
+    .ok{color:#27ae60;margin-right:8px}
+    .steps{color:#5a5f73;font-size:20px;line-height:1.4;min-height:90px;margin:8px 0 12px}
+    .bar{width:100%;height:12px;border-radius:999px;background:#eceef8;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(110,99,214,.12),0 6px 18px rgba(107,94,218,.2);margin-top:6px}
+    .fill{height:100%;width:35%;border-radius:999px;background:linear-gradient(90deg,#6b5eda,#7d84f5);animation:loading 2.8s ease-in-out infinite}
+    @keyframes loading{0%{transform:translateX(-120%)}60%{transform:translateX(180%)}100%{transform:translateX(260%)}}
+    .progress{margin-top:10px;color:#484f6a;font-size:28px;font-weight:600}
   </style>
 </head>
 <body>
-  <div class="loading-container">
-    <div class="logo">🐾</div>
-    <h1>MyOpenClaw</h1>
-    <p class="status">正在启动 OpenClaw Gateway...</p>
-    <div class="spinner"></div>
+  <div class="wrap">
+    <div class="rings">
+      <div class="ring"></div><div class="ring r2"></div><div class="ring r3"></div>
+      <div class="bot">🤖</div>
+    </div>
+
+    <h1 id="title">Preparing your workspace...</h1>
+
+    <div class="checks" id="checks">
+      <div><span class="ok">✅</span>Setup is easy</div>
+      <div><span class="ok">✅</span>No complex CLI configuration</div>
+      <div><span class="ok">✅</span>5 minutes to start</div>
+      <div><span class="ok">✅</span>Full OpenClaw capabilities</div>
+    </div>
+
+    <div class="steps" id="steps">
+      <div>Loading modules...</div>
+      <div>Establishing secure connections...</div>
+      <div>Done with prerequisites.</div>
+    </div>
+
+    <div class="bar"><div class="fill"></div></div>
+    <div class="progress" id="progress">Loading agents... 42%</div>
   </div>
+
+  <script>
+    const lang = localStorage.getItem('myopenclaw.lang') || 'en';
+    const title = document.getElementById('title');
+    const checks = document.getElementById('checks');
+    const steps = document.getElementById('steps');
+    const progress = document.getElementById('progress');
+
+    if (lang === 'zh') {
+      title.textContent = '正在准备你的工作区...';
+      checks.innerHTML = `
+        <div><span class="ok">✅</span>安装简单</div>
+        <div><span class="ok">✅</span>无需复杂命令行配置</div>
+        <div><span class="ok">✅</span>5分钟即可启动</div>
+        <div><span class="ok">✅</span>完整 OpenClaw 能力</div>
+      `;
+      steps.innerHTML = `
+        <div>正在加载模块...</div>
+        <div>正在建立安全连接...</div>
+        <div>先决条件已完成。</div>
+      `;
+    }
+
+    let v = 42;
+    setInterval(() => {
+      v += Math.floor(Math.random() * 4) + 1;
+      if (v > 95) v = 68;
+      progress.textContent = lang === 'zh' ? `正在加载 agents... ${v}%` : `Loading agents... ${v}%`;
+    }, 900);
+  </script>
 </body>
 </html>
