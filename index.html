@@ -255,6 +255,9 @@ async function resetAllModelConfig(){
   const r=await window.electronAPI.resetModelConfig();
   if(!r?.success){showToast('Reset failed: '+(r?.error||'unknown'));return;}
   providerName.value=''; modelName.value=''; if(window.apiType) apiType.value='openai-completions'; baseUrl.value=''; providerApiKey.value='';
+  try{await loadProvider();}catch{}
+  try{await refreshState();}catch{}
+  try{await renderConversation();}catch{}
   showToast('All model-related config reset.');
 }
 function buyPremium(){showUpgradeModal();}
