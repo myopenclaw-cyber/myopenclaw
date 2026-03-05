@@ -948,6 +948,25 @@ ipcMain.handle('save-agent-channel-config', async (event, payload) => {
   }
 });
 
+ipcMain.handle('reset-model-config', async () => {
+  try {
+    const cfg = loadEmbeddedConfig();
+    cfg.models = { mode: 'merge', providers: {} };
+    cfg.agents = cfg.agents || {};
+    cfg.agents.defaults = cfg.agents.defaults || {};
+    if (cfg.agents.defaults.model !== undefined) delete cfg.agents.defaults.model;
+    saveEmbeddedConfig(cfg);
+
+    const authFile = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'agents', 'main', 'agent', 'auth-profiles.json');
+    fs.mkdirSync(path.dirname(authFile), { recursive: true });
+    fs.writeFileSync(authFile, JSON.stringify({ version: 1, profiles: {}, lastGood: {}, usageStats: {} }, null, 2), 'utf8');
+
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {

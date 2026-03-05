@@ -81,6 +81,7 @@
       <div id="chatAgentTree" class="chat-agent-tree"></div>
       <button id="tab-agents" onclick="showPage('agents')">Agents</button>
       <button id="tab-keys" onclick="showPage('keys')">API Keys</button>
+      <button id="tab-config" onclick="showPage('config')">Config</button>
     </nav>
     <nav class="nav nav-bottom"><button id="tab-account" onclick="showPage('account')">Account</button></nav>
   </aside>
@@ -123,6 +124,8 @@
       <div class="row"><button onclick="saveProvider()">Save</button></div>
     </div></section>
 
+    <section id="config" class="page" style="display:none"><div class="card"><h3>Config</h3><div class="small" style="margin-bottom:10px">Reset all OpenClaw model-related config to factory defaults.</div><div class="row" style="justify-content:flex-end"><button class="alt" onclick="resetAllModelConfig()">Reset All Config</button></div></div></section>
+
     <section id="account" class="page" style="display:none"><div class="card"><h3>Account & Plan</h3><p id="usageInfo" class="small"></p><div class="row"><button class="alt" onclick="setTier('free')">Set Free</button><button class="alt" onclick="setTier('premium')">Set Premium</button><button class="alt" onclick="setTier('pro')">Set Pro</button><button onclick="buyPremium()">Upgrade</button></div></div></section>
   </main>
 </div>
@@ -145,6 +148,7 @@ function tApply(lang){
   tabChat.textContent=t.chat;
   tabAgents.textContent=t.agents;
   tabKeys.textContent=t.keys;
+  if(window.tabConfig) tabConfig.textContent='Config';
   tabAccount.textContent=t.account;
   msg.placeholder=t.msg;
   newAgentId.placeholder=t.aid;
@@ -240,6 +244,14 @@ async function loadProvider(){
   providerApiKey.value=r.provider.apiKey||'';
 }
 async function setTier(t){await window.electronAPI.setPremiumTier(t);await refreshState();}
+async function resetAllModelConfig(){
+  const ok=confirm('This will reset all OpenClaw model/API related configuration to factory defaults. Continue?');
+  if(!ok) return;
+  const r=await window.electronAPI.resetModelConfig();
+  if(!r?.success){showToast('Reset failed: '+(r?.error||'unknown'));return;}
+  providerName.value=''; modelName.value=''; if(window.apiType) apiType.value='openai-completions'; baseUrl.value=''; providerApiKey.value='';
+  showToast('All model-related config reset.');
+}
 function buyPremium(){showUpgradeModal();}
 function init(){attachBtn.onclick=()=>fileInput.click();slashBtn.onclick=()=>{msg.value=(msg.value.trim()?msg.value+' ':'')+'/';msg.focus();};fileInput.onchange=()=>{const files=[...(fileInput.files||[])];if(!files.length)return;pendingFiles=[...pendingFiles,...files];fileInput.value='';renderAttachPreview();};msg.addEventListener('input',()=>{msg.style.height='auto';msg.style.height=Math.min(msg.scrollHeight,160)+'px';});msg.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}});}
 (async()=>{init();await refreshState();await refreshAgents();await loadProvider();renderConversation();tApply('en');})();

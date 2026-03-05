@@ -22,5 +22,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   createCheckoutSession: (plan) => ipcRenderer.invoke('create-checkout-session', plan),
   getStartupError: () => ipcRenderer.invoke('get-startup-error'),
   getLocalAppConfig: () => ipcRenderer.invoke('get-local-app-config'),
-  saveLocalAppConfig: (patch) => ipcRenderer.invoke('save-local-app-config', patch)
+  saveLocalAppConfig: (patch) => ipcRenderer.invoke('save-local-app-config', patch),
+  resetModelConfig: () => ipcRenderer.invoke('reset-model-config')
 });
