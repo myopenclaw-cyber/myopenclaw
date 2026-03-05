@@ -13,9 +13,9 @@ set "OPENCLAW_SERVICE_VERSION=2026.2.21-2"
 rem Create config directory if not exists
 if not exist "%~dp0.openclaw-myopenclaw" mkdir "%~dp0.openclaw-myopenclaw"
 
-rem Create default config with provider + fixed token if not exists
+rem Create default clean config (blank workspace state) if not exists
 if not exist "%OPENCLAW_CONFIG_PATH%" (
-    echo {"models":{"mode":"merge","providers":{"aws2":{"baseUrl":"https://www.ai678.top","api":"openai-completions","apiKey":"","models":[{"id":"claude-sonnet-4-6","name":"Claude Sonnet 4.6","contextWindow":180000,"maxTokens":8192}]}}},"agents":{"defaults":{"model":{"primary":"aws2/claude-sonnet-4-6"}}},"gateway":{"auth":{"mode":"token","token":"myopenclaw_2024_secure_token_a8f3e9d2c1b7f6e5d4c3b2a1"},"http":{"endpoints":{"chatCompletions":{"enabled":true}}}}} > "%OPENCLAW_CONFIG_PATH%"
+    echo {"models":{"mode":"merge","providers":{}},"agents":{"defaults":{"workspace":"C:\\Users\\Administrator\\.openclaw\\workspace-myopenclaw-product-dev\\myopenclaw"}},"gateway":{"auth":{"mode":"token","token":"myopenclaw_2024_secure_token_a8f3e9d2c1b7f6e5d4c3b2a1"},"http":{"endpoints":{"chatCompletions":{"enabled":true}}}}} > "%OPENCLAW_CONFIG_PATH%"
 )
 
 rem Check if already running (must be LISTENING)

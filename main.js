@@ -158,7 +158,7 @@ function saveLocalAppConfig(cfg) {
   fs.writeFileSync(LOCAL_APP_CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf8');
 }
 
-function syncAuthProfileForProvider(providerId, apiKey) {
+function syncAuthProfileForProvider(providerId, apiKey, api = '') {
   try {
     const key = String(apiKey || '').trim();
     if (!providerId || !key) return;
@@ -173,17 +173,33 @@ function syncAuthProfileForProvider(providerId, apiKey) {
       auth.usageStats = auth.usageStats || {};
     }
 
-    const profileId = `${providerId}:default`;
-    auth.profiles[profileId] = {
-      type: 'api_key',
-      provider: providerId,
-      key
+    const bind = (pid) => {
+      const profileId = `${pid}:default`;
+      auth.profiles[profileId] = { type: 'api_key', provider: pid, key };
+      auth.lastGood[pid] = profileId;
     };
-    auth.lastGood[providerId] = profileId;
+
+    bind(providerId);
+    if (String(api).trim() === 'anthropic-messages') bind('anthropic');
 
     fs.writeFileSync(authFile, JSON.stringify(auth, null, 2), 'utf8');
   } catch (e) {
     console.error('[auth-profile-sync] failed:', e.message);
+  }
+}
+
+function ensureAuthProfilesFromEmbeddedConfig() {
+  try {
+    const cfg = loadEmbeddedConfig();
+    const providers = cfg?.models?.providers || {};
+    for (const [providerId, p] of Object.entries(providers)) {
+      const key = String(p?.apiKey || '').trim();
+      if (!key) continue;
+      syncAuthProfileForProvider(providerId, key, p?.api || '');
+      break;
+    }
+  } catch (e) {
+    console.error('[auth-profile-sync-bootstrap] failed:', e.message);
   }
 }
 
@@ -432,6 +448,7 @@ async function startGateway() {
 
     // simple 版本：若未内置 runtime，则自动下载并解压到 resources/openclaw-deps
     await ensureEmbeddedRuntime();
+    ensureAuthProfilesFromEmbeddedConfig();
 
     // 使用 gateway.cmd 脚本启动（设置了独立的 OPENCLAW_STATE_DIR）
     const gatewayCmdPath = path.join(__dirname, 'resources', 'gateway.cmd');
@@ -837,8 +854,6 @@ ipcMain.handle('save-provider-config', async (event, payload) => {
       models: [{ id: cleanModelId, name: cleanModelId }]
     };
 
-    cfg.models.default = `${cleanProviderId}/${cleanModelId}`;
-
     cfg.agents = cfg.agents || {};
     cfg.agents.defaults = cfg.agents.defaults || {};
     cfg.agents.defaults.model = cfg.agents.defaults.model || {};
@@ -846,7 +861,7 @@ ipcMain.handle('save-provider-config', async (event, payload) => {
     if (cfg.agents.defaults.model.fallback !== undefined) delete cfg.agents.defaults.model.fallback;
 
     saveEmbeddedConfig(cfg);
-    syncAuthProfileForProvider(cleanProviderId, apiKey);
+    syncAuthProfileForProvider(cleanProviderId, apiKey, autoApi);
     return { success: true, apiResolved: autoApi, modelResolved: `${cleanProviderId}/${cleanModelId}` };
   } catch (e) {
     return { success: false, error: e.message };
