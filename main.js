@@ -102,6 +102,20 @@ function hasUsableProviderConfig() {
   return list.some(p => (p?.apiKey && String(p.apiKey).trim()) || (p?.baseUrl && String(p.baseUrl).trim() && p?.api));
 }
 
+function getUserProviderConfig() {
+  const cfg = loadEmbeddedConfig();
+  const providers = cfg?.models?.providers || {};
+  for (const [providerId, p] of Object.entries(providers)) {
+    const apiKey = String(p?.apiKey || '').trim();
+    const baseUrl = String(p?.baseUrl || '').trim();
+    if (apiKey && baseUrl) {
+      const modelId = p?.models?.[0]?.id || 'claude-sonnet-4-6';
+      return { providerId, baseUrl, apiKey, modelId, api: p?.api || 'anthropic-messages' };
+    }
+  }
+  return null;
+}
+
 function getDefaultLocalAppConfig() {
   return {
     backend: {
@@ -623,57 +637,50 @@ ipcMain.handle('save-local-app-config', async (event, patch) => {
 // 发送消息到 main agent
 ipcMain.handle('send-message', async (event, payload) => {
   try {
-    if (!gatewayBaseUrl) {
-      throw new Error('Gateway not started');
-    }
-
     const message = typeof payload === 'string' ? payload : payload?.message;
     const agentId = payload?.agentId || 'main';
 
     const state = loadAppState();
-    const gate = await checkQuotaByBackend(state);
-    if (!gate.allow) {
-      return {
-        success: false,
-        premiumRequired: true,
-        error: gate.error || 'Quota exhausted',
-        state
-      };
-    }
-
-    if (!hasUsableProviderConfig()) {
-      return {
-        success: false,
-        error: 'Provider is not configured. Please open API Keys and save Base URL + API Key first.'
-      };
-    }
-
-    // 使用固定的 token（与 gateway.cmd 中的一致）
-    const token = 'myopenclaw_2024_secure_token_a8f3e9d2c1b7f6e5d4c3b2a1';
-
-    // Per-agent conversation context (app-level isolation)
     state.conversations = state.conversations || {};
     const conv = state.conversations[agentId] || [];
     const messages = [...conv, { role: 'user', content: message }].slice(-20);
 
-    // 通过 OpenAI 兼容端点发送消息（统一走 main，按会话上下文隔离不同 agent）
-    const response = await axios.post(`${gatewayBaseUrl}/v1/chat/completions`, {
-      model: 'openclaw:main',
-      messages,
-      stream: false
-    }, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'x-openclaw-agent-id': 'main'
-      },
-      timeout: 60000
-    });
+    const userProvider = getUserProviderConfig();
+    let content = '';
 
-    const content = response?.data?.choices?.[0]?.message?.content || 'Received';
+    if (userProvider) {
+      if (!gatewayBaseUrl) throw new Error('Gateway not started');
+
+      // 用户自配 API Key：客户端直连本地 gateway（由用户配置驱动）
+      const token = 'myopenclaw_2024_secure_token_a8f3e9d2c1b7f6e5d4c3b2a1';
+      const response = await axios.post(`${gatewayBaseUrl}/v1/chat/completions`, {
+        model: 'openclaw:main',
+        messages,
+        stream: false
+      }, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'x-openclaw-agent-id': 'main'
+        },
+        timeout: 60000
+      });
+      content = response?.data?.choices?.[0]?.message?.content || 'Received';
+    } else {
+      // 未配置用户 API Key：走 backend relay（服务端额度校验 + 服务端转发）
+      const { baseUrl, userId } = await ensureBackendUser(state);
+      const relay = await axios.post(`${baseUrl}/v1/chat/relay`, {
+        userId,
+        agentId,
+        messages
+      }, { timeout: 60000 });
+      if (!relay?.data?.success) {
+        return { success: false, premiumRequired: !!relay?.data?.premiumRequired, error: relay?.data?.error || 'Relay failed' };
+      }
+      content = relay?.data?.response || 'Received';
+    }
+
     state.conversations[agentId] = [...messages, { role: 'assistant', content }].slice(-20);
-
-    await consumeQuotaByBackend(state, gate.mode);
     saveAppState(state);
 
     return {
@@ -682,7 +689,7 @@ ipcMain.handle('send-message', async (event, payload) => {
       state
     };
   } catch (error) {
-    const apiDetail = error?.response?.data?.error?.message || error?.response?.data?.message;
+    const apiDetail = error?.response?.data?.error?.message || error?.response?.data?.message || error?.response?.data?.error;
     const status = error?.response?.status;
     let msg = apiDetail || error.message || 'Unknown error';
     if (status === 500 && /internal error/i.test(msg)) {

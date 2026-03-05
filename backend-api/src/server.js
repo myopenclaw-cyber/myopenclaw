@@ -10,6 +10,35 @@ app.use(express.json());
 
 function now() { return new Date().toISOString(); }
 
+function pickModelByPlan(user) {
+  const explicit = user?.entitledModel;
+  if (explicit && String(explicit).trim()) return String(explicit).trim();
+  const plan = user?.plan || 'free';
+  if (plan === 'pro') return config.relay.proModel;
+  if (plan === 'premium') return config.relay.premiumModel;
+  return config.relay.freeModel;
+}
+
+function checkAndConsumeQuota(db, userId, plan) {
+  db.usage[userId] = db.usage[userId] || { freeUsed: 0, apiKeyTrialUsed: 0 };
+  const usage = db.usage[userId];
+
+  // 当前策略：free 用 10 条 + 300 条试用池；premium/pro 默认不限（后续可加配额上限）
+  if (plan === 'premium' || plan === 'pro') {
+    return { allow: true, mode: plan, usage };
+  }
+
+  if (usage.freeUsed < 10) {
+    usage.freeUsed += 1;
+    return { allow: true, mode: 'free', usage };
+  }
+  if (usage.apiKeyTrialUsed < 300) {
+    usage.apiKeyTrialUsed += 1;
+    return { allow: true, mode: 'apiKeyTrial', usage };
+  }
+  return { allow: false, error: 'Quota exhausted. Please upgrade.' };
+}
+
 app.get('/health', (req, res) => {
   res.json({ ok: true, service: 'myopenclaw-backend-api', time: now() });
 });
@@ -86,14 +115,16 @@ app.post('/v1/devices/bind', (req, res) => {
 // subscription management (mock)
 app.post('/v1/subscriptions/set-plan', (req, res) => {
   const db = loadDb();
-  const { userId, plan } = req.body || {};
+  const { userId, plan, entitledModel = '' } = req.body || {};
   if (!db.users[userId]) return res.status(404).json({ success: false, error: 'User not found' });
   if (!['free', 'premium', 'pro'].includes(plan)) return res.status(400).json({ success: false, error: 'invalid plan' });
 
   db.users[userId].plan = plan;
+  db.users[userId].entitledModel = String(entitledModel || '').trim();
   db.subscriptions[userId] = {
     userId,
     plan,
+    entitledModel: db.users[userId].entitledModel,
     updatedAt: now(),
     source: 'manual-or-webhook'
   };
@@ -105,6 +136,52 @@ app.get('/v1/subscriptions/:userId', (req, res) => {
   const db = loadDb();
   const sub = db.subscriptions[req.params.userId] || null;
   res.json({ success: true, subscription: sub });
+});
+
+// relay endpoint: quota check + server-side forwarding (for users without own API key)
+app.post('/v1/chat/relay', async (req, res) => {
+  try {
+    const db = loadDb();
+    const { userId, messages = [] } = req.body || {};
+    const user = db.users[userId];
+    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+    if (!Array.isArray(messages) || !messages.length) return res.status(400).json({ success: false, error: 'messages required' });
+
+    const quota = checkAndConsumeQuota(db, userId, user.plan || 'free');
+    if (!quota.allow) {
+      return res.status(402).json({ success: false, premiumRequired: true, error: quota.error });
+    }
+
+    const apiKey = String(config.relay.upstreamApiKey || '').trim();
+    const baseUrl = String(config.relay.upstreamBaseUrl || '').trim().replace(/\/$/, '');
+    if (!apiKey || !baseUrl) {
+      return res.status(500).json({ success: false, error: 'Relay upstream is not configured' });
+    }
+
+    const model = pickModelByPlan(user);
+    const upstream = await fetch(`${baseUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ model, messages, stream: false })
+    });
+
+    const data = await upstream.json().catch(() => ({}));
+    if (!upstream.ok) {
+      return res.status(upstream.status || 502).json({
+        success: false,
+        error: data?.error?.message || data?.message || 'Upstream relay failed'
+      });
+    }
+
+    saveDb(db);
+    const content = data?.choices?.[0]?.message?.content || 'Received';
+    res.json({ success: true, response: content, model, usage: db.usage[userId] });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message || 'Relay error' });
+  }
 });
 
 // stripe checkout mock endpoint (placeholder)
