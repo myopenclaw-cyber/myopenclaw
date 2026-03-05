@@ -1,0 +1,131 @@
+name: Build MyOpenClaw
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: V1
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      
+      - name: Install dependencies
+        run: npm install
+      
+      - name: Build Windows Simple
+        run: |
+          $env:BUILD_VARIANT="simple"
+          $env:TARGET_LABEL="windows"
+          npx electron-builder --win --x64 -c build/simple.json --config.compression=maximum
+        shell: powershell
+      
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: MyOpenClaw-Windows-x64
+          path: dist/**/*.exe
+
+  build-mac-intel:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: V1
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      
+      - name: Install dependencies
+        run: npm install
+      
+      - name: Build Mac Intel Simple
+        run: |
+          export BUILD_VARIANT="simple"
+          export TARGET_LABEL="mac_intel"
+          npx electron-builder --mac --x64 -c build/simple.json --config.compression=maximum
+      
+      - name: Upload Mac Intel artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: MyOpenClaw-Mac-Intel
+          path: dist/**/*.dmg
+
+  build-mac-silicon:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: V1
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      
+      - name: Install dependencies
+        run: npm install
+      
+      - name: Build Mac Apple Silicon Simple
+        run: |
+          export BUILD_VARIANT="simple"
+          export TARGET_LABEL="mac_silicon"
+          npx electron-builder --mac --arm64 -c build/simple.json --config.compression=maximum
+      
+      - name: Upload Mac Silicon artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: MyOpenClaw-Mac-Silicon
+          path: dist/**/*.dmg
+
+  create-release:
+    needs: [build-windows, build-mac-intel, build-mac-silicon]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: ./artifacts
+      
+      - name: Display structure of downloaded files
+        run: ls -R ./artifacts
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ./artifacts/**/*.exe
+            ./artifacts/**/*.dmg
+          draft: false
+          prerelease: false
+          body: |
+            ## MyOpenClaw Release
+            
+            ### Downloads
+            - **Windows 10/11 (64-bit)**: MyOpenClaw-*-simple-windows.exe
+            - **macOS Intel**: MyOpenClaw-*-simple-mac_intel.dmg
+            - **macOS Apple Silicon (M1/M2/M3/M4)**: MyOpenClaw-*-simple-mac_silicon.dmg
+            
+            ### Installation
+            1. Download the appropriate file for your platform
+            2. Run the installer
+            3. MyOpenClaw will automatically download OpenClaw on first launch
+            
+            ### Notes
+            - This is the Simple version (lightweight, ~80MB)
+            - OpenClaw runtime will be downloaded automatically on first launch
+            - No technical knowledge required
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
