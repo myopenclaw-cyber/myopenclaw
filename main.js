@@ -825,6 +825,15 @@ ipcMain.handle('save-provider-config', async (event, payload) => {
       api,
       models: modelId ? [{ id: modelId, name: modelId }] : (cfg.models.providers[providerId]?.models || [])
     };
+
+    cfg.agents = cfg.agents || {};
+    cfg.agents.defaults = cfg.agents.defaults || {};
+    cfg.agents.defaults.model = cfg.agents.defaults.model || {};
+    if (modelId) {
+      cfg.agents.defaults.model.primary = `${providerId}/${modelId}`;
+      cfg.agents.defaults.model.fallback = cfg.agents.defaults.model.fallback || `${providerId}/${modelId}`;
+    }
+
     saveEmbeddedConfig(cfg);
     return { success: true };
   } catch (e) {

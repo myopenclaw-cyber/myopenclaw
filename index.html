@@ -6,6 +6,7 @@
   <title>MyOpenClaw</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    html,body{height:100%;overflow:hidden}
     body { font-family: Inter, Arial, sans-serif; background:#fff; color:#1a1a1a; }
     .app { display:grid; grid-template-columns:260px 1fr; min-height:100vh; }
     .sidebar { padding:18px; background:#f8f9fa; border-right:1px solid #e9ecef; display:flex; flex-direction:column; }
@@ -136,7 +137,39 @@ function showPage(id){document.querySelectorAll('.page').forEach(p=>p.style.disp
 function onChatNavClick(){showPage('chat');renderConversation();}
 function toggleChatAgents(){chatAgentsExpanded=!chatAgentsExpanded;chatAgentTree.classList.toggle('open',chatAgentsExpanded);chatToggle.textContent=chatAgentsExpanded?'^':'v';}
 async function setActiveAgentFromTree(id){await window.electronAPI.setActiveAgent(id);currentAgent=id;showPage('chat');await refreshState();renderConversation();await refreshAgents();msg.focus();}
-function tApply(lang){const t=I18N[lang]||I18N.en;localStorage.setItem('myopenclaw.lang',lang);gatewayLabel.textContent=t.gateway;heroTitle.textContent=t.hero;tabChat.textContent=t.chat;tabAgents.textContent=t.agents;tabKeys.textContent=t.keys;tabAccount.textContent=t.account;msg.placeholder=t.msg;newAgentId.placeholder=t.aid;newAgentName.placeholder=t.an;document.querySelector('#agents .row button').textContent=t.add;document.querySelector('#keys h3').textContent=t.pc;document.querySelector('#keys .row:last-child button').textContent=t.save;document.querySelector('#account h3').textContent=t.acc;document.querySelector('#account .row button:last-child').textContent=t.up;}
+function tApply(lang){
+  const t=I18N[lang]||I18N.en;
+  localStorage.setItem('myopenclaw.lang',lang);
+  gatewayLabel.textContent=t.gateway;
+  heroTitle.textContent=t.hero;
+  tabChat.textContent=t.chat;
+  tabAgents.textContent=t.agents;
+  tabKeys.textContent=t.keys;
+  tabAccount.textContent=t.account;
+  msg.placeholder=t.msg;
+  newAgentId.placeholder=t.aid;
+  newAgentName.placeholder=t.an;
+  document.querySelector('#agents .row button').textContent=t.add;
+  document.querySelector('#keys h3').textContent=t.pc;
+  document.querySelector('#keys .row:last-child button').textContent=t.save;
+  document.querySelector('#account h3').textContent=t.acc;
+  document.querySelector('#account .row button:last-child').textContent=t.up;
+
+  const providerTip=document.querySelector('#keys .small');
+  if(providerTip) providerTip.textContent = lang==='zh' ? 'Provider/Model 会自动使用默认值。' : 'Provider/Model use default values automatically.';
+
+  const accountBtns=document.querySelectorAll('#account .row button');
+  if(accountBtns[0]) accountBtns[0].textContent = lang==='zh' ? '设为 Free' : 'Set Free';
+  if(accountBtns[1]) accountBtns[1].textContent = lang==='zh' ? '设为 Premium' : 'Set Premium';
+  if(accountBtns[2]) accountBtns[2].textContent = lang==='zh' ? '设为 Pro' : 'Set Pro';
+
+  const mTitle=document.querySelector('#upgradeModalMask h3');
+  const mDesc=document.querySelector('#upgradeModalMask .small');
+  if(mTitle) mTitle.textContent = lang==='zh' ? '升级你的套餐' : 'Upgrade your plan';
+  if(mDesc) mDesc.textContent = lang==='zh' ? '解锁更多 Agent、更高配额与更快工作流。' : 'Unlock more agents, higher quota, and faster workflow.';
+  const closeBtn=document.querySelector('#upgradeModalMask .row button.alt');
+  if(closeBtn) closeBtn.textContent = lang==='zh' ? '关闭' : 'Close';
+}
 function showToast(text,ms=2200){const t=document.getElementById("toast"); if(!t)return; t.textContent=text; t.style.display="block"; clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>t.style.display="none",ms);} 
 function showUpgradeModal(){upgradeModalMask.style.display='flex';}
 function closeUpgradeModal(){upgradeModalMask.style.display='none';}
@@ -168,7 +201,7 @@ async function renderConversation(){
 }
 async function sendMsg(){const text=msg.value.trim();if(!text&&!pendingFiles.length)return;const note=pendingFiles.length?`\n\n[Attachments: ${pendingFiles.map(f=>f.name).join(', ')}]`:'';addMsg((text||'[Attachment]')+note,'user');msg.value='';const sending=[...pendingFiles];pendingFiles=[];renderAttachPreview();if(sending.length)await simulateUploadProgress();const r=await window.electronAPI.sendMessage({message:(text||'Please process attachments')+note,agentId:currentAgent});if(r.success){addMsg(r.response||'Received','ai');await refreshState();}else if(r.premiumRequired){showToast(r.error||'Premium required');}else{addMsg('Failed: '+(r.error||'unknown'),'ai');}}
 async function addAgent(){const agents=await window.electronAPI.listAgents();if((appState?.premiumTier||'free')==='free' && agents.length>=1){showUpgradeModal();return;}if((appState?.premiumTier||'free')==='premium' && agents.length>=5){showUpgradeModal();return;}const r=await window.electronAPI.addAgent({id:newAgentId.value.trim(),name:newAgentName.value.trim()});if(!r.success&&r.premiumRequired){showUpgradeModal();return;}if(!r.success)return showToast(r.error||'failed');newAgentId.value='';newAgentName.value='';await refreshState();await refreshAgents();}
-async function saveProvider(){const r=await window.electronAPI.saveProviderConfig({providerId:'default_provider',baseUrl:baseUrl.value.trim(),apiKey:providerApiKey.value.trim(),api:'openai-completions',modelId:'openai/gpt-4o-mini'});showToast(r.success?'Saved':'Failed: '+r.error);}
+async function saveProvider(){const r=await window.electronAPI.saveProviderConfig({providerId:'aws2',baseUrl:baseUrl.value.trim(),apiKey:providerApiKey.value.trim(),api:'anthropic-messages',modelId:'claude-sonnet-4-6'});showToast(r.success?'Saved':'Failed: '+r.error);}
 async function setTier(t){await window.electronAPI.setPremiumTier(t);await refreshState();}
 function buyPremium(){showUpgradeModal();}
 function init(){attachBtn.onclick=()=>fileInput.click();slashBtn.onclick=()=>{msg.value=(msg.value.trim()?msg.value+' ':'')+'/';msg.focus();};fileInput.onchange=()=>{const files=[...(fileInput.files||[])];if(!files.length)return;pendingFiles=[...pendingFiles,...files];fileInput.value='';renderAttachPreview();};msg.addEventListener('input',()=>{msg.style.height='auto';msg.style.height=Math.min(msg.scrollHeight,160)+'px';});msg.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}});}

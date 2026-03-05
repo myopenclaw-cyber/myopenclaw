@@ -112,12 +112,13 @@ app.post('/v1/payments/checkout-session', (req, res) => {
   const { userId, plan } = req.body || {};
   if (!userId || !plan) return res.status(400).json({ success: false, error: 'userId and plan required' });
 
+  const sessionId = 'cs_test_mock_' + Date.now();
   res.json({
     success: true,
     mode: 'mock',
     message: 'Replace with real Stripe SDK call later',
-    sessionId: 'cs_test_mock_' + Date.now(),
-    checkoutUrl: ''
+    sessionId,
+    checkoutUrl: `http://127.0.0.1:${config.port}/checkout/mock?sessionId=${encodeURIComponent(sessionId)}&userId=${encodeURIComponent(userId)}&plan=${encodeURIComponent(plan)}`
   });
 });
 
