@@ -14,6 +14,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: V2
+          lfs: true
 
       - name: Check openclaw-deps exists
         run: |
@@ -58,6 +59,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: V2
+          lfs: true
 
       - name: Check openclaw-deps exists
         run: |
@@ -101,6 +103,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: V2
+          lfs: true
 
       - name: Check openclaw-deps exists
         run: |
@@ -148,6 +151,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: V2
+          lfs: true
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
