@@ -237,6 +237,24 @@ function extractTextFromMessageContent(content) {
   return parts.join('\n').trim();
 }
 
+function normalizeConversationText(role, text) {
+  let t = String(text || '').trim();
+  if (!t) return t;
+
+  if (role === 'user') {
+    const marker = '[Current message - respond to this]';
+    const idx = t.lastIndexOf(marker);
+    if (idx >= 0) t = t.slice(idx + marker.length).trim();
+    t = t.replace(/^\s*User\s*:\s*/i, '').trim();
+  }
+
+  // Remove nested context envelope blocks if they leaked into display
+  t = t.replace(/^\s*\[Chat messages since your last reply - for context\][\s\S]*?\[Current message - respond to this\]\s*/i, '');
+  t = t.replace(/^\s*User\s*:\s*/i, '').trim();
+
+  return t;
+}
+
 function loadAgentConversationFromOpenClaw(agentId = 'main', limit = 80) {
   try {
     const sessionsDir = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'agents', agentId, 'sessions');
@@ -271,7 +289,10 @@ function loadAgentConversationFromOpenClaw(agentId = 'main', limit = 80) {
       let text = extractTextFromMessageContent(row.message.content);
       if (!text && row.message.errorMessage) text = row.message.errorMessage;
       if (!text) continue;
-      conv.push({ role: role === 'assistant' ? 'assistant' : 'user', content: text, timestamp: row.timestamp || row.message.timestamp || 0 });
+      const uiRole = role === 'assistant' ? 'assistant' : 'user';
+      text = normalizeConversationText(uiRole, text);
+      if (!text) continue;
+      conv.push({ role: uiRole, content: text, timestamp: row.timestamp || row.message.timestamp || 0 });
     }
 
     return conv.slice(-Math.max(1, limit));
