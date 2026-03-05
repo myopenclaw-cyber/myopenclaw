@@ -655,6 +655,8 @@ ipcMain.handle('create-checkout-session', async (event, plan) => {
 // 发送消息到 main agent
 ipcMain.handle('send-message', async (event, payload) => {
   try {
+    if (!gatewayBaseUrl) throw new Error('Gateway not started');
+
     const message = typeof payload === 'string' ? payload : payload?.message;
     const agentId = payload?.agentId || 'main';
 
@@ -664,40 +666,29 @@ ipcMain.handle('send-message', async (event, payload) => {
     const messages = [...conv, { role: 'user', content: message }].slice(-20);
 
     const userProvider = getUserProviderConfig();
-    let content = '';
-
-    if (userProvider) {
-      if (!gatewayBaseUrl) throw new Error('Gateway not started');
-
-      // 用户自配 API Key：客户端直连本地 gateway（由用户配置驱动）
-      const token = 'myopenclaw_2024_secure_token_a8f3e9d2c1b7f6e5d4c3b2a1';
-      const response = await axios.post(`${gatewayBaseUrl}/v1/chat/completions`, {
-        model: 'openclaw:main',
-        messages,
-        stream: false
-      }, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'x-openclaw-agent-id': 'main'
-        },
-        timeout: 60000
-      });
-      content = response?.data?.choices?.[0]?.message?.content || 'Received';
-    } else {
-      // 未配置用户 API Key：走 backend relay（服务端额度校验 + 服务端转发）
-      const { baseUrl, userId } = await ensureBackendUser(state);
-      const relay = await axios.post(`${baseUrl}/v1/chat/relay`, {
-        userId,
-        agentId,
-        messages
-      }, { timeout: 60000 });
-      if (!relay?.data?.success) {
-        return { success: false, premiumRequired: !!relay?.data?.premiumRequired, error: relay?.data?.error || 'Relay failed' };
-      }
-      content = relay?.data?.response || 'Received';
+    if (!userProvider) {
+      return {
+        success: false,
+        noApiKeyConfigured: true,
+        error: 'OpenClaw depends on an LLM model to provide intelligence. Please configure your API key first.'
+      };
     }
 
+    const token = 'myopenclaw_2024_secure_token_a8f3e9d2c1b7f6e5d4c3b2a1';
+    const response = await axios.post(`${gatewayBaseUrl}/v1/chat/completions`, {
+      model: 'openclaw:main',
+      messages,
+      stream: false
+    }, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'x-openclaw-agent-id': 'main'
+      },
+      timeout: 60000
+    });
+
+    const content = response?.data?.choices?.[0]?.message?.content || 'Received';
     state.conversations[agentId] = [...messages, { role: 'assistant', content }].slice(-20);
     saveAppState(state);
 
@@ -838,26 +829,35 @@ ipcMain.handle('set-active-agent', async (event, id) => {
 
 ipcMain.handle('save-provider-config', async (event, payload) => {
   try {
-    const { providerId = 'custom', baseUrl = '', apiKey = '', api = 'openai-completions', modelId = '' } = payload || {};
+    const { providerId = 'default', baseUrl = '', apiKey = '', api = 'openai-completions', modelId = 'default' } = payload || {};
+    const cleanProviderId = String(providerId || '').trim();
+    const cleanModelId = String(modelId || '').trim();
+    if (!cleanProviderId) return { success: false, error: 'Provider Name is required' };
+    if (!cleanModelId) return { success: false, error: 'Model Name is required' };
+
     const cfg = loadEmbeddedConfig();
     cfg.models = cfg.models || {};
     cfg.models.mode = cfg.models.mode || 'merge';
     cfg.models.providers = cfg.models.providers || {};
-    cfg.models.providers[providerId] = {
-      ...(cfg.models.providers[providerId] || {}),
+
+    if (!cfg.models.providers[cleanProviderId]) {
+      const exists = Object.keys(cfg.models.providers).some(k => k === cleanProviderId);
+      if (exists) return { success: false, error: 'Provider Name must be unique' };
+    }
+
+    cfg.models.providers[cleanProviderId] = {
+      ...(cfg.models.providers[cleanProviderId] || {}),
       baseUrl,
       apiKey,
       api,
-      models: modelId ? [{ id: modelId, name: modelId }] : (cfg.models.providers[providerId]?.models || [])
+      models: [{ id: cleanModelId, name: cleanModelId }]
     };
 
     cfg.agents = cfg.agents || {};
     cfg.agents.defaults = cfg.agents.defaults || {};
     cfg.agents.defaults.model = cfg.agents.defaults.model || {};
-    if (modelId) {
-      cfg.agents.defaults.model.primary = `${providerId}/${modelId}`;
-      cfg.agents.defaults.model.fallback = cfg.agents.defaults.model.fallback || `${providerId}/${modelId}`;
-    }
+    cfg.agents.defaults.model.primary = `${cleanProviderId}/${cleanModelId}`;
+    cfg.agents.defaults.model.fallback = `${cleanProviderId}/${cleanModelId}`;
 
     saveEmbeddedConfig(cfg);
     return { success: true };
