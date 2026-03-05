@@ -26,7 +26,7 @@ jobs:
         run: |
           $env:BUILD_VARIANT="simple"
           $env:TARGET_LABEL="windows"
-          npx electron-builder --win --x64 -c build/simple.json --config.compression=maximum
+          npx electron-builder --win --x64 --publish never -c build/simple.json --config.compression=maximum
         shell: powershell
       
       - name: Upload Windows artifact
@@ -54,7 +54,7 @@ jobs:
         run: |
           export BUILD_VARIANT="simple"
           export TARGET_LABEL="mac_intel"
-          npx electron-builder --mac --x64 -c build/simple.json --config.compression=maximum
+          npx electron-builder --mac --x64 --publish never -c build/simple.json --config.compression=maximum
       
       - name: Upload Mac Intel artifact
         uses: actions/upload-artifact@v4
@@ -81,7 +81,7 @@ jobs:
         run: |
           export BUILD_VARIANT="simple"
           export TARGET_LABEL="mac_silicon"
-          npx electron-builder --mac --arm64 -c build/simple.json --config.compression=maximum
+          npx electron-builder --mac --arm64 --publish never -c build/simple.json --config.compression=maximum
       
       - name: Upload Mac Silicon artifact
         uses: actions/upload-artifact@v4
@@ -129,4 +129,5 @@ jobs:
             - No technical knowledge required
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
