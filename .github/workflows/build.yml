@@ -60,7 +60,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MyOpenClaw-Mac-Intel
-          path: dist/**/*.{dmg,zip}
+          path: |
+          dist/**/*.dmg
+          dist/**/*.zip
 
   build-mac-silicon:
     runs-on: macos-latest
@@ -87,7 +89,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MyOpenClaw-Mac-Silicon
-          path: dist/**/*.{dmg,zip}
+          path: |
+          dist/**/*.dmg
+          dist/**/*.zip
 
   create-release:
     needs: [build-windows, build-mac-intel, build-mac-silicon]
@@ -129,6 +133,7 @@ jobs:
             - No technical knowledge required
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
 
 
