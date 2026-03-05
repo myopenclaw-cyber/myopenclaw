@@ -40,6 +40,21 @@
     .small{font-size:12px;color:#6c757d}
     .chip{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid #d7defd;background:#eef1ff;color:#4b57a8}
     ul{list-style:none}.agent-item{border:1px solid #e9ecef;border-radius:10px;padding:10px;margin:8px 0}
+    .modal-mask{position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:10000}
+    .modal{width:min(980px,95vw);max-height:90vh;overflow:auto;background:linear-gradient(180deg,#ffffff,#f8f9ff);border-radius:18px;padding:18px;border:1px solid #e5e7eb;box-shadow:0 24px 64px rgba(31,41,55,.35)}
+    .pay-hero{height:132px;border-radius:14px;background:url('./assets/premium/images/Gemini_Generated_Image_kjjinnkjjinnkjji.jpeg') center/cover no-repeat;position:relative;overflow:hidden;margin:8px 0 12px}
+    .pay-hero::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,rgba(17,24,39,.62),rgba(17,24,39,.2));}
+    .pay-hero .txt{position:absolute;left:14px;bottom:12px;color:#fff;z-index:1}
+    .plans{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}
+    .plan{border:1px solid #e5e7eb;border-radius:14px;padding:14px;background:#fff;position:relative}
+    .plan h4{margin-bottom:4px}.plan ul{margin-top:8px;padding-left:16px;list-style:disc}
+    .plan .icon{width:34px;height:34px;object-fit:contain;margin-bottom:6px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.12))}
+    .plan .price{font-size:26px;font-weight:800;color:#111827;margin:8px 0 2px}
+    .plan .sub{font-size:12px;color:#6b7280}
+    .badge{position:absolute;right:8px;top:8px;width:118px;height:auto;filter:drop-shadow(0 6px 14px rgba(0,0,0,.24))}
+    .plan.reco{border-color:#667eea;box-shadow:0 0 0 2px rgba(102,126,234,.14),0 10px 24px rgba(102,126,234,.12)}
+    .plan .cta{width:100%;margin-top:10px}
+    @media (max-width: 860px){.plans{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
@@ -112,7 +127,17 @@ function onChatNavClick(){showPage('chat');renderConversation();}
 function toggleChatAgents(){chatAgentsExpanded=!chatAgentsExpanded;chatAgentTree.classList.toggle('open',chatAgentsExpanded);chatToggle.textContent=chatAgentsExpanded?'^':'v';}
 async function setActiveAgentFromTree(id){await window.electronAPI.setActiveAgent(id);currentAgent=id;showPage('chat');await refreshState();renderConversation();await refreshAgents();msg.focus();}
 function tApply(lang){const t=I18N[lang]||I18N.en;localStorage.setItem('myopenclaw.lang',lang);gatewayLabel.textContent=t.gateway;heroTitle.textContent=t.hero;tabChat.textContent=t.chat;tabAgents.textContent=t.agents;tabKeys.textContent=t.keys;tabAccount.textContent=t.account;msg.placeholder=t.msg;newAgentId.placeholder=t.aid;newAgentName.placeholder=t.an;document.querySelector('#agents .row button').textContent=t.add;document.querySelector('#keys h3').textContent=t.pc;document.querySelector('#keys .row:last-child button').textContent=t.save;document.querySelector('#account h3').textContent=t.acc;document.querySelector('#account .row button:last-child').textContent=t.up;}
-function showToast(text,ms=2200){const t=document.getElementById("toast"); if(!t)return; t.textContent=text; t.style.display="block"; clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>t.style.display="none",ms);} function addMsg(text,cls){const d=document.createElement('div');d.className='msg '+cls;d.textContent=text;chatBox.appendChild(d);chatBox.scrollTop=chatBox.scrollHeight;}
+function showToast(text,ms=2200){const t=document.getElementById("toast"); if(!t)return; t.textContent=text; t.style.display="block"; clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>t.style.display="none",ms);} 
+function showUpgradeModal(){upgradeModalMask.style.display='flex';}
+function closeUpgradeModal(){upgradeModalMask.style.display='none';}
+async function choosePlan(plan){
+  if(plan==='free'){closeUpgradeModal();showToast('You are on Free plan');return;}
+  await setTier(plan);
+  closeUpgradeModal();
+  showToast(plan==='premium'?'Premium activated (MVP local flow)':'Pro activated (MVP local flow)');
+  showPage('account');
+}
+function addMsg(text,cls){const d=document.createElement('div');d.className='msg '+cls;d.textContent=text;chatBox.appendChild(d);chatBox.scrollTop=chatBox.scrollHeight;}
 function renderAttachPreview(){attachPreview.innerHTML='';if(!pendingFiles.length){attachPreview.style.display='none';return;}attachPreview.style.display='flex';pendingFiles.forEach((f,i)=>{const c=document.createElement('span');c.className='chip';c.textContent='FILE '+f.name+' ';const x=document.createElement('button');x.className='alt';x.style.padding='2px 6px';x.textContent='x';x.onclick=()=>{pendingFiles.splice(i,1);renderAttachPreview();};c.appendChild(x);attachPreview.appendChild(c);});}
 async function simulateUploadProgress(){sendProgressWrap.style.display='block';let v=0;while(v<100){await new Promise(r=>setTimeout(r,80));v+=Math.floor(Math.random()*12)+6;if(v>100)v=100;sendProgressBar.style.width=v+'%';sendProgressText.textContent='Sending attachments... '+v+'%';}await new Promise(r=>setTimeout(r,150));sendProgressWrap.style.display='none';sendProgressBar.style.width='0%';}
 async function refreshState(){appState=await window.electronAPI.getAppState();usageInfo.textContent=`Tier: ${appState.premiumTier} | Messages sent: ${(appState.freeQuotaUsed||0)+(appState.userApiKeyQuotaUsed||0)}`;currentAgent=appState.activeAgentId||'main';}
@@ -120,12 +145,69 @@ async function refreshAgents(){const agents=await window.electronAPI.listAgents(
 agentList.innerHTML='';agents.forEach(a=>{const li=document.createElement('li');li.className='agent-item';li.innerHTML=`<b>${a.name}</b> <span class='small'>(${a.id})</span>`;const row=document.createElement('div');row.className='row';const r=document.createElement('button');r.className='alt';r.textContent='Rename';r.onclick=()=>{const edit=document.createElement('div');edit.className='row';const i=document.createElement('input');i.value=a.name;const s=document.createElement('button');s.textContent='Save';const c=document.createElement('button');c.className='alt';c.textContent='Cancel';edit.append(i,s,c);li.appendChild(edit);c.onclick=()=>edit.remove();s.onclick=async()=>{const name=i.value.trim();if(!name)return showToast('Agent name cannot be empty');const rs=await window.electronAPI.renameAgent({id:a.id,name});if(!rs.success)return showToast(rs.error||'Rename failed');await refreshState();await refreshAgents();};};const d=document.createElement('button');d.className='alt';d.textContent='Delete';d.disabled=a.id==='main';d.onclick=async()=>{if(!confirm('Delete agent?'))return;const rs=await window.electronAPI.deleteAgent(a.id);if(!rs.success)return showToast(rs.error||'Delete failed');await refreshState();await refreshAgents();renderConversation();};row.append(r,d);li.appendChild(row);agentList.appendChild(li);});}
 function renderConversation(){chatBox.innerHTML='';const conv=appState?.conversations?.[currentAgent]||[];if(!conv.length)return addMsg(`Conversation with ${currentAgent} is empty.`,'ai');conv.forEach(m=>addMsg(m.content,m.role==='user'?'user':'ai'));}
 async function sendMsg(){const text=msg.value.trim();if(!text&&!pendingFiles.length)return;const note=pendingFiles.length?`\n\n[Attachments: ${pendingFiles.map(f=>f.name).join(', ')}]`:'';addMsg((text||'[Attachment]')+note,'user');msg.value='';const sending=[...pendingFiles];pendingFiles=[];renderAttachPreview();if(sending.length)await simulateUploadProgress();const r=await window.electronAPI.sendMessage({message:(text||'Please process attachments')+note,agentId:currentAgent});if(r.success){addMsg(r.response||'Received','ai');await refreshState();}else if(r.premiumRequired){showToast(r.error||'Premium required');}else{addMsg('Failed: '+(r.error||'unknown'),'ai');}}
-async function addAgent(){const r=await window.electronAPI.addAgent({id:newAgentId.value.trim(),name:newAgentName.value.trim()});if(!r.success&&r.premiumRequired)return showToast(r.error);if(!r.success)return showToast(r.error||'failed');newAgentId.value='';newAgentName.value='';await refreshState();await refreshAgents();}
+async function addAgent(){const agents=await window.electronAPI.listAgents();if((appState?.premiumTier||'free')==='free' && agents.length>=1){showUpgradeModal();return;}if((appState?.premiumTier||'free')==='premium' && agents.length>=5){showUpgradeModal();return;}const r=await window.electronAPI.addAgent({id:newAgentId.value.trim(),name:newAgentName.value.trim()});if(!r.success&&r.premiumRequired){showUpgradeModal();return;}if(!r.success)return showToast(r.error||'failed');newAgentId.value='';newAgentName.value='';await refreshState();await refreshAgents();}
 async function saveProvider(){const map={aws:'anthropic-messages',aws2:'anthropic-messages',openai:'openai-completions','openai-codex':'openai-completions',moonshot:'openai-completions',openrouter:'openai-completions'};const r=await window.electronAPI.saveProviderConfig({providerId:providerId.value,baseUrl:baseUrl.value.trim(),apiKey:providerApiKey.value.trim(),api:map[providerId.value]||'openai-completions',modelId:modelSearch.value.trim()});showToast(r.success?'Saved':'Failed: '+r.error);}
 async function setTier(t){await window.electronAPI.setPremiumTier(t);await refreshState();}
-function buyPremium(){showToast('Checkout modal can be connected here.');}
+function buyPremium(){showUpgradeModal();}
 function init(){attachBtn.onclick=()=>fileInput.click();slashBtn.onclick=()=>{msg.value=(msg.value.trim()?msg.value+' ':'')+'/';msg.focus();};fileInput.onchange=()=>{const files=[...(fileInput.files||[])];if(!files.length)return;pendingFiles=[...pendingFiles,...files];fileInput.value='';renderAttachPreview();};msg.addEventListener('input',()=>{msg.style.height='auto';msg.style.height=Math.min(msg.scrollHeight,160)+'px';});msg.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}});}
 (async()=>{const lang=localStorage.getItem('myopenclaw.lang')||'en';langSelect.value=lang;langSelect.onchange=()=>tApply(langSelect.value);init();await refreshState();await refreshAgents();renderConversation();tApply(lang);})();
 </script>
-<div id="toast" style="position:fixed;right:18px;bottom:18px;min-width:220px;max-width:420px;background:#1f2937;color:#fff;padding:10px 12px;border-radius:10px;box-shadow:0 10px 24px rgba(0,0,0,.25);display:none;z-index:9999"></div></body>
+<div id="toast" style="position:fixed;right:18px;bottom:18px;min-width:220px;max-width:420px;background:#1f2937;color:#fff;padding:10px 12px;border-radius:10px;box-shadow:0 10px 24px rgba(0,0,0,.25);display:none;z-index:9999"></div>
+
+<div id="upgradeModalMask" class="modal-mask" onclick="if(event.target===this) closeUpgradeModal()">
+  <div class="modal">
+    <div class="row" style="justify-content:space-between;margin-top:0;align-items:flex-start">
+      <div>
+        <h3 style="font-size:24px;margin-bottom:6px">Upgrade your plan</h3>
+        <div class="small">Unlock more agents, higher quota, and faster workflow.</div>
+      </div>
+      <button class="alt" onclick="closeUpgradeModal()">Close</button>
+    </div>
+
+    <div class="pay-hero"><div class="txt"><div style="font-size:18px;font-weight:800">Unlock Premium Power</div><div style="font-size:13px;opacity:.95">Save 50% on your first month</div></div></div>
+
+    <div class="plans">
+      <div class="plan">
+        <img class="icon" src="./assets/premium/images/icon-free-shield.jpg" alt="Free" />
+        <h4>Free</h4>
+        <div class="price">$0</div>
+        <div class="sub">Forever free</div>
+        <ul>
+          <li>1 agent</li>
+          <li>Basic quota</li>
+          <li>Community support</li>
+        </ul>
+        <button class="alt cta" onclick="choosePlan('free')">Keep Free</button>
+      </div>
+
+      <div class="plan reco">
+        <img class="badge" src="./assets/premium/images/badge-50-first-month.jpg" alt="50% off first month" />
+        <img class="icon" src="./assets/premium/images/icon-premium-crown.jpg" alt="Premium" />
+        <h4>Premium ⭐</h4>
+        <div class="price">$9.9 <span class="sub">/ month</span></div>
+        <div class="sub"><s>$19.9</s> first month, then $19.9/mo</div>
+        <ul>
+          <li>Up to 5 agents</li>
+          <li>Higher quota</li>
+          <li>Priority support</li>
+        </ul>
+        <button class="cta" onclick="choosePlan('premium')">Upgrade to Premium</button>
+      </div>
+
+      <div class="plan">
+        <img class="icon" src="./assets/premium/images/icon-pro-rocket.jpg" alt="Pro" />
+        <h4>Pro 🚀</h4>
+        <div class="price">$39</div>
+        <div class="sub">/ month</div>
+        <ul>
+          <li>Unlimited agents</li>
+          <li>Max quota</li>
+          <li>Advanced automation</li>
+        </ul>
+        <button class="cta" onclick="choosePlan('pro')">Go Pro</button>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
 </html>
