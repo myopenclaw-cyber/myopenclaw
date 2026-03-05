@@ -108,9 +108,9 @@ function getUserProviderConfig() {
   for (const [providerId, p] of Object.entries(providers)) {
     const apiKey = String(p?.apiKey || '').trim();
     const baseUrl = String(p?.baseUrl || '').trim();
-    if (apiKey && baseUrl) {
-      const modelId = p?.models?.[0]?.id || 'claude-sonnet-4-6';
-      return { providerId, baseUrl, apiKey, modelId, api: p?.api || 'anthropic-messages' };
+    const modelId = p?.models?.[0]?.id || 'default';
+    if (apiKey) {
+      return { providerId, baseUrl, apiKey, modelId, api: p?.api || 'openai-completions' };
     }
   }
   return null;
@@ -156,6 +156,35 @@ function loadLocalAppConfig() {
 function saveLocalAppConfig(cfg) {
   fs.mkdirSync(path.dirname(LOCAL_APP_CONFIG_FILE), { recursive: true });
   fs.writeFileSync(LOCAL_APP_CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf8');
+}
+
+function syncAuthProfileForProvider(providerId, apiKey) {
+  try {
+    const key = String(apiKey || '').trim();
+    if (!providerId || !key) return;
+    const authFile = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'agents', 'main', 'agent', 'auth-profiles.json');
+    fs.mkdirSync(path.dirname(authFile), { recursive: true });
+    let auth = { version: 1, profiles: {}, lastGood: {}, usageStats: {} };
+    if (fs.existsSync(authFile)) {
+      auth = JSON.parse(fs.readFileSync(authFile, 'utf8').replace(/^\uFEFF/, ''));
+      auth.version = auth.version || 1;
+      auth.profiles = auth.profiles || {};
+      auth.lastGood = auth.lastGood || {};
+      auth.usageStats = auth.usageStats || {};
+    }
+
+    const profileId = `${providerId}:default`;
+    auth.profiles[profileId] = {
+      type: 'api_key',
+      provider: providerId,
+      key
+    };
+    auth.lastGood[providerId] = profileId;
+
+    fs.writeFileSync(authFile, JSON.stringify(auth, null, 2), 'utf8');
+  } catch (e) {
+    console.error('[auth-profile-sync] failed:', e.message);
+  }
 }
 
 function extractTextFromMessageContent(content) {
@@ -661,9 +690,7 @@ ipcMain.handle('send-message', async (event, payload) => {
     const agentId = payload?.agentId || 'main';
 
     const state = loadAppState();
-    state.conversations = state.conversations || {};
-    const conv = state.conversations[agentId] || [];
-    const messages = [...conv, { role: 'user', content: message }].slice(-20);
+    const messages = [{ role: 'user', content: message }];
 
     const userProvider = getUserProviderConfig();
     if (!userProvider) {
@@ -688,9 +715,7 @@ ipcMain.handle('send-message', async (event, payload) => {
       timeout: 60000
     });
 
-    const content = response?.data?.choices?.[0]?.message?.content || 'Received';
-    state.conversations[agentId] = [...messages, { role: 'assistant', content }].slice(-20);
-    saveAppState(state);
+    const content = response?.data?.choices?.[0]?.message?.content || 'No response from OpenClaw.';
 
     return {
       success: true,
@@ -756,109 +781,112 @@ ipcMain.handle('set-premium-tier', async (event, tier) => {
 });
 
 ipcMain.handle('list-agents', async () => {
-  const state = loadAppState();
-  return state.agents;
+  // Single source of truth: OpenClaw built-in main agent only (v1)
+  return [{ id: 'main', name: 'Main Agent', channels: [] }];
 });
 
-ipcMain.handle('add-agent', async (event, payload) => {
-  const state = loadAppState();
-  const totalAgents = state.agents.length;
-
-  if (state.premiumTier === 'free' && totalAgents >= 1) {
-    return { success: false, premiumRequired: true, error: 'Free plan supports 1 agent. Upgrade to Premium for up to 5.' };
-  }
-  if (state.premiumTier === 'premium' && totalAgents >= 5) {
-    return { success: false, premiumRequired: true, error: 'Premium supports up to 5 agents. Upgrade to Pro for unlimited agents.' };
-  }
-
-  const nextNum = state.agents.filter(a => /^agent\d+$/.test(a.id)).length + 1;
-  const inputId = (payload?.id || '').trim();
-  const id = inputId || `agent${nextNum}`;
-  const name = (payload?.name || '').trim() || `Agent ${state.agents.length + 1}`;
-
-  if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
-    return { success: false, error: 'Agent id supports only letters/numbers/_/-' };
-  }
-  if (state.agents.some(a => a.id === id)) {
-    return { success: false, error: 'Agent id already exists' };
-  }
-
-  state.agents.push({ id, name, channels: [] });
-  saveAppState(state);
-  return { success: true, agents: state.agents };
+ipcMain.handle('add-agent', async () => {
+  return { success: false, error: 'Custom agents are disabled in current version. Uses OpenClaw built-in agent only.' };
 });
 
-ipcMain.handle('rename-agent', async (event, payload) => {
-  const state = loadAppState();
-  const agent = state.agents.find(a => a.id === payload.id);
-  if (!agent) return { success: false, error: 'Agent not found' };
-  const newName = (payload?.name || '').trim();
-  if (!newName) return { success: false, error: 'Agent name cannot be empty' };
-  agent.name = newName;
-  saveAppState(state);
-  return { success: true, agents: state.agents };
+ipcMain.handle('rename-agent', async () => {
+  return { success: false, error: 'Rename is disabled in current version.' };
 });
 
-ipcMain.handle('set-agent-channels', async (event, payload) => {
-  const state = loadAppState();
-  const agent = state.agents.find(a => a.id === payload.id);
-  if (!agent) return { success: false, error: 'Agent not found' };
-  agent.channels = Array.isArray(payload.channels) ? payload.channels : [];
-  saveAppState(state);
-  return { success: true, agents: state.agents };
+ipcMain.handle('set-agent-channels', async () => {
+  return { success: false, error: 'Channel binding by custom agent is disabled in current version.' };
 });
 
-ipcMain.handle('delete-agent', async (event, id) => {
-  const state = loadAppState();
-  if (id === 'main') return { success: false, error: 'Main agent cannot be deleted' };
-  const index = state.agents.findIndex(a => a.id === id);
-  if (index < 0) return { success: false, error: 'Agent not found' };
-  state.agents.splice(index, 1);
-  if (state.activeAgentId === id) state.activeAgentId = 'main';
-  saveAppState(state);
-  return { success: true, agents: state.agents, state };
+ipcMain.handle('delete-agent', async () => {
+  return { success: false, error: 'Delete is disabled in current version.' };
 });
 
 ipcMain.handle('set-active-agent', async (event, id) => {
   const state = loadAppState();
-  if (!state.agents.find(a => a.id === id)) return { success: false, error: 'Agent not found' };
-  state.activeAgentId = id;
+  state.activeAgentId = 'main';
   saveAppState(state);
   return { success: true, state };
 });
 
 ipcMain.handle('save-provider-config', async (event, payload) => {
   try {
-    const { providerId = 'default', baseUrl = '', apiKey = '', api = 'openai-completions', modelId = 'default' } = payload || {};
+    const { providerId = 'default', baseUrl = '', apiKey = '', api = '', modelId = 'default' } = payload || {};
     const cleanProviderId = String(providerId || '').trim();
     const cleanModelId = String(modelId || '').trim();
+    const autoApi = String(api || '').trim() || 'openai-completions';
     if (!cleanProviderId) return { success: false, error: 'Provider Name is required' };
     if (!cleanModelId) return { success: false, error: 'Model Name is required' };
+    if (!String(apiKey || '').trim()) return { success: false, error: 'API Key is required' };
 
     const cfg = loadEmbeddedConfig();
     cfg.models = cfg.models || {};
     cfg.models.mode = cfg.models.mode || 'merge';
     cfg.models.providers = cfg.models.providers || {};
 
-    if (!cfg.models.providers[cleanProviderId]) {
-      const exists = Object.keys(cfg.models.providers).some(k => k === cleanProviderId);
-      if (exists) return { success: false, error: 'Provider Name must be unique' };
+    const existingKeys = Object.keys(cfg.models.providers || {});
+    const isNew = !cfg.models.providers[cleanProviderId];
+    if (isNew && existingKeys.length > 0) {
+      return { success: false, error: 'Only one provider is supported in current version. Please edit or delete existing one first.' };
     }
 
     cfg.models.providers[cleanProviderId] = {
       ...(cfg.models.providers[cleanProviderId] || {}),
       baseUrl,
       apiKey,
-      api,
+      api: autoApi,
       models: [{ id: cleanModelId, name: cleanModelId }]
     };
+
+    cfg.models.default = `${cleanProviderId}/${cleanModelId}`;
 
     cfg.agents = cfg.agents || {};
     cfg.agents.defaults = cfg.agents.defaults || {};
     cfg.agents.defaults.model = cfg.agents.defaults.model || {};
     cfg.agents.defaults.model.primary = `${cleanProviderId}/${cleanModelId}`;
-    cfg.agents.defaults.model.fallback = `${cleanProviderId}/${cleanModelId}`;
+    if (cfg.agents.defaults.model.fallback !== undefined) delete cfg.agents.defaults.model.fallback;
 
+    saveEmbeddedConfig(cfg);
+    syncAuthProfileForProvider(cleanProviderId, apiKey);
+    return { success: true, apiResolved: autoApi, modelResolved: `${cleanProviderId}/${cleanModelId}` };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle('get-provider-config', async () => {
+  try {
+    const cfg = loadEmbeddedConfig();
+    const providers = cfg?.models?.providers || {};
+    const entries = Object.entries(providers);
+    if (!entries.length) return { success: true, configured: false };
+    const [providerId, p] = entries[0];
+    return {
+      success: true,
+      configured: !!String(p?.apiKey || '').trim(),
+      provider: {
+        providerId,
+        modelId: p?.models?.[0]?.id || 'default',
+        baseUrl: p?.baseUrl || '',
+        apiKey: p?.apiKey || ''
+      }
+    };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle('delete-provider-config', async (event, providerId) => {
+  try {
+    const cfg = loadEmbeddedConfig();
+    cfg.models = cfg.models || {};
+    cfg.models.providers = cfg.models.providers || {};
+    const id = String(providerId || '').trim();
+    if (id && cfg.models.providers[id]) delete cfg.models.providers[id];
+    cfg.agents = cfg.agents || {};
+    cfg.agents.defaults = cfg.agents.defaults || {};
+    cfg.agents.defaults.model = cfg.agents.defaults.model || {};
+    cfg.agents.defaults.model.primary = 'openclaw:main';
+    if (cfg.agents.defaults.model.fallback !== undefined) delete cfg.agents.defaults.model.fallback;
     saveEmbeddedConfig(cfg);
     return { success: true };
   } catch (e) {
