@@ -634,6 +634,24 @@ ipcMain.handle('save-local-app-config', async (event, patch) => {
   }
 });
 
+ipcMain.handle('create-checkout-session', async (event, plan) => {
+  try {
+    if (!['premium', 'pro'].includes(plan)) {
+      return { success: false, error: 'Invalid plan' };
+    }
+    const state = loadAppState();
+    const { baseUrl, userId } = await ensureBackendUser(state);
+    const resp = await axios.post(`${baseUrl}/v1/payments/checkout-session`, { userId, plan }, { timeout: 15000 });
+    const checkoutUrl = resp?.data?.checkoutUrl;
+    if (!checkoutUrl) return { success: false, error: 'No checkoutUrl returned' };
+    await shell.openExternal(checkoutUrl);
+    return { success: true, checkoutUrl };
+  } catch (e) {
+    const msg = e?.response?.data?.error || e.message;
+    return { success: false, error: msg };
+  }
+});
+
 // 发送消息到 main agent
 ipcMain.handle('send-message', async (event, payload) => {
   try {

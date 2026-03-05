@@ -9,19 +9,20 @@
     html,body{height:100%;overflow:hidden}
     body { font-family: Inter, Arial, sans-serif; background:#fff; color:#1a1a1a; }
     .app { display:grid; grid-template-columns:260px 1fr; min-height:100vh; }
-    .sidebar { padding:18px; background:#f8f9fa; border-right:1px solid #e9ecef; display:flex; flex-direction:column; min-height:100vh; }
+    .sidebar { padding:18px; background:#f8f9fa; border-right:1px solid #e9ecef; display:grid; grid-template-rows:auto auto 1fr auto; min-height:100vh; height:100vh; row-gap:8px; }
     .gateway { display:flex; align-items:center; gap:8px; font-size:11px; white-space:nowrap; padding:9px 10px; border:1px solid #68d391; background:#f0fff4; border-radius:10px; margin-bottom:10px; }
     .dot { width:8px; height:8px; border-radius:50%; background:#68d391; box-shadow:0 0 10px #68d391; animation:pulse 2s infinite; }
     @keyframes pulse { 50% { transform:scale(1.15);} }
     .nav button { width:100%; text-align:left; padding:11px 12px; margin:4px 0; border:none; border-radius:10px; background:transparent; color:#6c757d; cursor:pointer; }
     .nav button.active { background:linear-gradient(135deg, rgba(102,126,234,.14), rgba(118,75,162,.1)); color:#667eea; box-shadow: inset 3px 0 0 #667eea; }
+    .sidebar > .nav:not(.nav-bottom){overflow:auto;min-height:0;align-self:stretch}
     .chat-nav { display:flex; gap:6px; align-items:center; }
     .chat-agent-tree { margin:0 0 8px 12px; border-left:1px solid #e9ecef; padding-left:8px; max-height:0; overflow:hidden; transition:max-height .2s ease; }
     .chat-agent-tree.open { max-height: 220px; }
     .chat-agent-item { display:flex; align-items:center; gap:6px; padding:6px 8px; border-radius:8px; cursor:pointer; margin:2px 0; font-size:13px; }
     .chat-agent-item.active { background:#F3F0FF; }
     .chat-agent-dot { width:6px; height:6px; border-radius:50%; background:#8c7cf5; }
-    .nav-bottom { margin-top:auto; padding-top:10px; padding-bottom:10px; flex:0 0 auto; }
+    .nav-bottom { position:static; padding:0; align-self:stretch; }
     .nav-bottom #tab-account{background:linear-gradient(135deg,#f4f7ff,#eef2ff);border:1px solid #dbe3ff;color:#4c57a8;font-weight:600;box-shadow:0 4px 10px rgba(99,102,241,.08)}
     .nav-bottom #tab-account.active{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border-color:transparent;box-shadow:0 10px 18px rgba(102,126,234,.35)}
     .main { padding:18px; }
@@ -71,11 +72,7 @@
 <div class="app">
   <aside class="sidebar">
     <div class="gateway"><span class="dot"></span><span id="gatewayLabel">Local OpenClaw Gateway Running</span></div>
-    <div class="row" style="margin:8px 0 12px;">
-      <select id="langSelect">
-        <option value="en">English</option><option value="zh">Chinese</option><option value="es">Spanish</option><option value="fr">French</option><option value="de">German</option><option value="pt">Portuguese</option><option value="ru">Russian</option><option value="ja">Japanese</option><option value="ar">Arabic</option><option value="hi">Hindi</option>
-      </select>
-    </div>
+    <div class="row" style="display:none"></div>
     <nav class="nav">
       <div class="chat-nav" style="margin-bottom:4px;">
         <button id="tab-chat" class="active" onclick="onChatNavClick()">Chat</button>
@@ -175,10 +172,13 @@ function showUpgradeModal(){upgradeModalMask.style.display='flex';}
 function closeUpgradeModal(){upgradeModalMask.style.display='none';}
 async function choosePlan(plan){
   if(plan==='free'){closeUpgradeModal();showToast('You are on Free plan');return;}
-  await setTier(plan);
+  const r = await window.electronAPI.createCheckoutSession(plan);
+  if(!r?.success){
+    showToast('Checkout failed: '+(r?.error||'unknown'));
+    return;
+  }
   closeUpgradeModal();
-  showToast(plan==='premium'?'Premium activated (MVP local flow)':'Pro activated (MVP local flow)');
-  showPage('account');
+  showToast('Redirected to checkout page');
 }
 function addMsg(text,cls){const d=document.createElement('div');d.className='msg '+cls;d.textContent=text;chatBox.appendChild(d);chatBox.scrollTop=chatBox.scrollHeight;}
 function renderAttachPreview(){attachPreview.innerHTML='';if(!pendingFiles.length){attachPreview.style.display='none';return;}attachPreview.style.display='flex';pendingFiles.forEach((f,i)=>{const c=document.createElement('span');c.className='chip';c.textContent='FILE '+f.name+' ';const x=document.createElement('button');x.className='alt';x.style.padding='2px 6px';x.textContent='x';x.onclick=()=>{pendingFiles.splice(i,1);renderAttachPreview();};c.appendChild(x);attachPreview.appendChild(c);});}
@@ -205,7 +205,7 @@ async function saveProvider(){const r=await window.electronAPI.saveProviderConfi
 async function setTier(t){await window.electronAPI.setPremiumTier(t);await refreshState();}
 function buyPremium(){showUpgradeModal();}
 function init(){attachBtn.onclick=()=>fileInput.click();slashBtn.onclick=()=>{msg.value=(msg.value.trim()?msg.value+' ':'')+'/';msg.focus();};fileInput.onchange=()=>{const files=[...(fileInput.files||[])];if(!files.length)return;pendingFiles=[...pendingFiles,...files];fileInput.value='';renderAttachPreview();};msg.addEventListener('input',()=>{msg.style.height='auto';msg.style.height=Math.min(msg.scrollHeight,160)+'px';});msg.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}});}
-(async()=>{const lang=localStorage.getItem('myopenclaw.lang')||'en';langSelect.value=lang;langSelect.onchange=()=>tApply(langSelect.value);init();await refreshState();await refreshAgents();renderConversation();tApply(lang);})();
+(async()=>{init();await refreshState();await refreshAgents();renderConversation();tApply('en');})();
 </script>
 <div id="toast" style="position:fixed;right:18px;bottom:18px;min-width:220px;max-width:420px;background:#1f2937;color:#fff;padding:10px 12px;border-radius:10px;box-shadow:0 10px 24px rgba(0,0,0,.25);display:none;z-index:9999"></div>
 
