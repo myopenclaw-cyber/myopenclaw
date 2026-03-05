@@ -25,7 +25,7 @@
     .nav-bottom { position:static; padding:0; align-self:stretch; }
     .nav-bottom #tab-account{background:linear-gradient(135deg,#f4f7ff,#eef2ff);border:1px solid #dbe3ff;color:#4c57a8;font-weight:600;box-shadow:0 4px 10px rgba(99,102,241,.08)}
     .nav-bottom #tab-account.active{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border-color:transparent;box-shadow:0 10px 18px rgba(102,126,234,.35)}
-    .main { padding:18px; }
+    .main { padding:18px; min-width:0; overflow:hidden; }
     .hero { padding:16px 16px; border-radius:14px; background:linear-gradient(90deg,rgba(11,18,48,.72),rgba(18,24,60,.38)), url('./assets/premium/images/hero-banner.jpg') center/cover no-repeat; color:#fff; margin-bottom:12px; min-height:92px; display:flex; align-items:center; border:1px solid rgba(255,255,255,.18); box-shadow:0 10px 24px rgba(30,41,59,.25); }
     .hero h1{font-family:Inter,Arial,sans-serif;font-size:20px;letter-spacing:.2px;text-shadow:0 2px 12px rgba(0,0,0,.35)}
     .card { padding:14px; border:1px solid #e9ecef; border-radius:12px; background:#fff; box-shadow:0 4px 12px rgba(0,0,0,.06); }
@@ -71,7 +71,7 @@
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="gateway" style="justify-content:space-between"><span style="display:flex;align-items:center;gap:8px"><span class="dot"></span><span id="gatewayLabel">Local OpenClaw Gateway Running</span></span><button class="alt" style="padding:4px 8px" onclick="openDashboard()">Dashboard</button></div>
+    <div class="gateway"><span class="dot"></span><span id="gatewayLabel">Local OpenClaw Gateway Running</span></div>
     <div class="row" style="display:none"></div>
     <nav class="nav">
       <div class="chat-nav" style="margin-bottom:4px;">
@@ -171,7 +171,6 @@ function tApply(lang){
   if(closeBtn) closeBtn.textContent = lang==='zh' ? '关闭' : 'Close';
 }
 function showToast(text,ms=2200){const t=document.getElementById("toast"); if(!t)return; t.textContent=text; t.style.display="block"; clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>t.style.display="none",ms);} 
-async function openDashboard(){const r=await window.electronAPI.openGatewayDashboard(); if(!r?.success) showToast('Open dashboard failed: '+(r?.error||'unknown'));}
 function showUpgradeModal(){upgradeModalMask.style.display='flex';}
 function closeUpgradeModal(){upgradeModalMask.style.display='none';}
 function showApiKeyRequiredModal(){
