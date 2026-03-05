@@ -30,7 +30,7 @@ jobs:
         shell: powershell
       
       - name: Upload Windows artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: MyOpenClaw-Windows-x64
           path: dist/**/*.exe
@@ -57,7 +57,7 @@ jobs:
           npx electron-builder --mac --x64 -c build/simple.json --config.compression=maximum
       
       - name: Upload Mac Intel artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: MyOpenClaw-Mac-Intel
           path: dist/**/*.dmg
@@ -84,7 +84,7 @@ jobs:
           npx electron-builder --mac --arm64 -c build/simple.json --config.compression=maximum
       
       - name: Upload Mac Silicon artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: MyOpenClaw-Mac-Silicon
           path: dist/**/*.dmg
@@ -95,7 +95,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: ./artifacts
       
@@ -129,3 +129,4 @@ jobs:
             - No technical knowledge required
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
