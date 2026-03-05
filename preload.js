@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveConfig: (config) => ipcRenderer.invoke('save-config', config),
   sendMessage: (payload) => ipcRenderer.invoke('send-message', payload),
   getGatewayInfo: () => ipcRenderer.invoke('get-gateway-info'),
+  openGatewayDashboard: () => ipcRenderer.invoke('open-gateway-dashboard'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   getAppState: () => ipcRenderer.invoke('get-app-state'),
   getAgentConversation: (agentId) => ipcRenderer.invoke('get-agent-conversation', agentId),

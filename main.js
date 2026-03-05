@@ -11,6 +11,28 @@ let gatewayPort = null;
 let gatewayBaseUrl = null;
 let gatewayProcess = null;
 
+function readGatewayTokenFromConfig() {
+  try {
+    const configPath = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'openclaw.json');
+    if (!fs.existsSync(configPath)) return '';
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8').replace(/^\uFEFF/, ''));
+    return String(config?.gateway?.auth?.token || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function buildDashboardUrl(baseUrl) {
+  const token = readGatewayTokenFromConfig();
+  const u = new URL(baseUrl || gatewayBaseUrl || `http://127.0.0.1:${DEFAULT_PORT}`);
+  if (token) {
+    u.searchParams.set('gatewayToken', token);
+    u.searchParams.set('token', token);
+    u.searchParams.set('x-api-key', token);
+  }
+  return u.toString();
+}
+
 function updateLoadingStatus(message, percent) {
   try {
     if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -572,7 +594,8 @@ function createWindow() {
 
   // 所有外链都走系统默认浏览器
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    const target = /^https?:\/\/127\.0\.0\.1:\d+\/?$/i.test(String(url || '')) ? buildDashboardUrl(url) : url;
+    shell.openExternal(target);
     return { action: 'deny' };
   });
 
@@ -627,23 +650,21 @@ ipcMain.handle('save-config', async (event, config) => {
 
 // 获取 Gateway 信息和 token
 ipcMain.handle('get-gateway-info', async () => {
-  // 读取 token
-  let token = null;
-  try {
-    const configPath = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'openclaw.json');
-    if (fs.existsSync(configPath)) {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf8').replace(/^\uFEFF/, ''));
-      token = config.gateway?.auth?.token;
-    }
-  } catch (err) {
-    console.error('[get-gateway-info] Failed to read token:', err);
-  }
-  
   return {
     port: gatewayPort,
     baseUrl: gatewayBaseUrl,
-    token: token
+    token: readGatewayTokenFromConfig()
   };
+});
+
+ipcMain.handle('open-gateway-dashboard', async () => {
+  try {
+    const url = buildDashboardUrl(gatewayBaseUrl || `http://127.0.0.1:${gatewayPort || DEFAULT_PORT}`);
+    await shell.openExternal(url);
+    return { success: true, url };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 });
 
 ipcMain.handle('open-external', async (event, url) => {

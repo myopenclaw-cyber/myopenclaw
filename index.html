@@ -71,7 +71,7 @@
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="gateway"><span class="dot"></span><span id="gatewayLabel">Local OpenClaw Gateway Running</span></div>
+    <div class="gateway" style="justify-content:space-between"><span style="display:flex;align-items:center;gap:8px"><span class="dot"></span><span id="gatewayLabel">Local OpenClaw Gateway Running</span></span><button class="alt" style="padding:4px 8px" onclick="openDashboard()">Dashboard</button></div>
     <div class="row" style="display:none"></div>
     <nav class="nav">
       <div class="chat-nav" style="margin-bottom:4px;">
@@ -171,6 +171,7 @@ function tApply(lang){
   if(closeBtn) closeBtn.textContent = lang==='zh' ? '关闭' : 'Close';
 }
 function showToast(text,ms=2200){const t=document.getElementById("toast"); if(!t)return; t.textContent=text; t.style.display="block"; clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>t.style.display="none",ms);} 
+async function openDashboard(){const r=await window.electronAPI.openGatewayDashboard(); if(!r?.success) showToast('Open dashboard failed: '+(r?.error||'unknown'));}
 function showUpgradeModal(){upgradeModalMask.style.display='flex';}
 function closeUpgradeModal(){upgradeModalMask.style.display='none';}
 function showApiKeyRequiredModal(){
