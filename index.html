@@ -217,7 +217,7 @@ async function renderConversation(){
   if(!conv.length){
     conv=appState?.conversations?.[currentAgent]||[];
   }
-  if(!conv.length)return addMsg(`Conversation with ${currentAgent} is empty.`,'ai');
+  if(!conv.length)return;
   conv.forEach(m=>addMsg(m.content,m.role==='user'?'user':'ai'));
 }
 async function sendMsg(){const text=msg.value.trim();if(!text&&!pendingFiles.length)return;const note=pendingFiles.length?`\n\n[Attachments: ${pendingFiles.map(f=>f.name).join(', ')}]`:'';addMsg((text||'[Attachment]')+note,'user');msg.value='';const sending=[...pendingFiles];pendingFiles=[];renderAttachPreview();if(sending.length)await simulateUploadProgress();const typingEl=addTypingIndicator();const r=await window.electronAPI.sendMessage({message:(text||'Please process attachments')+note,agentId:currentAgent});if(typingEl&&typingEl.parentNode)typingEl.parentNode.removeChild(typingEl);if(r.success){addMsg(r.response||'Received','ai');await refreshState();}else if(r.noApiKeyConfigured){showApiKeyRequiredModal();showToast(r.error||'Please configure API key first.');}else if(r.premiumRequired){showToast(r.error||'Premium required');}else{addMsg('Failed: '+(r.error||'unknown'),'ai');}}

@@ -551,32 +551,8 @@ async function waitForGateway(maxRetries = 30) {
 }
 
 async function smokeTestChat() {
-  const token = 'myopenclaw_2024_secure_token_a8f3e9d2c1b7f6e5d4c3b2a1';
-  console.log('[smokeTestChat] Sending startup probe...');
-  try {
-    const response = await axios.post(`${gatewayBaseUrl}/v1/chat/completions`, {
-      model: 'openclaw:main',
-      messages: [{ role: 'user', content: 'ping' }],
-      stream: false
-    }, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'x-openclaw-agent-id': 'main'
-      },
-      timeout: 30000
-    });
-
-    if (!response?.data?.choices?.[0]?.message?.content) {
-      throw new Error('probe returned empty message');
-    }
-
-    console.log('[smokeTestChat] OK');
-  } catch (error) {
-    const detail = error?.response?.data ? JSON.stringify(error.response.data) : error.message;
-    console.error('[smokeTestChat] FAILED:', detail);
-    throw new Error(`Gateway chat probe failed: ${detail}`);
-  }
+  console.log('[smokeTestChat] Startup probe skipped to avoid polluting conversation history');
+  return true;
 }
 
 function createWindow() {
@@ -728,7 +704,10 @@ ipcMain.handle('send-message', async (event, payload) => {
     const agentId = payload?.agentId || 'main';
 
     const state = loadAppState();
-    const messages = [{ role: 'user', content: message }];
+    const history = loadAgentConversationFromOpenClaw('main', 20)
+      .filter(m => m && (m.role === 'user' || m.role === 'assistant') && m.content)
+      .map(m => ({ role: m.role, content: m.content }));
+    const messages = [...history, { role: 'user', content: message }].slice(-24);
 
     const userProvider = getUserProviderConfig();
     if (!userProvider) {
