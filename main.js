@@ -260,41 +260,44 @@ function loadAgentConversationFromOpenClaw(agentId = 'main', limit = 80) {
     const sessionsDir = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'agents', agentId, 'sessions');
     if (!fs.existsSync(sessionsDir)) return [];
 
-    let targetSessionFile = '';
+    let sessionFiles = [];
     const sessionsIndex = path.join(sessionsDir, 'sessions.json');
     if (fs.existsSync(sessionsIndex)) {
       const idx = JSON.parse(fs.readFileSync(sessionsIndex, 'utf8').replace(/^\uFEFF/, ''));
       const rows = Object.values(idx || {}).filter(v => v && v.sessionFile);
       rows.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
-      if (rows[0]?.sessionFile) targetSessionFile = rows[0].sessionFile;
+      sessionFiles = rows.map(r => r.sessionFile).filter(f => f && fs.existsSync(f));
     }
 
-    if (!targetSessionFile || !fs.existsSync(targetSessionFile)) {
-      const files = fs.readdirSync(sessionsDir)
+    if (!sessionFiles.length) {
+      sessionFiles = fs.readdirSync(sessionsDir)
         .filter(f => f.endsWith('.jsonl'))
-        .map(f => ({ f, mtime: fs.statSync(path.join(sessionsDir, f)).mtimeMs }))
-        .sort((a, b) => b.mtime - a.mtime);
-      if (!files.length) return [];
-      targetSessionFile = path.join(sessionsDir, files[0].f);
+        .map(f => ({ full: path.join(sessionsDir, f), mtime: fs.statSync(path.join(sessionsDir, f)).mtimeMs }))
+        .sort((a, b) => b.mtime - a.mtime)
+        .map(x => x.full);
     }
 
-    const lines = fs.readFileSync(targetSessionFile, 'utf8').split(/\r?\n/).filter(Boolean);
     const conv = [];
-    for (const line of lines) {
-      let row;
-      try { row = JSON.parse(line); } catch { continue; }
-      if (row?.type !== 'message' || !row.message) continue;
-      const role = row.message.role;
-      if (role !== 'user' && role !== 'assistant') continue;
-      let text = extractTextFromMessageContent(row.message.content);
-      if (!text && row.message.errorMessage) text = row.message.errorMessage;
-      if (!text) continue;
-      const uiRole = role === 'assistant' ? 'assistant' : 'user';
-      text = normalizeConversationText(uiRole, text);
-      if (!text) continue;
-      conv.push({ role: uiRole, content: text, timestamp: row.timestamp || row.message.timestamp || 0 });
+    for (const file of sessionFiles) {
+      const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean);
+      for (const line of lines) {
+        let row;
+        try { row = JSON.parse(line); } catch { continue; }
+        if (row?.type !== 'message' || !row.message) continue;
+        const role = row.message.role;
+        if (role !== 'user' && role !== 'assistant') continue;
+        let text = extractTextFromMessageContent(row.message.content);
+        if (!text && row.message.errorMessage) text = row.message.errorMessage;
+        if (!text) continue;
+        const uiRole = role === 'assistant' ? 'assistant' : 'user';
+        text = normalizeConversationText(uiRole, text);
+        if (!text) continue;
+        conv.push({ role: uiRole, content: text, timestamp: row.timestamp || row.message.timestamp || 0 });
+      }
+      if (conv.length >= limit * 2) break;
     }
 
+    conv.sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0));
     return conv.slice(-Math.max(1, limit));
   } catch (e) {
     console.error('[conversation-load] failed:', e.message);
