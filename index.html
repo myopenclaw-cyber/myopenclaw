@@ -113,11 +113,12 @@
     </div></section>
 
     <section id="keys" class="page" style="display:none"><div class="card">
-      <h3>Provider Config</h3>
-      <div class="row"><input id="providerName" placeholder="Provider Name (default)" value="default"/></div>
-      <div class="row"><input id="modelName" placeholder="Model Name (default)" value="default"/></div>
-      <div class="row"><input id="baseUrl" placeholder="Base URL"/></div>
-      <div class="row"><input id="providerApiKey" placeholder="API Key"/></div>
+      <h3>API Provider Config</h3>
+      <div class="row"><label style="min-width:130px" class="small">Provider Name</label><input id="providerName" placeholder="e.g. openai_main"/></div>
+      <div class="row"><label style="min-width:130px" class="small">Model Name</label><input id="modelName" placeholder="e.g. gpt-4o-mini"/></div>
+      <div class="row"><label style="min-width:130px" class="small">API Type</label><select id="apiType"><option value="openai-completions">openai-completions</option><option value="openai-responses">openai-responses</option><option value="anthropic-messages">anthropic-messages</option><option value="google-generative-ai">google-generative-ai</option></select></div>
+      <div class="row"><label style="min-width:130px" class="small">Base URL</label><input id="baseUrl" placeholder="https://api.openai.com/v1"/></div>
+      <div class="row"><label style="min-width:130px" class="small">API Key</label><input id="providerApiKey" placeholder="sk-..."/></div>
       <div class="small">Provider Name must be unique.</div>
       <div class="row"><button onclick="saveProvider()">Save</button></div>
     </div></section>
@@ -173,8 +174,9 @@ function showToast(text,ms=2200){const t=document.getElementById("toast"); if(!t
 function showUpgradeModal(){upgradeModalMask.style.display='flex';}
 function closeUpgradeModal(){upgradeModalMask.style.display='none';}
 function showApiKeyRequiredModal(){
-  modalProviderName.value = providerName.value || 'default';
-  modalModelName.value = modelName.value || 'default';
+  modalProviderName.value = providerName.value || '';
+  modalModelName.value = modelName.value || '';
+  modalApiType.value = apiType.value || 'openai-completions';
   modalBaseUrl.value = baseUrl.value || '';
   modalProviderApiKey.value = providerApiKey.value || '';
   apiKeyRequiredModal.style.display='flex';
@@ -212,24 +214,35 @@ async function renderConversation(){
 async function sendMsg(){const text=msg.value.trim();if(!text&&!pendingFiles.length)return;const note=pendingFiles.length?`\n\n[Attachments: ${pendingFiles.map(f=>f.name).join(', ')}]`:'';addMsg((text||'[Attachment]')+note,'user');msg.value='';const sending=[...pendingFiles];pendingFiles=[];renderAttachPreview();if(sending.length)await simulateUploadProgress();const r=await window.electronAPI.sendMessage({message:(text||'Please process attachments')+note,agentId:currentAgent});if(r.success){addMsg(r.response||'Received','ai');await refreshState();}else if(r.noApiKeyConfigured){showApiKeyRequiredModal();showToast(r.error||'Please configure API key first.');}else if(r.premiumRequired){showToast(r.error||'Premium required');}else{addMsg('Failed: '+(r.error||'unknown'),'ai');}}
 async function addAgent(){const agents=await window.electronAPI.listAgents();if((appState?.premiumTier||'free')==='free' && agents.length>=1){showUpgradeModal();return;}if((appState?.premiumTier||'free')==='premium' && agents.length>=5){showUpgradeModal();return;}const r=await window.electronAPI.addAgent({id:newAgentId.value.trim(),name:newAgentName.value.trim()});if(!r.success&&r.premiumRequired){showUpgradeModal();return;}if(!r.success)return showToast(r.error||'failed');newAgentId.value='';newAgentName.value='';await refreshState();await refreshAgents();}
 async function saveProvider(){
-  const providerId=(providerName.value||'default').trim()||'default';
-  const modelId=(modelName.value||'default').trim()||'default';
-  const r=await window.electronAPI.saveProviderConfig({providerId,baseUrl:baseUrl.value.trim(),apiKey:providerApiKey.value.trim(),api:'openai-completions',modelId});
+  const providerId=(providerName.value||'').trim();
+  const modelId=(modelName.value||'').trim();
+  const api=(apiType.value||'openai-completions').trim();
+  const r=await window.electronAPI.saveProviderConfig({providerId,baseUrl:baseUrl.value.trim(),apiKey:providerApiKey.value.trim(),api,modelId});
   showToast(r.success?'Saved':'Failed: '+r.error);
 }
 async function saveProviderFromModal(){
-  const providerId=(modalProviderName.value||'default').trim()||'default';
-  const modelId=(modalModelName.value||'default').trim()||'default';
-  const r=await window.electronAPI.saveProviderConfig({providerId,baseUrl:modalBaseUrl.value.trim(),apiKey:modalProviderApiKey.value.trim(),api:'openai-completions',modelId});
+  const providerId=(modalProviderName.value||'').trim();
+  const modelId=(modalModelName.value||'').trim();
+  const api=(modalApiType.value||'openai-completions').trim();
+  const r=await window.electronAPI.saveProviderConfig({providerId,baseUrl:modalBaseUrl.value.trim(),apiKey:modalProviderApiKey.value.trim(),api,modelId});
   if(!r?.success){showToast('Failed: '+(r?.error||'unknown'));return;}
-  providerName.value=providerId; modelName.value=modelId; baseUrl.value=modalBaseUrl.value.trim(); providerApiKey.value=modalProviderApiKey.value.trim();
+  providerName.value=providerId; modelName.value=modelId; apiType.value=api; baseUrl.value=modalBaseUrl.value.trim(); providerApiKey.value=modalProviderApiKey.value.trim();
   closeApiKeyRequiredModal();
   showToast('Saved. Please send again.');
+}
+async function loadProvider(){
+  const r=await window.electronAPI.getProviderConfig();
+  if(!r?.success||!r?.provider)return;
+  providerName.value=r.provider.providerId||'';
+  modelName.value=r.provider.modelId||'';
+  apiType.value=r.provider.api||'openai-completions';
+  baseUrl.value=r.provider.baseUrl||'';
+  providerApiKey.value=r.provider.apiKey||'';
 }
 async function setTier(t){await window.electronAPI.setPremiumTier(t);await refreshState();}
 function buyPremium(){showUpgradeModal();}
 function init(){attachBtn.onclick=()=>fileInput.click();slashBtn.onclick=()=>{msg.value=(msg.value.trim()?msg.value+' ':'')+'/';msg.focus();};fileInput.onchange=()=>{const files=[...(fileInput.files||[])];if(!files.length)return;pendingFiles=[...pendingFiles,...files];fileInput.value='';renderAttachPreview();};msg.addEventListener('input',()=>{msg.style.height='auto';msg.style.height=Math.min(msg.scrollHeight,160)+'px';});msg.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}});}
-(async()=>{init();await refreshState();await refreshAgents();renderConversation();tApply('en');})();
+(async()=>{init();await refreshState();await refreshAgents();await loadProvider();renderConversation();tApply('en');})();
 </script>
 <div id="toast" style="position:fixed;right:18px;bottom:18px;min-width:220px;max-width:420px;background:#1f2937;color:#fff;padding:10px 12px;border-radius:10px;box-shadow:0 10px 24px rgba(0,0,0,.25);display:none;z-index:9999"></div>
 
@@ -237,10 +250,11 @@ function init(){attachBtn.onclick=()=>fileInput.click();slashBtn.onclick=()=>{ms
   <div class="modal" style="max-width:620px">
     <h3 style="font-size:22px;margin-bottom:8px">Configure API Key Required</h3>
     <div class="small" style="margin-bottom:10px">OpenClaw depends on an LLM model to provide intelligence. Please configure your API key.</div>
-    <div class="row"><input id="modalProviderName" placeholder="Provider Name (default)" value="default"/></div>
-    <div class="row"><input id="modalModelName" placeholder="Model Name (default)" value="default"/></div>
-    <div class="row"><input id="modalBaseUrl" placeholder="Base URL"/></div>
-    <div class="row"><input id="modalProviderApiKey" placeholder="API Key"/></div>
+    <div class="row"><label style="min-width:130px" class="small">Provider Name</label><input id="modalProviderName" placeholder="e.g. openai_main"/></div>
+    <div class="row"><label style="min-width:130px" class="small">Model Name</label><input id="modalModelName" placeholder="e.g. gpt-4o-mini"/></div>
+    <div class="row"><label style="min-width:130px" class="small">API Type</label><select id="modalApiType"><option value="openai-completions">openai-completions</option><option value="openai-responses">openai-responses</option><option value="anthropic-messages">anthropic-messages</option><option value="google-generative-ai">google-generative-ai</option></select></div>
+    <div class="row"><label style="min-width:130px" class="small">Base URL</label><input id="modalBaseUrl" placeholder="https://api.openai.com/v1"/></div>
+    <div class="row"><label style="min-width:130px" class="small">API Key</label><input id="modalProviderApiKey" placeholder="sk-..."/></div>
     <div class="row" style="justify-content:flex-end"><button class="alt" onclick="closeApiKeyRequiredModal()">Cancel</button><button onclick="saveProviderFromModal()">Save API Key</button></div>
   </div>
 </div>

@@ -881,6 +881,7 @@ ipcMain.handle('get-provider-config', async () => {
       provider: {
         providerId,
         modelId: p?.models?.[0]?.id || 'default',
+        api: p?.api || 'openai-completions',
         baseUrl: p?.baseUrl || '',
         apiKey: p?.apiKey || ''
       }
