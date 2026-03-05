@@ -2,11 +2,9 @@ node_modules/
 dist/
 dist-*/
 *.log
-resources/openclaw-deps/
 resources/openclaw/
 resources/.openclaw-myopenclaw/agents/
 resources/.openclaw-myopenclaw/canvas/
 resources/.openclaw-myopenclaw/
-resources/openclaw-deps/
 resources/openclaw/
 logo-openclaw.jpg

@@ -1,0 +1,33 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 2015
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "libopus", "deps\libopus.vcxproj", "{C4C86819-B273-5B73-3E27-AED12B45B439}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "opus", "opus.vcxproj", "{A851DDCC-D1D9-6913-2414-972EF63444DF}"
+	ProjectSection(ProjectDependencies) = postProject
+		{C4C86819-B273-5B73-3E27-AED12B45B439} = {C4C86819-B273-5B73-3E27-AED12B45B439}
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "(deps)", "..\deps", "{9D1E84F5-10E2-1E2A-A251-3C0D26F77050}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Release|x64 = Release|x64
+		Debug|x64 = Debug|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A851DDCC-D1D9-6913-2414-972EF63444DF}.Release|x64.ActiveCfg = Release|x64
+		{A851DDCC-D1D9-6913-2414-972EF63444DF}.Release|x64.Build.0 = Release|x64
+		{A851DDCC-D1D9-6913-2414-972EF63444DF}.Debug|x64.ActiveCfg = Debug|x64
+		{A851DDCC-D1D9-6913-2414-972EF63444DF}.Debug|x64.Build.0 = Debug|x64
+		{C4C86819-B273-5B73-3E27-AED12B45B439}.Release|x64.ActiveCfg = Release|x64
+		{C4C86819-B273-5B73-3E27-AED12B45B439}.Release|x64.Build.0 = Release|x64
+		{C4C86819-B273-5B73-3E27-AED12B45B439}.Debug|x64.ActiveCfg = Debug|x64
+		{C4C86819-B273-5B73-3E27-AED12B45B439}.Debug|x64.Build.0 = Debug|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{C4C86819-B273-5B73-3E27-AED12B45B439} = {9D1E84F5-10E2-1E2A-A251-3C0D26F77050}
+	EndGlobalSection
+EndGlobal
