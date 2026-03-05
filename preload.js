@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getGatewayInfo: () => ipcRenderer.invoke('get-gateway-info'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   getAppState: () => ipcRenderer.invoke('get-app-state'),
+  getAgentConversation: (agentId) => ipcRenderer.invoke('get-agent-conversation', agentId),
   setUserApiKey: (apiKey) => ipcRenderer.invoke('set-user-api-key', apiKey),
   setPremiumStatus: (isPremium) => ipcRenderer.invoke('set-premium-status', isPremium),
   setPremiumTier: (tier) => ipcRenderer.invoke('set-premium-tier', tier),

@@ -81,7 +81,8 @@ function saveAppState(state) {
 function loadEmbeddedConfig() {
   try {
     if (!fs.existsSync(EMBEDDED_CONFIG_FILE)) return {};
-    return JSON.parse(fs.readFileSync(EMBEDDED_CONFIG_FILE, 'utf8'));
+    const raw = fs.readFileSync(EMBEDDED_CONFIG_FILE, 'utf8').replace(/^\uFEFF/, '');
+    return JSON.parse(raw);
   } catch (e) {
     console.error('[embedded-config] load failed:', e.message);
     return {};
@@ -141,6 +142,62 @@ function loadLocalAppConfig() {
 function saveLocalAppConfig(cfg) {
   fs.mkdirSync(path.dirname(LOCAL_APP_CONFIG_FILE), { recursive: true });
   fs.writeFileSync(LOCAL_APP_CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf8');
+}
+
+function extractTextFromMessageContent(content) {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  const parts = [];
+  for (const c of content) {
+    if (!c) continue;
+    if (typeof c === 'string') parts.push(c);
+    else if (c.type === 'text' && c.text) parts.push(String(c.text));
+  }
+  return parts.join('\n').trim();
+}
+
+function loadAgentConversationFromOpenClaw(agentId = 'main', limit = 80) {
+  try {
+    const sessionsDir = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'agents', agentId, 'sessions');
+    if (!fs.existsSync(sessionsDir)) return [];
+
+    let targetSessionFile = '';
+    const sessionsIndex = path.join(sessionsDir, 'sessions.json');
+    if (fs.existsSync(sessionsIndex)) {
+      const idx = JSON.parse(fs.readFileSync(sessionsIndex, 'utf8').replace(/^\uFEFF/, ''));
+      const rows = Object.values(idx || {}).filter(v => v && v.sessionFile);
+      rows.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
+      if (rows[0]?.sessionFile) targetSessionFile = rows[0].sessionFile;
+    }
+
+    if (!targetSessionFile || !fs.existsSync(targetSessionFile)) {
+      const files = fs.readdirSync(sessionsDir)
+        .filter(f => f.endsWith('.jsonl'))
+        .map(f => ({ f, mtime: fs.statSync(path.join(sessionsDir, f)).mtimeMs }))
+        .sort((a, b) => b.mtime - a.mtime);
+      if (!files.length) return [];
+      targetSessionFile = path.join(sessionsDir, files[0].f);
+    }
+
+    const lines = fs.readFileSync(targetSessionFile, 'utf8').split(/\r?\n/).filter(Boolean);
+    const conv = [];
+    for (const line of lines) {
+      let row;
+      try { row = JSON.parse(line); } catch { continue; }
+      if (row?.type !== 'message' || !row.message) continue;
+      const role = row.message.role;
+      if (role !== 'user' && role !== 'assistant') continue;
+      let text = extractTextFromMessageContent(row.message.content);
+      if (!text && row.message.errorMessage) text = row.message.errorMessage;
+      if (!text) continue;
+      conv.push({ role: role === 'assistant' ? 'assistant' : 'user', content: text, timestamp: row.timestamp || row.message.timestamp || 0 });
+    }
+
+    return conv.slice(-Math.max(1, limit));
+  } catch (e) {
+    console.error('[conversation-load] failed:', e.message);
+    return [];
+  }
 }
 
 async function ensureBackendUser(state) {
@@ -515,7 +572,7 @@ ipcMain.handle('get-gateway-info', async () => {
   try {
     const configPath = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'openclaw.json');
     if (fs.existsSync(configPath)) {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8').replace(/^\uFEFF/, ''));
       token = config.gateway?.auth?.token;
     }
   } catch (err) {
@@ -648,6 +705,11 @@ ipcMain.handle('get-app-state', async () => {
     gate = { allow: false, error: e.message };
   }
   return { ...state, gate };
+});
+
+ipcMain.handle('get-agent-conversation', async (event, agentId = 'main') => {
+  const conversation = loadAgentConversationFromOpenClaw(agentId, 120);
+  return { success: true, conversation };
 });
 
 ipcMain.handle('set-user-api-key', async (event, apiKey) => {
