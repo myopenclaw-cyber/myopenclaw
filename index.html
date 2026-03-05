@@ -40,6 +40,7 @@
     .input-mask { height: 12px; background: linear-gradient(to bottom, rgba(248,249,250,0), #fff); margin-top: 8px; }
     .input-bar { position: sticky; bottom: 0; background:#fff; padding-top:8px; border-top:1px solid #E5E7EB; box-shadow:0 -6px 16px rgba(0,0,0,.05); }
     .msg { max-width:78%; margin:12px 0; padding:10px 12px; border-radius:12px; line-height:1.5; }
+    .msg-time{display:block;margin-top:6px;font-size:11px;opacity:.7}
     .msg.user { margin-left:auto; color:#fff; background:linear-gradient(135deg,#4c86f2,#5e4fd6); }
     .msg.ai { position:relative; padding-left:32px; background:#F8F9FF; border:1px solid rgba(102,126,234,.2); }
     .msg.ai::before { content:'BOT'; position:absolute; left:8px; top:10px; font-size:10px; color:#667eea; }
@@ -128,7 +129,7 @@
       <div class="row"><button onclick="saveProvider()">Save</button></div>
     </div></section>
 
-    <section id="config" class="page" style="display:none"><div class="card"><h3>Config</h3><div class="small" style="margin-bottom:10px">Reset all OpenClaw model-related config to factory defaults.</div><div class="row" style="justify-content:flex-end"><button class="danger" onclick="resetAllModelConfig()">Reset All Config</button></div></div></section>
+    <section id="config" class="page" style="display:none"><div class="card"><h3>Config</h3><div class="row" style="justify-content:space-between;align-items:center"><div style="font-size:14px;color:#4b5563">Reset all OpenClaw model-related config to factory defaults.</div><button class="danger" onclick="resetAllModelConfig()">Reset All Config</button></div></div></section>
 
     <section id="account" class="page" style="display:none"><div class="card"><h3>Account & Plan</h3><p id="usageInfo" class="small"></p><div class="row"><button class="alt" onclick="setTier('free')">Set Free</button><button class="alt" onclick="setTier('premium')">Set Premium</button><button class="alt" onclick="setTier('pro')">Set Pro</button><button onclick="buyPremium()">Upgrade</button></div></div></section>
   </main>
@@ -200,7 +201,8 @@ async function choosePlan(plan){
   closeUpgradeModal();
   showToast('Redirected to checkout page');
 }
-function addMsg(text,cls){const d=document.createElement('div');d.className='msg '+cls;d.textContent=text;chatBox.appendChild(d);chatBox.scrollTop=chatBox.scrollHeight;return d;}
+function fmtTime(ts){const d=ts?new Date(ts):new Date();const p=n=>String(n).padStart(2,'0');return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;}
+function addMsg(text,cls,ts){const d=document.createElement('div');d.className='msg '+cls;const body=document.createElement('div');body.textContent=text;const tm=document.createElement('span');tm.className='msg-time';tm.textContent=fmtTime(ts);d.appendChild(body);d.appendChild(tm);chatBox.appendChild(d);chatBox.scrollTop=chatBox.scrollHeight;return d;}
 function addTypingIndicator(){const d=document.createElement('div');d.className='msg ai';d.innerHTML="<span class='typing'><i></i><i></i><i></i></span>";chatBox.appendChild(d);chatBox.scrollTop=chatBox.scrollHeight;return d;}
 function renderAttachPreview(){attachPreview.innerHTML='';if(!pendingFiles.length){attachPreview.style.display='none';return;}attachPreview.style.display='flex';pendingFiles.forEach((f,i)=>{const c=document.createElement('span');c.className='chip';c.textContent='FILE '+f.name+' ';const x=document.createElement('button');x.className='alt';x.style.padding='2px 6px';x.textContent='x';x.onclick=()=>{pendingFiles.splice(i,1);renderAttachPreview();};c.appendChild(x);attachPreview.appendChild(c);});}
 async function simulateUploadProgress(){sendProgressWrap.style.display='block';let v=0;while(v<100){await new Promise(r=>setTimeout(r,80));v+=Math.floor(Math.random()*12)+6;if(v>100)v=100;sendProgressBar.style.width=v+'%';sendProgressText.textContent='Sending attachments... '+v+'%';}await new Promise(r=>setTimeout(r,150));sendProgressWrap.style.display='none';sendProgressBar.style.width='0%';}
@@ -223,7 +225,7 @@ async function renderConversation(){
     return true;
   });
   if(!conv.length)return;
-  conv.forEach(m=>addMsg(m.content,m.role==='user'?'user':'ai'));
+  conv.forEach(m=>addMsg(m.content,m.role==='user'?'user':'ai',m.timestamp));
 }
 async function sendMsg(){const text=msg.value.trim();if(!text&&!pendingFiles.length)return;const note=pendingFiles.length?`\n\n[Attachments: ${pendingFiles.map(f=>f.name).join(', ')}]`:'';addMsg((text||'[Attachment]')+note,'user');msg.value='';const sending=[...pendingFiles];pendingFiles=[];renderAttachPreview();if(sending.length)await simulateUploadProgress();const typingEl=addTypingIndicator();const r=await window.electronAPI.sendMessage({message:(text||'Please process attachments')+note,agentId:currentAgent});if(typingEl&&typingEl.parentNode)typingEl.parentNode.removeChild(typingEl);if(r.success){addMsg(r.response||'Received','ai');await refreshState();}else if(r.noApiKeyConfigured){showApiKeyRequiredModal();showToast(r.error||'Please configure API key first.');}else if(r.premiumRequired){showToast(r.error||'Premium required');}else{addMsg('Failed: '+(r.error||'unknown'),'ai');}}
 async function addAgent(){const agents=await window.electronAPI.listAgents();if((appState?.premiumTier||'free')==='free' && agents.length>=1){showUpgradeModal();return;}if((appState?.premiumTier||'free')==='premium' && agents.length>=5){showUpgradeModal();return;}const r=await window.electronAPI.addAgent({id:newAgentId.value.trim(),name:newAgentName.value.trim()});if(!r.success&&r.premiumRequired){showUpgradeModal();return;}if(!r.success)return showToast(r.error||'failed');newAgentId.value='';newAgentName.value='';await refreshState();await refreshAgents();}
