@@ -21,6 +21,8 @@
     .chat-agent-item.active { background:#F3F0FF; }
     .chat-agent-dot { width:6px; height:6px; border-radius:50%; background:#8c7cf5; }
     .nav-bottom { margin-top:auto; }
+    .nav-bottom #tab-account{background:linear-gradient(135deg,#f4f7ff,#eef2ff);border:1px solid #dbe3ff;color:#4c57a8;font-weight:600;box-shadow:0 4px 10px rgba(99,102,241,.08)}
+    .nav-bottom #tab-account.active{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border-color:transparent;box-shadow:0 10px 18px rgba(102,126,234,.35)}
     .main { padding:18px; }
     .hero { padding:16px 16px; border-radius:14px; background:linear-gradient(90deg,rgba(11,18,48,.72),rgba(18,24,60,.38)), url('./assets/premium/images/hero-banner.jpg') center/cover no-repeat; color:#fff; margin-bottom:12px; min-height:92px; display:flex; align-items:center; border:1px solid rgba(255,255,255,.18); box-shadow:0 10px 24px rgba(30,41,59,.25); }
     .hero h1{font-family:Inter,Arial,sans-serif;font-size:20px;letter-spacing:.2px;text-shadow:0 2px 12px rgba(0,0,0,.35)}
@@ -114,8 +116,9 @@
 
     <section id="keys" class="page" style="display:none"><div class="card">
       <h3>Provider Config</h3>
-      <div class="row"><select id="providerId"><option>openai</option><option>openai-codex</option><option>aws2</option><option>aws</option><option>moonshot</option><option>openrouter</option></select><input id="baseUrl" placeholder="Base URL"/></div>
-      <div class="row"><input id="providerApiKey" placeholder="API Key"/><input id="modelSearch" list="modelList" placeholder="Search/select model"/><datalist id="modelList"><option value="openai/gpt-4o-mini"></option><option value="openai/gpt-4o"></option><option value="openai-codex/gpt-5.3-codex"></option><option value="aws2/claude-sonnet-4-6"></option><option value="aws/claude-opus-4-6"></option><option value="moonshot/kimi-k2.5"></option></datalist></div>
+      <div class="row"><input id="baseUrl" placeholder="Base URL"/></div>
+      <div class="row"><input id="providerApiKey" placeholder="API Key"/></div>
+      <div class="small">Provider/Model use default values automatically.</div>
       <div class="row"><button onclick="saveProvider()">Save</button></div>
     </div></section>
 
@@ -153,7 +156,7 @@ agentList.innerHTML='';agents.forEach(a=>{const li=document.createElement('li');
 function renderConversation(){chatBox.innerHTML='';const conv=appState?.conversations?.[currentAgent]||[];if(!conv.length)return addMsg(`Conversation with ${currentAgent} is empty.`,'ai');conv.forEach(m=>addMsg(m.content,m.role==='user'?'user':'ai'));}
 async function sendMsg(){const text=msg.value.trim();if(!text&&!pendingFiles.length)return;const note=pendingFiles.length?`\n\n[Attachments: ${pendingFiles.map(f=>f.name).join(', ')}]`:'';addMsg((text||'[Attachment]')+note,'user');msg.value='';const sending=[...pendingFiles];pendingFiles=[];renderAttachPreview();if(sending.length)await simulateUploadProgress();const r=await window.electronAPI.sendMessage({message:(text||'Please process attachments')+note,agentId:currentAgent});if(r.success){addMsg(r.response||'Received','ai');await refreshState();}else if(r.premiumRequired){showToast(r.error||'Premium required');}else{addMsg('Failed: '+(r.error||'unknown'),'ai');}}
 async function addAgent(){const agents=await window.electronAPI.listAgents();if((appState?.premiumTier||'free')==='free' && agents.length>=1){showUpgradeModal();return;}if((appState?.premiumTier||'free')==='premium' && agents.length>=5){showUpgradeModal();return;}const r=await window.electronAPI.addAgent({id:newAgentId.value.trim(),name:newAgentName.value.trim()});if(!r.success&&r.premiumRequired){showUpgradeModal();return;}if(!r.success)return showToast(r.error||'failed');newAgentId.value='';newAgentName.value='';await refreshState();await refreshAgents();}
-async function saveProvider(){const map={aws:'anthropic-messages',aws2:'anthropic-messages',openai:'openai-completions','openai-codex':'openai-completions',moonshot:'openai-completions',openrouter:'openai-completions'};const r=await window.electronAPI.saveProviderConfig({providerId:providerId.value,baseUrl:baseUrl.value.trim(),apiKey:providerApiKey.value.trim(),api:map[providerId.value]||'openai-completions',modelId:modelSearch.value.trim()});showToast(r.success?'Saved':'Failed: '+r.error);}
+async function saveProvider(){const r=await window.electronAPI.saveProviderConfig({providerId:'default_provider',baseUrl:baseUrl.value.trim(),apiKey:providerApiKey.value.trim(),api:'openai-completions',modelId:'openai/gpt-4o-mini'});showToast(r.success?'Saved':'Failed: '+r.error);}
 async function setTier(t){await window.electronAPI.setPremiumTier(t);await refreshState();}
 function buyPremium(){showUpgradeModal();}
 function init(){attachBtn.onclick=()=>fileInput.click();slashBtn.onclick=()=>{msg.value=(msg.value.trim()?msg.value+' ':'')+'/';msg.focus();};fileInput.onchange=()=>{const files=[...(fileInput.files||[])];if(!files.length)return;pendingFiles=[...pendingFiles,...files];fileInput.value='';renderAttachPreview();};msg.addEventListener('input',()=>{msg.style.height='auto';msg.style.height=Math.min(msg.scrollHeight,160)+'px';});msg.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}});}
