@@ -89,8 +89,10 @@ jobs:
           name: MyOpenClaw-Mac-Silicon
           path: dist-mac-intel/**/*
 
-  create-release:
-    needs: [build-windows, build-mac-intel, build-mac-silicon]
+  permissions:
+  contents: write
+
+   [build-windows, build-mac-intel, build-mac-silicon]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
@@ -107,7 +109,7 @@ jobs:
         with:
           files: |
             ./artifacts/**/*.exe
-            ./artifacts/**/*.dmg
+            ./artifacts/**/*.zip
           draft: false
           prerelease: false
           body: |
@@ -115,8 +117,8 @@ jobs:
             
             ### Downloads
             - **Windows 10/11 (64-bit)**: MyOpenClaw-*-simple-windows.exe
-            - **macOS Intel**: MyOpenClaw-*-simple-mac_intel.dmg
-            - **macOS Apple Silicon (M1/M2/M3/M4)**: MyOpenClaw-*-simple-mac_silicon.dmg
+            - **macOS Intel**: MyOpenClaw-*-simple-mac_intel.zip
+            - **macOS Apple Silicon (M1/M2/M3/M4)**: MyOpenClaw-*-simple-mac_silicon.zip
             
             ### Installation
             1. Download the appropriate file for your platform
@@ -129,6 +131,7 @@ jobs:
             - No technical knowledge required
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
 
 
