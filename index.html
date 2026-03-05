@@ -217,6 +217,11 @@ async function renderConversation(){
   if(!conv.length){
     conv=appState?.conversations?.[currentAgent]||[];
   }
+  conv = conv.filter(m=>{
+    const t=String(m?.content||'').trim().toLowerCase();
+    if((m?.role==='user' && t==='ping') || (m?.role==='assistant' && (t==='pong' || t==='pong!'))) return false;
+    return true;
+  });
   if(!conv.length)return;
   conv.forEach(m=>addMsg(m.content,m.role==='user'?'user':'ai'));
 }
