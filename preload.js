@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getGatewayInfo: () => ipcRenderer.invoke('get-gateway-info'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   getAppState: () => ipcRenderer.invoke('get-app-state'),
+  getAgentConversation: (agentId) => ipcRenderer.invoke('get-agent-conversation', agentId),
   setUserApiKey: (apiKey) => ipcRenderer.invoke('set-user-api-key', apiKey),
   setPremiumStatus: (isPremium) => ipcRenderer.invoke('set-premium-status', isPremium),
   setPremiumTier: (tier) => ipcRenderer.invoke('set-premium-tier', tier),
@@ -17,5 +18,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setActiveAgent: (id) => ipcRenderer.invoke('set-active-agent', id),
   saveProviderConfig: (payload) => ipcRenderer.invoke('save-provider-config', payload),
   saveAgentChannelConfig: (payload) => ipcRenderer.invoke('save-agent-channel-config', payload),
-  getStartupError: () => ipcRenderer.invoke('get-startup-error')
+  getStartupError: () => ipcRenderer.invoke('get-startup-error'),
+  getLocalAppConfig: () => ipcRenderer.invoke('get-local-app-config'),
+  saveLocalAppConfig: (patch) => ipcRenderer.invoke('save-local-app-config', patch)
 });

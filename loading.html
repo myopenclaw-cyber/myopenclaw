@@ -7,19 +7,19 @@
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:Inter,Segoe UI,Arial,sans-serif;background:#f6f7fb;min-height:100vh;display:grid;place-items:center;color:#1f2430}
-    .wrap{width:min(760px,92vw);text-align:center;padding:28px 20px}
+    .wrap{width:min(860px,92vw);text-align:center;padding:20px 20px}
     .rings{position:relative;width:140px;height:140px;margin:0 auto 18px}
     .ring{position:absolute;inset:0;border-radius:50%;border:4px solid transparent;border-top-color:#6f63dd;border-right-color:#7e8ef6;animation:spin 2.6s linear infinite;opacity:.9}
     .r2{inset:14px;animation-duration:2s;opacity:.7}.r3{inset:28px;animation-duration:1.5s;opacity:.5}
     .bot{position:absolute;inset:42px;display:grid;place-items:center;border-radius:50%;background:#fff;box-shadow:0 8px 24px rgba(99,90,200,.2);font-size:28px}
     @keyframes spin{to{transform:rotate(360deg)}}
-    h1{font-size:44px;line-height:1.15;margin-bottom:10px;color:#2d2f47;font-weight:750}
-    .checks{margin:0 auto 14px;width:fit-content;text-align:left;color:#2f3348;font-size:28px;line-height:1.55}
+    h1{display:none}
+    .checks{margin:6px auto 16px;width:fit-content;text-align:left;color:#2f3348;font-size:28px;line-height:1.5}
     .ok{color:#27ae60;margin-right:8px}
-    .steps{color:#5a5f73;font-size:20px;line-height:1.4;min-height:90px;margin:8px 0 12px}
+    .tips{margin:8px auto 14px;font-size:14px;color:#6b7280;background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:8px 12px;display:inline-block}
+    .steps{color:#5a5f73;font-size:20px;line-height:1.4;min-height:56px;margin:8px 0 12px}
     .bar{width:100%;height:12px;border-radius:999px;background:#eceef8;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(110,99,214,.12),0 6px 18px rgba(107,94,218,.2);margin-top:6px}
-    .fill{height:100%;width:35%;border-radius:999px;background:linear-gradient(90deg,#6b5eda,#7d84f5);animation:loading 2.8s ease-in-out infinite}
-    @keyframes loading{0%{transform:translateX(-120%)}60%{transform:translateX(180%)}100%{transform:translateX(260%)}}
+    .fill{height:100%;width:48%;border-radius:999px;background:linear-gradient(90deg,#6b5eda,#7d84f5);transition:width .35s ease}
     .progress{margin-top:10px;color:#484f6a;font-size:28px;font-weight:600}
   </style>
 </head>
@@ -33,50 +33,67 @@
     <h1 id="title">Preparing your workspace...</h1>
 
     <div class="checks" id="checks">
-      <div><span class="ok">✅</span>Setup is easy</div>
+      <div><span class="ok">✅</span>Easy setup</div>
       <div><span class="ok">✅</span>No complex CLI configuration</div>
       <div><span class="ok">✅</span>5 minutes to start</div>
       <div><span class="ok">✅</span>Full OpenClaw capabilities</div>
     </div>
 
+    <div class="tips" id="tip">First launch needs to download OpenClaw runtime. It may take a while, please be patient.</div>
+
     <div class="steps" id="steps">
-      <div>Loading modules...</div>
       <div>Establishing secure connections...</div>
-      <div>Done with prerequisites.</div>
     </div>
 
-    <div class="bar"><div class="fill"></div></div>
-    <div class="progress" id="progress">Loading agents... 42%</div>
+    <div class="bar"><div class="fill" id="fill"></div></div>
+    <div class="progress" id="progress">Loading ... 48%</div>
   </div>
 
   <script>
-    const lang = localStorage.getItem('myopenclaw.lang') || 'en';
-    const title = document.getElementById('title');
-    const checks = document.getElementById('checks');
-    const steps = document.getElementById('steps');
     const progress = document.getElementById('progress');
+    const steps = document.getElementById('steps');
+    const fill = document.getElementById('fill');
+    const lang = localStorage.getItem('myopenclaw.lang') || 'en';
 
     if (lang === 'zh') {
-      title.textContent = '正在准备你的工作区...';
-      checks.innerHTML = `
+      document.getElementById('title').textContent = '正在准备你的工作区...';
+      document.getElementById('checks').innerHTML = `
         <div><span class="ok">✅</span>安装简单</div>
         <div><span class="ok">✅</span>无需复杂命令行配置</div>
         <div><span class="ok">✅</span>5分钟即可启动</div>
         <div><span class="ok">✅</span>完整 OpenClaw 能力</div>
       `;
-      steps.innerHTML = `
-        <div>正在加载模块...</div>
-        <div>正在建立安全连接...</div>
-        <div>先决条件已完成。</div>
-      `;
+      document.getElementById('tip').textContent = '首次启动需要下载 OpenClaw 运行时，会花费一些时间，请耐心等待。';
+      steps.innerHTML = '<div>正在建立安全连接...</div>';
+      progress.textContent = 'Loading ... 48%';
     }
 
-    let v = 42;
+    window.setLoadingState = (message, pct) => {
+      const p = Math.max(1, Math.min(100, Number(pct || 0)));
+      steps.innerHTML = `<div>${message}</div>`;
+      fill.style.width = p + '%';
+      progress.textContent = `Loading ... ${p}%`;
+    };
+
+    window.setRuntimeDownloadNeeded = (needed) => {
+      const el = document.getElementById('tip');
+      if (!el) return;
+      el.style.display = needed ? 'inline-block' : 'none';
+    };
+
+    const fallbackSteps = [
+      ['Establishing secure connections...', 48],
+      ['Downloading openclaw ...', 56],
+      ['Launching openclaw gateway...', 82],
+      ['Finalizing startup...', 95]
+    ];
+    let i = 0;
     setInterval(() => {
-      v += Math.floor(Math.random() * 4) + 1;
-      if (v > 95) v = 68;
-      progress.textContent = lang === 'zh' ? `正在加载 agents... ${v}%` : `Loading agents... ${v}%`;
-    }, 900);
+      if (window.__REAL_LOADING_DRIVEN__) return;
+      i = (i + 1) % fallbackSteps.length;
+      const [m, p] = fallbackSteps[i];
+      window.setLoadingState(m, p);
+    }, 1500);
   </script>
 </body>
 </html>

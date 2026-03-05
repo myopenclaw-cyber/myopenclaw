@@ -11,16 +11,34 @@ let gatewayPort = null;
 let gatewayBaseUrl = null;
 let gatewayProcess = null;
 
+function updateLoadingStatus(message, percent) {
+  try {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const safeMsg = String(message || '').replace(/`/g, '\\`').replace(/\\/g, '\\\\');
+    const safePct = Number(percent || 0);
+    mainWindow.webContents.executeJavaScript(`window.__REAL_LOADING_DRIVEN__=true; if (window.setLoadingState) { window.setLoadingState(\`${safeMsg}\`, ${safePct}); }`, true).catch(() => {});
+  } catch {}
+}
+
+function setRuntimeDownloadNeeded(needed) {
+  try {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.webContents.executeJavaScript(`if (window.setRuntimeDownloadNeeded) { window.setRuntimeDownloadNeeded(${needed ? 'true' : 'false'}); }`, true).catch(() => {});
+  } catch {}
+}
+
 const OPENCLAW_CONFIG_DIR = path.join(os.homedir(), '.openclaw');
 const CONFIG_FILE = path.join(OPENCLAW_CONFIG_DIR, 'openclaw.json');
 const DEFAULT_PORT = 18800;
 const EMBEDDED_CONFIG_FILE = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'openclaw.json');
 const APP_STATE_FILE = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'app-state.json');
+const LOCAL_APP_CONFIG_FILE = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'local-app-config.json');
 
 function getDefaultAppState() {
   return {
     premiumTier: 'free', // free | premium | pro
     isPremium: false,
+    backendUserId: '',
     freeQuotaUsed: 0,
     userApiKey: '',
     userApiKeyQuotaUsed: 0,
@@ -63,7 +81,8 @@ function saveAppState(state) {
 function loadEmbeddedConfig() {
   try {
     if (!fs.existsSync(EMBEDDED_CONFIG_FILE)) return {};
-    return JSON.parse(fs.readFileSync(EMBEDDED_CONFIG_FILE, 'utf8'));
+    const raw = fs.readFileSync(EMBEDDED_CONFIG_FILE, 'utf8').replace(/^\uFEFF/, '');
+    return JSON.parse(raw);
   } catch (e) {
     console.error('[embedded-config] load failed:', e.message);
     return {};
@@ -74,6 +93,150 @@ function saveEmbeddedConfig(config) {
   const dir = path.dirname(EMBEDDED_CONFIG_FILE);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(EMBEDDED_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
+}
+
+function hasUsableProviderConfig() {
+  const cfg = loadEmbeddedConfig();
+  const providers = cfg?.models?.providers || {};
+  const list = Object.values(providers);
+  return list.some(p => (p?.apiKey && String(p.apiKey).trim()) || (p?.baseUrl && String(p.baseUrl).trim() && p?.api));
+}
+
+function getDefaultLocalAppConfig() {
+  return {
+    backend: {
+      baseUrl: "",
+      apiKey: "",
+      webhookSecret: ""
+    },
+    stripe: {
+      publishableKey: "pk_test_mock_replace_me",
+      secretKey: "sk_test_mock_replace_me",
+      webhookSecret: "whsec_mock_replace_me",
+      pricePremiumMonthly: "",
+      priceProMonthly: "",
+      priceProYearly: ""
+    },
+    auth: {
+      jwtSecret: "mock_jwt_secret_replace_me",
+      deviceBindSalt: "mock_device_bind_salt_replace_me"
+    }
+  };
+}
+
+function loadLocalAppConfig() {
+  try {
+    if (!fs.existsSync(LOCAL_APP_CONFIG_FILE)) {
+      const def = getDefaultLocalAppConfig();
+      fs.mkdirSync(path.dirname(LOCAL_APP_CONFIG_FILE), { recursive: true });
+      fs.writeFileSync(LOCAL_APP_CONFIG_FILE, JSON.stringify(def, null, 2), 'utf8');
+      return def;
+    }
+    return { ...getDefaultLocalAppConfig(), ...JSON.parse(fs.readFileSync(LOCAL_APP_CONFIG_FILE, 'utf8')) };
+  } catch (e) {
+    console.error('[local-app-config] load failed:', e.message);
+    return getDefaultLocalAppConfig();
+  }
+}
+
+function saveLocalAppConfig(cfg) {
+  fs.mkdirSync(path.dirname(LOCAL_APP_CONFIG_FILE), { recursive: true });
+  fs.writeFileSync(LOCAL_APP_CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf8');
+}
+
+function extractTextFromMessageContent(content) {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  const parts = [];
+  for (const c of content) {
+    if (!c) continue;
+    if (typeof c === 'string') parts.push(c);
+    else if (c.type === 'text' && c.text) parts.push(String(c.text));
+  }
+  return parts.join('\n').trim();
+}
+
+function loadAgentConversationFromOpenClaw(agentId = 'main', limit = 80) {
+  try {
+    const sessionsDir = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'agents', agentId, 'sessions');
+    if (!fs.existsSync(sessionsDir)) return [];
+
+    let targetSessionFile = '';
+    const sessionsIndex = path.join(sessionsDir, 'sessions.json');
+    if (fs.existsSync(sessionsIndex)) {
+      const idx = JSON.parse(fs.readFileSync(sessionsIndex, 'utf8').replace(/^\uFEFF/, ''));
+      const rows = Object.values(idx || {}).filter(v => v && v.sessionFile);
+      rows.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
+      if (rows[0]?.sessionFile) targetSessionFile = rows[0].sessionFile;
+    }
+
+    if (!targetSessionFile || !fs.existsSync(targetSessionFile)) {
+      const files = fs.readdirSync(sessionsDir)
+        .filter(f => f.endsWith('.jsonl'))
+        .map(f => ({ f, mtime: fs.statSync(path.join(sessionsDir, f)).mtimeMs }))
+        .sort((a, b) => b.mtime - a.mtime);
+      if (!files.length) return [];
+      targetSessionFile = path.join(sessionsDir, files[0].f);
+    }
+
+    const lines = fs.readFileSync(targetSessionFile, 'utf8').split(/\r?\n/).filter(Boolean);
+    const conv = [];
+    for (const line of lines) {
+      let row;
+      try { row = JSON.parse(line); } catch { continue; }
+      if (row?.type !== 'message' || !row.message) continue;
+      const role = row.message.role;
+      if (role !== 'user' && role !== 'assistant') continue;
+      let text = extractTextFromMessageContent(row.message.content);
+      if (!text && row.message.errorMessage) text = row.message.errorMessage;
+      if (!text) continue;
+      conv.push({ role: role === 'assistant' ? 'assistant' : 'user', content: text, timestamp: row.timestamp || row.message.timestamp || 0 });
+    }
+
+    return conv.slice(-Math.max(1, limit));
+  } catch (e) {
+    console.error('[conversation-load] failed:', e.message);
+    return [];
+  }
+}
+
+async function ensureBackendUser(state) {
+  const localCfg = loadLocalAppConfig();
+  const baseUrl = (localCfg?.backend?.baseUrl || '').trim();
+  if (!baseUrl) throw new Error('Backend baseUrl is empty. Please set backend.baseUrl in local-app-config.json');
+
+  if (state.backendUserId) return { baseUrl, userId: state.backendUserId };
+
+  const resp = await axios.post(`${baseUrl}/v1/users/init`, {
+    email: '',
+    name: 'MyOpenClaw Local User'
+  }, { timeout: 10000 });
+
+  const userId = resp?.data?.user?.id;
+  if (!userId) throw new Error('Backend user init failed');
+  state.backendUserId = userId;
+  saveAppState(state);
+  return { baseUrl, userId };
+}
+
+async function checkQuotaByBackend(state) {
+  const { baseUrl, userId } = await ensureBackendUser(state);
+  const resp = await axios.get(`${baseUrl}/v1/quota/${userId}`, { timeout: 10000 });
+  const data = resp?.data || {};
+  const plan = data.plan || 'free';
+  if (plan === 'premium' || plan === 'pro') {
+    return { allow: true, plan, mode: 'premium' };
+  }
+  const freeRemain = Number(data?.remaining?.free ?? 0);
+  const apiKeyRemain = Number(data?.remaining?.apiKeyTrial ?? 0);
+  if (freeRemain > 0) return { allow: true, plan, mode: 'free' };
+  if (apiKeyRemain > 0) return { allow: true, plan, mode: 'apiKeyTrial' };
+  return { allow: false, error: 'Quota exhausted. Please upgrade.' };
+}
+
+async function consumeQuotaByBackend(state, mode) {
+  const { baseUrl, userId } = await ensureBackendUser(state);
+  await axios.post(`${baseUrl}/v1/quota/consume`, { userId, mode }, { timeout: 10000 });
 }
 
 function checkPremiumGate(state) {
@@ -135,9 +298,20 @@ function getRuntimeTargetLabel() {
   return 'linux';
 }
 
-async function downloadFile(url, outputPath) {
+async function downloadFile(url, outputPath, onProgress) {
   const writer = fs.createWriteStream(outputPath);
   const response = await axios({ method: 'get', url, responseType: 'stream', timeout: 0 });
+  const total = Number(response.headers['content-length'] || 0);
+  let loaded = 0;
+
+  response.data.on('data', (chunk) => {
+    loaded += chunk.length;
+    if (total > 0 && typeof onProgress === 'function') {
+      const pct = Math.round((loaded / total) * 100);
+      onProgress(Math.max(0, Math.min(100, pct)));
+    }
+  });
+
   response.data.pipe(writer);
   return new Promise((resolve, reject) => {
     writer.on('finish', resolve);
@@ -149,6 +323,7 @@ async function ensureEmbeddedRuntime() {
   const runtimeEntry = path.join(__dirname, 'resources', 'openclaw-deps', 'openclaw', 'openclaw.mjs');
   if (fs.existsSync(runtimeEntry)) {
     console.log('[runtime] Embedded runtime found');
+    updateLoadingStatus('Launching openclaw gateway...', 72);
     return;
   }
 
@@ -169,9 +344,14 @@ async function ensureEmbeddedRuntime() {
   const resourcesDir = path.join(__dirname, 'resources');
 
   console.log(`[runtime] Downloading runtime for ${target}...`);
-  await downloadFile(url, zipPath);
+  updateLoadingStatus('Downloading openclaw ...', 52);
+  await downloadFile(url, zipPath, (p) => {
+    const mapped = 52 + Math.round(p * 0.28); // 52 -> 80
+    updateLoadingStatus('Downloading openclaw ...', mapped);
+  });
 
   console.log('[runtime] Extracting runtime...');
+  updateLoadingStatus('Extracting openclaw runtime...', 84);
   if (process.platform === 'win32') {
     execFileSync('powershell.exe', [
       '-NoProfile',
@@ -187,11 +367,13 @@ async function ensureEmbeddedRuntime() {
   }
 
   console.log('[runtime] Runtime ready');
+  updateLoadingStatus('Launching openclaw gateway...', 88);
 }
 
 // 启动内置 Gateway（使用独立配置目录）
 async function startGateway() {
   try {
+    global.__MYOPENCLAW_STARTUP_WARNING__ = '';
     if (await isOpenClawGatewayRunning(18800)) {
       gatewayPort = 18800;
     } else {
@@ -200,6 +382,10 @@ async function startGateway() {
     gatewayBaseUrl = `http://127.0.0.1:${gatewayPort}`;
     
     console.log(`[startGateway] Starting gateway on port ${gatewayPort}...`);
+    updateLoadingStatus('Establishing secure connections...', 48);
+
+    const runtimeEntry = path.join(__dirname, 'resources', 'openclaw-deps', 'openclaw', 'openclaw.mjs');
+    setRuntimeDownloadNeeded(!fs.existsSync(runtimeEntry));
 
     // simple 版本：若未内置 runtime，则自动下载并解压到 resources/openclaw-deps
     await ensureEmbeddedRuntime();
@@ -210,6 +396,7 @@ async function startGateway() {
     console.log(`[startGateway] Gateway script: ${gatewayCmdPath}`);
     
     // 启动 gateway
+    updateLoadingStatus('Launching openclaw gateway...', 90);
     gatewayProcess = spawn('cmd.exe', ['/c', gatewayCmdPath, String(gatewayPort)], {
       stdio: 'pipe',
       cwd: path.join(__dirname, 'resources'),
@@ -239,14 +426,22 @@ async function startGateway() {
 
     // 等待 gateway 启动
     console.log('[startGateway] Waiting for gateway to start...');
+    updateLoadingStatus('Checking gateway health...', 94);
     await new Promise(resolve => setTimeout(resolve, 8000));  // 等待 8 秒
     
     // 验证 gateway 是否启动
     await waitForGateway();
 
-    // 启动后做一次最小对话自检，避免前端首次发送才报错
-    await smokeTestChat();
+    // 启动后做一次最小对话自检（失败不阻断启动，避免 gateway 实际可用却被误判）
+    try {
+      await smokeTestChat();
+    } catch (probeErr) {
+      const detail = probeErr?.message || String(probeErr);
+      console.warn('[startGateway] Chat probe failed, but gateway is healthy. Continue startup. Detail:', detail);
+      global.__MYOPENCLAW_STARTUP_WARNING__ = detail;
+    }
     
+    updateLoadingStatus('Startup complete. Opening workspace...', 100);
     console.log(`[startGateway] Gateway started successfully on ${gatewayBaseUrl}`);
   } catch (error) {
     console.error('[startGateway] Failed to start gateway:', error);
@@ -377,7 +572,7 @@ ipcMain.handle('get-gateway-info', async () => {
   try {
     const configPath = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'openclaw.json');
     if (fs.existsSync(configPath)) {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8').replace(/^\uFEFF/, ''));
       token = config.gateway?.auth?.token;
     }
   } catch (err) {
@@ -404,6 +599,27 @@ ipcMain.handle('get-startup-error', async () => {
   return { error: global.__MYOPENCLAW_STARTUP_ERROR__ || '' };
 });
 
+ipcMain.handle('get-local-app-config', async () => {
+  return { success: true, config: loadLocalAppConfig() };
+});
+
+ipcMain.handle('save-local-app-config', async (event, patch) => {
+  try {
+    const cfg = loadLocalAppConfig();
+    const next = {
+      ...cfg,
+      ...patch,
+      backend: { ...(cfg.backend || {}), ...(patch?.backend || {}) },
+      stripe: { ...(cfg.stripe || {}), ...(patch?.stripe || {}) },
+      auth: { ...(cfg.auth || {}), ...(patch?.auth || {}) }
+    };
+    saveLocalAppConfig(next);
+    return { success: true, config: next };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
 // 发送消息到 main agent
 ipcMain.handle('send-message', async (event, payload) => {
   try {
@@ -415,14 +631,20 @@ ipcMain.handle('send-message', async (event, payload) => {
     const agentId = payload?.agentId || 'main';
 
     const state = loadAppState();
-    const gate = checkPremiumGate(state);
+    const gate = await checkQuotaByBackend(state);
     if (!gate.allow) {
       return {
         success: false,
         premiumRequired: true,
-        reason: gate.reason,
-        error: gate.message,
+        error: gate.error || 'Quota exhausted',
         state
+      };
+    }
+
+    if (!hasUsableProviderConfig()) {
+      return {
+        success: false,
+        error: 'Provider is not configured. Please open API Keys and save Base URL + API Key first.'
       };
     }
 
@@ -451,7 +673,7 @@ ipcMain.handle('send-message', async (event, payload) => {
     const content = response?.data?.choices?.[0]?.message?.content || 'Received';
     state.conversations[agentId] = [...messages, { role: 'assistant', content }].slice(-20);
 
-    consumeQuota(state, gate.tier);
+    await consumeQuotaByBackend(state, gate.mode);
     saveAppState(state);
 
     return {
@@ -460,17 +682,34 @@ ipcMain.handle('send-message', async (event, payload) => {
       state
     };
   } catch (error) {
+    const apiDetail = error?.response?.data?.error?.message || error?.response?.data?.message;
+    const status = error?.response?.status;
+    let msg = apiDetail || error.message || 'Unknown error';
+    if (status === 500 && /internal error/i.test(msg)) {
+      msg = 'Gateway provider error. Please verify API Keys (Base URL / API Key / Model) in API Keys page.';
+    }
     return {
       success: false,
-      error: error.message
+      error: msg,
+      status
     };
   }
 });
 
 ipcMain.handle('get-app-state', async () => {
   const state = loadAppState();
-  const gate = checkPremiumGate(state);
+  let gate = { allow: true, mode: 'free' };
+  try {
+    gate = await checkQuotaByBackend(state);
+  } catch (e) {
+    gate = { allow: false, error: e.message };
+  }
   return { ...state, gate };
+});
+
+ipcMain.handle('get-agent-conversation', async (event, agentId = 'main') => {
+  const conversation = loadAgentConversationFromOpenClaw(agentId, 120);
+  return { success: true, conversation };
 });
 
 ipcMain.handle('set-user-api-key', async (event, apiKey) => {
@@ -586,6 +825,15 @@ ipcMain.handle('save-provider-config', async (event, payload) => {
       api,
       models: modelId ? [{ id: modelId, name: modelId }] : (cfg.models.providers[providerId]?.models || [])
     };
+
+    cfg.agents = cfg.agents || {};
+    cfg.agents.defaults = cfg.agents.defaults || {};
+    cfg.agents.defaults.model = cfg.agents.defaults.model || {};
+    if (modelId) {
+      cfg.agents.defaults.model.primary = `${providerId}/${modelId}`;
+      cfg.agents.defaults.model.fallback = cfg.agents.defaults.model.fallback || `${providerId}/${modelId}`;
+    }
+
     saveEmbeddedConfig(cfg);
     return { success: true };
   } catch (e) {
