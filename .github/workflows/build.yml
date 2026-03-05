@@ -54,15 +54,13 @@ jobs:
         run: |
           export BUILD_VARIANT="simple"
           export TARGET_LABEL="mac_intel"
-          npx electron-builder --mac --x64 --publish never -c build/simple.json --config.compression=maximum
+          npx electron-builder --mac --x64 --publish never -c build/simple.json --config.compression=maximum --config.directories.output=dist-mac-intel
       
       - name: Upload Mac Intel artifact
         uses: actions/upload-artifact@v4
         with:
           name: MyOpenClaw-Mac-Intel
-          path: |
-          dist/**/*.dmg
-          dist/**/*.zip
+          path: dist-mac-intel/**/*
 
   build-mac-silicon:
     runs-on: macos-latest
@@ -83,15 +81,13 @@ jobs:
         run: |
           export BUILD_VARIANT="simple"
           export TARGET_LABEL="mac_silicon"
-          npx electron-builder --mac --arm64 --publish never -c build/simple.json --config.compression=maximum
+          npx electron-builder --mac --arm64 --publish never -c build/simple.json --config.compression=maximum --config.directories.output=dist-mac-silicon
       
       - name: Upload Mac Silicon artifact
         uses: actions/upload-artifact@v4
         with:
           name: MyOpenClaw-Mac-Silicon
-          path: |
-          dist/**/*.dmg
-          dist/**/*.zip
+          path: dist-mac-intel/**/*
 
   create-release:
     needs: [build-windows, build-mac-intel, build-mac-silicon]
