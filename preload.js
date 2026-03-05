@@ -17,5 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setActiveAgent: (id) => ipcRenderer.invoke('set-active-agent', id),
   saveProviderConfig: (payload) => ipcRenderer.invoke('save-provider-config', payload),
   saveAgentChannelConfig: (payload) => ipcRenderer.invoke('save-agent-channel-config', payload),
-  getStartupError: () => ipcRenderer.invoke('get-startup-error')
+  getStartupError: () => ipcRenderer.invoke('get-startup-error'),
+  getLocalAppConfig: () => ipcRenderer.invoke('get-local-app-config'),
+  saveLocalAppConfig: (patch) => ipcRenderer.invoke('save-local-app-config', patch)
 });

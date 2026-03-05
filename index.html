@@ -36,119 +36,96 @@
     .msg { max-width:78%; margin:12px 0; padding:10px 12px; border-radius:12px; line-height:1.5; }
     .msg.user { margin-left:auto; color:#fff; background:linear-gradient(135deg,#4c86f2,#5e4fd6); }
     .msg.ai { position:relative; padding-left:32px; background:#F8F9FF; border:1px solid rgba(102,126,234,.2); }
-    .msg.ai::before { content:'馃'; position:absolute; left:10px; top:10px; }
+    .msg.ai::before { content:'BOT'; position:absolute; left:8px; top:10px; font-size:10px; color:#667eea; }
     .small{font-size:12px;color:#6c757d}
     .chip{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid #d7defd;background:#eef1ff;color:#4b57a8}
     ul{list-style:none}.agent-item{border:1px solid #e9ecef;border-radius:10px;padding:10px;margin:8px 0}
-    .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center}
-    .modal.show{display:flex}.box{width:640px;max-width:95vw;background:#fff;border-radius:14px;padding:16px}
   </style>
 </head>
 <body>
-  <div class="app">
-    <aside class="sidebar">
-      <div class="gateway"><span class="dot"></span><span id="gatewayLabel">Local OpenClaw Gateway Running</span></div>
-      <div class="row" style="margin:8px 0 12px;"><select id="langSelect"><option value="en">English</option><option value="zh">涓枃</option><option value="es">Espa帽ol</option><option value="fr">Fran莽ais</option><option value="de">Deutsch</option><option value="pt">Portugu锚s</option><option value="ru">袪褍褋褋泻懈泄</option><option value="ja">鏃ユ湰瑾?/option><option value="ar">丕賱毓乇亘賷丞</option><option value="hi">啶灌た啶ㄠ啶︵</option></select></div>
-      <nav class="nav">
-        <div class="chat-nav" style="margin-bottom:4px;">
-          <button id="tab-chat" class="active" onclick="onChatNavClick()">馃挰 Chat</button>
-          <button id="chatToggle" class="alt" style="width:36px;padding:8px" onclick="toggleChatAgents()">鈻?/button>
-        </div>
-        <div id="chatAgentTree" class="chat-agent-tree"></div>
-        <button id="tab-agents" onclick="showPage('agents')">馃З Agents</button>
-        <button id="tab-keys" onclick="showPage('keys')">馃棟锔?API Keys</button>
-      </nav>
-      <nav class="nav nav-bottom"><button id="tab-account" onclick="showPage('account')">馃懁 Account</button></nav>
-    </aside>
+<div class="app">
+  <aside class="sidebar">
+    <div class="gateway"><span class="dot"></span><span id="gatewayLabel">Local OpenClaw Gateway Running</span></div>
+    <div class="row" style="margin:8px 0 12px;">
+      <select id="langSelect">
+        <option value="en">English</option><option value="zh">Chinese</option><option value="es">Spanish</option><option value="fr">French</option><option value="de">German</option><option value="pt">Portuguese</option><option value="ru">Russian</option><option value="ja">Japanese</option><option value="ar">Arabic</option><option value="hi">Hindi</option>
+      </select>
+    </div>
+    <nav class="nav">
+      <div class="chat-nav" style="margin-bottom:4px;">
+        <button id="tab-chat" class="active" onclick="onChatNavClick()">Chat</button>
+        <button id="chatToggle" class="alt" style="width:36px;padding:8px" onclick="toggleChatAgents()">v</button>
+      </div>
+      <div id="chatAgentTree" class="chat-agent-tree"></div>
+      <button id="tab-agents" onclick="showPage('agents')">Agents</button>
+      <button id="tab-keys" onclick="showPage('keys')">API Keys</button>
+    </nav>
+    <nav class="nav nav-bottom"><button id="tab-account" onclick="showPage('account')">Account</button></nav>
+  </aside>
 
-    <main class="main">
-      <section class="hero"><h1 id="heroTitle" style="font-size:18px;">馃 Full OpenClaw Power 鉁?Zero Technical Hassle</h1></section>
+  <main class="main">
+    <section class="hero"><h1 id="heroTitle" style="font-size:18px;">Full OpenClaw Power - Zero Technical Hassle</h1></section>
 
-      <section id="chat" class="page" style="display:block">
-        <div class="card chat-card">
-          <div class="row chat-controls" style="margin-top:0;">
-            <div id="chatBreadcrumb" class="small" style="font-size:13px;color:#667eea;font-weight:600;">Chat / Main Agent</div>
-          </div>
-          <div class="chat-scroll">
-            <div id="chatBox" class="chat"></div>
-          </div>
-          <div class="input-mask"></div>
-          <div class="input-bar">
-            <div id="attachPreview" class="row" style="display:none;flex-wrap:wrap"></div>
-            <div id="sendProgressWrap" style="display:none;margin:6px 0 10px;">
-              <div style="height:8px;background:#eceef8;border-radius:999px;overflow:hidden;"><div id="sendProgressBar" style="height:100%;width:0%;background:linear-gradient(90deg,#667eea,#764ba2);"></div></div>
-              <div id="sendProgressText" class="small" style="margin-top:4px">Sending attachments... 0%</div>
-            </div>
-            <div class="row" style="margin-bottom:0;">
-              <input id="fileInput" type="file" multiple style="display:none" />
-              <button id="attachBtn" class="alt" title="Attach">锛?/button>
-              <button id="slashBtn" class="alt" title="Slash command">/</button>
-              <textarea id="msg" rows="2" style="max-height:160px" placeholder="Type your message... (Enter to send, Shift+Enter for new line)"></textarea>
-              <button onclick="sendMsg()">Send</button>
-            </div>
+    <section id="chat" class="page" style="display:block">
+      <div class="card chat-card">
+        <div class="row chat-controls" style="margin-top:0;"><div id="chatBreadcrumb" class="small" style="font-size:13px;color:#667eea;font-weight:600;">Chat / Main Agent</div></div>
+        <div class="chat-scroll"><div id="chatBox" class="chat"></div></div>
+        <div class="input-mask"></div>
+        <div class="input-bar">
+          <div id="attachPreview" class="row" style="display:none;flex-wrap:wrap"></div>
+          <div id="sendProgressWrap" style="display:none;margin:6px 0 10px;"><div style="height:8px;background:#eceef8;border-radius:999px;overflow:hidden;"><div id="sendProgressBar" style="height:100%;width:0%;background:linear-gradient(90deg,#667eea,#764ba2);"></div></div><div id="sendProgressText" class="small" style="margin-top:4px">Sending attachments... 0%</div></div>
+          <div class="row" style="margin-bottom:0;">
+            <input id="fileInput" type="file" multiple style="display:none" />
+            <button id="attachBtn" class="alt" title="Attach">+</button>
+            <button id="slashBtn" class="alt" title="Slash">/</button>
+            <textarea id="msg" rows="2" style="max-height:160px" placeholder="Type your message... (Enter to send, Shift+Enter for new line)"></textarea>
+            <button onclick="sendMsg()">Send</button>
           </div>
         </div>
-      </section>
+      </div>
+    </section>
 
-      <section id="agents" class="page" style="display:none"><div class="card">
-        <div class="row">
-          <input id="newAgentId" placeholder="Agent ID (default: agentN)" />
-          <input id="newAgentName" placeholder="Agent Name" />
-          <button onclick="addAgent()">Add Agent</button>
-        </div>
-        <ul id="agentList"></ul>
-      </div></section>
+    <section id="agents" class="page" style="display:none"><div class="card">
+      <div class="row"><input id="newAgentId" placeholder="Agent ID (default: agentN)" /><input id="newAgentName" placeholder="Agent Name" /><button onclick="addAgent()">Add Agent</button></div>
+      <ul id="agentList"></ul>
+    </div></section>
 
-      <section id="keys" class="page" style="display:none"><div class="card">
-        <h3>Provider Config</h3>
-        <div class="row"><select id="providerId"><option>openai</option><option>openai-codex</option><option>aws2</option><option>aws</option><option>moonshot</option><option>openrouter</option></select><input id="baseUrl" placeholder="Base URL"/></div>
-        <div class="row"><input id="providerApiKey" placeholder="API Key"/><input id="modelSearch" list="modelList" placeholder="Search/select model"/><datalist id="modelList"><option value="openai/gpt-4o-mini"></option><option value="openai/gpt-4o"></option><option value="openai-codex/gpt-5.3-codex"></option><option value="aws2/claude-sonnet-4-6"></option><option value="aws/claude-opus-4-6"></option><option value="moonshot/kimi-k2.5"></option></datalist></div>
-        <div class="row"><button onclick="saveProvider()">Save to Embedded OpenClaw Config</button></div>
-      </div></section>
+    <section id="keys" class="page" style="display:none"><div class="card">
+      <h3>Provider Config</h3>
+      <div class="row"><select id="providerId"><option>openai</option><option>openai-codex</option><option>aws2</option><option>aws</option><option>moonshot</option><option>openrouter</option></select><input id="baseUrl" placeholder="Base URL"/></div>
+      <div class="row"><input id="providerApiKey" placeholder="API Key"/><input id="modelSearch" list="modelList" placeholder="Search/select model"/><datalist id="modelList"><option value="openai/gpt-4o-mini"></option><option value="openai/gpt-4o"></option><option value="openai-codex/gpt-5.3-codex"></option><option value="aws2/claude-sonnet-4-6"></option><option value="aws/claude-opus-4-6"></option><option value="moonshot/kimi-k2.5"></option></datalist></div>
+      <div class="row"><button onclick="saveProvider()">Save</button></div>
+    </div></section>
 
-      <section id="account" class="page" style="display:none"><div class="card">
-        <h3>Account & Plan</h3>
-        <p id="usageInfo" class="small"></p>
-        <div class="row"><button class="alt" onclick="setTier('free')">Set Free</button><button class="alt" onclick="setTier('premium')">Set Premium</button><button class="alt" onclick="setTier('pro')">Set Pro</button><button onclick="buyPremium()">Upgrade</button></div>
-      </div></section>
-    </main>
-  </div>
+    <section id="account" class="page" style="display:none"><div class="card"><h3>Account & Plan</h3><p id="usageInfo" class="small"></p><div class="row"><button class="alt" onclick="setTier('free')">Set Free</button><button class="alt" onclick="setTier('premium')">Set Premium</button><button class="alt" onclick="setTier('pro')">Set Pro</button><button onclick="buyPremium()">Upgrade</button></div></div></section>
+  </main>
+</div>
 
 <script>
-let appState=null,currentAgent='main',pendingFiles=[],chatAgentsExpanded=false,lastAgents=[];
+let appState=null,currentAgent='main',pendingFiles=[],chatAgentsExpanded=false;
 const I18N={
-  en:{gateway:'Local OpenClaw Gateway Running',hero:'🦞 Full OpenClaw Power ✨ Zero Technical Hassle',chat:'💬 Chat',agents:'🧩 Agents',keys:'🗝️ API Keys',account:'👤 Account',agent:'Agent',msg:'Type your message... (Enter to send, Shift+Enter for new line)',add:'Add Agent',aid:'Agent ID (default: agentN)',an:'Agent Name',pc:'Provider Config',save:'Save',acc:'Account & Plan',up:'Upgrade'},
-  zh:{gateway:'本地 OpenClaw 网关运行中',hero:'🦞 完整 OpenClaw 能力 ✨ 零技术门槛',chat:'💬 对话',agents:'🧩 Agents',keys:'🗝️ API Keys',account:'👤 账户',agent:'Agent',msg:'输入消息...（回车发送，Shift+回车换行）',add:'新建 Agent',aid:'Agent ID（默认: agentN）',an:'Agent 名称',pc:'Provider Config',save:'Save',acc:'账户与套餐',up:'升级'},
-  es:{gateway:'Local OpenClaw Gateway Running',hero:'🦞 Full OpenClaw Power ✨ Zero Technical Hassle',chat:'💬 Chat',agents:'🧩 Agents',keys:'🗝️ API Keys',account:'👤 Account',agent:'Agent',msg:'Type your message... (Enter to send, Shift+Enter for new line)',add:'Add Agent',aid:'Agent ID (default: agentN)',an:'Agent Name',pc:'Provider Config',save:'Save',acc:'Account & Plan',up:'Upgrade'},
-  fr:{gateway:'Local OpenClaw Gateway Running',hero:'🦞 Full OpenClaw Power ✨ Zero Technical Hassle',chat:'💬 Chat',agents:'🧩 Agents',keys:'🗝️ API Keys',account:'👤 Account',agent:'Agent',msg:'Type your message... (Enter to send, Shift+Enter for new line)',add:'Add Agent',aid:'Agent ID (default: agentN)',an:'Agent Name',pc:'Provider Config',save:'Save',acc:'Account & Plan',up:'Upgrade'},
-  de:{gateway:'Local OpenClaw Gateway Running',hero:'🦞 Full OpenClaw Power ✨ Zero Technical Hassle',chat:'💬 Chat',agents:'🧩 Agents',keys:'🗝️ API Keys',account:'👤 Account',agent:'Agent',msg:'Type your message... (Enter to send, Shift+Enter for new line)',add:'Add Agent',aid:'Agent ID (default: agentN)',an:'Agent Name',pc:'Provider Config',save:'Save',acc:'Account & Plan',up:'Upgrade'},
-  pt:{gateway:'Local OpenClaw Gateway Running',hero:'🦞 Full OpenClaw Power ✨ Zero Technical Hassle',chat:'💬 Chat',agents:'🧩 Agents',keys:'🗝️ API Keys',account:'👤 Account',agent:'Agent',msg:'Type your message... (Enter to send, Shift+Enter for new line)',add:'Add Agent',aid:'Agent ID (default: agentN)',an:'Agent Name',pc:'Provider Config',save:'Save',acc:'Account & Plan',up:'Upgrade'},
-  ru:{gateway:'Local OpenClaw Gateway Running',hero:'🦞 Full OpenClaw Power ✨ Zero Technical Hassle',chat:'💬 Chat',agents:'🧩 Agents',keys:'🗝️ API Keys',account:'👤 Account',agent:'Agent',msg:'Type your message... (Enter to send, Shift+Enter for new line)',add:'Add Agent',aid:'Agent ID (default: agentN)',an:'Agent Name',pc:'Provider Config',save:'Save',acc:'Account & Plan',up:'Upgrade'},
-  ja:{gateway:'Local OpenClaw Gateway Running',hero:'🦞 Full OpenClaw Power ✨ Zero Technical Hassle',chat:'💬 Chat',agents:'🧩 Agents',keys:'🗝️ API Keys',account:'👤 Account',agent:'Agent',msg:'Type your message... (Enter to send, Shift+Enter for new line)',add:'Add Agent',aid:'Agent ID (default: agentN)',an:'Agent Name',pc:'Provider Config',save:'Save',acc:'Account & Plan',up:'Upgrade'},
-  ar:{gateway:'Local OpenClaw Gateway Running',hero:'🦞 Full OpenClaw Power ✨ Zero Technical Hassle',chat:'💬 Chat',agents:'🧩 Agents',keys:'🗝️ API Keys',account:'👤 Account',agent:'Agent',msg:'Type your message... (Enter to send, Shift+Enter for new line)',add:'Add Agent',aid:'Agent ID (default: agentN)',an:'Agent Name',pc:'Provider Config',save:'Save',acc:'Account & Plan',up:'Upgrade'},
-  hi:{gateway:'Local OpenClaw Gateway Running',hero:'🦞 Full OpenClaw Power ✨ Zero Technical Hassle',chat:'💬 Chat',agents:'🧩 Agents',keys:'🗝️ API Keys',account:'👤 Account',agent:'Agent',msg:'Type your message... (Enter to send, Shift+Enter for new line)',add:'Add Agent',aid:'Agent ID (default: agentN)',an:'Agent Name',pc:'Provider Config',save:'Save',acc:'Account & Plan',up:'Upgrade'}
+  en:{gateway:'Local OpenClaw Gateway Running',hero:'Full OpenClaw Power - Zero Technical Hassle',chat:'Chat',agents:'Agents',keys:'API Keys',account:'Account',msg:'Type your message... (Enter to send, Shift+Enter for new line)',add:'Add Agent',aid:'Agent ID (default: agentN)',an:'Agent Name',pc:'Provider Config',save:'Save',acc:'Account & Plan',up:'Upgrade'},
+  zh:{gateway:'本地 OpenClaw 网关运行中',hero:'完整 OpenClaw 能力 - 零技术门槛',chat:'对话',agents:'Agents',keys:'API Keys',account:'账户',msg:'输入消息...（回车发送，Shift+回车换行）',add:'新建 Agent',aid:'Agent ID（默认: agentN）',an:'Agent 名称',pc:'Provider Config',save:'Save',acc:'账户与套餐',up:'升级'}
 };
-function showPage(id){document.querySelectorAll('.page').forEach(p=>p.style.display='none');document.getElementById(id).style.display='block';document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));const tab=document.getElementById('tab-'+id); if(tab) tab.classList.add('active');}
-function onChatNavClick(){showPage('chat'); renderConversation();}
-function toggleChatAgents(){chatAgentsExpanded=!chatAgentsExpanded; const tree=document.getElementById('chatAgentTree'); tree.classList.toggle('open',chatAgentsExpanded); document.getElementById('chatToggle').textContent = chatAgentsExpanded ? '鈻? : '鈻?;}
-async function setActiveAgentFromTree(id){await window.electronAPI.setActiveAgent(id); currentAgent=id; showPage('chat'); await refreshState(); renderConversation(); await refreshAgents(); const input=document.getElementById('msg'); if(input) input.focus();}
-function tApply(lang){const t=I18N[lang]||I18N.en;localStorage.setItem('myopenclaw.lang',lang);document.documentElement.lang=lang;gatewayLabel.textContent=t.gateway;heroTitle.textContent=t.hero;tabChat.textContent=t.chat;tabAgents.textContent=t.agents;tabKeys.textContent=t.keys;tabAccount.textContent=t.account;msg.placeholder=t.msg;newAgentId.placeholder=t.aid;newAgentName.placeholder=t.an;document.querySelector('#agents .row button').textContent=t.add;document.querySelector('#keys h3').textContent=t.pc;document.querySelector('#keys .row:last-child button').textContent=t.save;document.querySelector('#account h3').textContent=t.acc;document.querySelector('#account .row button:last-child').textContent=t.up;}
-function addMsg(text,cls){const d=document.createElement('div');d.className='msg '+cls;d.textContent=text;chatBox.appendChild(d);chatBox.scrollTop=chatBox.scrollHeight}
-function renderAttachPreview(){attachPreview.innerHTML='';if(!pendingFiles.length){attachPreview.style.display='none';return;}attachPreview.style.display='flex';pendingFiles.forEach((f,i)=>{const c=document.createElement('span');c.className='chip';c.textContent='馃搸 '+f.name+' ';const x=document.createElement('button');x.className='alt';x.style.padding='2px 6px';x.textContent='脳';x.onclick=()=>{pendingFiles.splice(i,1);renderAttachPreview();};c.appendChild(x);attachPreview.appendChild(c);});}
+function showPage(id){document.querySelectorAll('.page').forEach(p=>p.style.display='none');document.getElementById(id).style.display='block';document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));const tab=document.getElementById('tab-'+id);if(tab)tab.classList.add('active');}
+function onChatNavClick(){showPage('chat');renderConversation();}
+function toggleChatAgents(){chatAgentsExpanded=!chatAgentsExpanded;chatAgentTree.classList.toggle('open',chatAgentsExpanded);chatToggle.textContent=chatAgentsExpanded?'^':'v';}
+async function setActiveAgentFromTree(id){await window.electronAPI.setActiveAgent(id);currentAgent=id;showPage('chat');await refreshState();renderConversation();await refreshAgents();msg.focus();}
+function tApply(lang){const t=I18N[lang]||I18N.en;localStorage.setItem('myopenclaw.lang',lang);gatewayLabel.textContent=t.gateway;heroTitle.textContent=t.hero;tabChat.textContent=t.chat;tabAgents.textContent=t.agents;tabKeys.textContent=t.keys;tabAccount.textContent=t.account;msg.placeholder=t.msg;newAgentId.placeholder=t.aid;newAgentName.placeholder=t.an;document.querySelector('#agents .row button').textContent=t.add;document.querySelector('#keys h3').textContent=t.pc;document.querySelector('#keys .row:last-child button').textContent=t.save;document.querySelector('#account h3').textContent=t.acc;document.querySelector('#account .row button:last-child').textContent=t.up;}
+function showToast(text,ms=2200){const t=document.getElementById("toast"); if(!t)return; t.textContent=text; t.style.display="block"; clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>t.style.display="none",ms);} function addMsg(text,cls){const d=document.createElement('div');d.className='msg '+cls;d.textContent=text;chatBox.appendChild(d);chatBox.scrollTop=chatBox.scrollHeight;}
+function renderAttachPreview(){attachPreview.innerHTML='';if(!pendingFiles.length){attachPreview.style.display='none';return;}attachPreview.style.display='flex';pendingFiles.forEach((f,i)=>{const c=document.createElement('span');c.className='chip';c.textContent='FILE '+f.name+' ';const x=document.createElement('button');x.className='alt';x.style.padding='2px 6px';x.textContent='x';x.onclick=()=>{pendingFiles.splice(i,1);renderAttachPreview();};c.appendChild(x);attachPreview.appendChild(c);});}
 async function simulateUploadProgress(){sendProgressWrap.style.display='block';let v=0;while(v<100){await new Promise(r=>setTimeout(r,80));v+=Math.floor(Math.random()*12)+6;if(v>100)v=100;sendProgressBar.style.width=v+'%';sendProgressText.textContent='Sending attachments... '+v+'%';}await new Promise(r=>setTimeout(r,150));sendProgressWrap.style.display='none';sendProgressBar.style.width='0%';}
 async function refreshState(){appState=await window.electronAPI.getAppState();usageInfo.textContent=`Tier: ${appState.premiumTier} | Messages sent: ${(appState.freeQuotaUsed||0)+(appState.userApiKeyQuotaUsed||0)}`;currentAgent=appState.activeAgentId||'main';}
-async function refreshAgents(){const agents=await window.electronAPI.listAgents();lastAgents=agents;const agent=agents.find(a=>a.id===currentAgent)||agents[0]||{id:'main',name:'Main Agent',channels:[]};currentAgent=agent.id;document.getElementById('chatBreadcrumb').textContent=`Chat / ${agent.name}`;
-const tree=document.getElementById('chatAgentTree');tree.innerHTML='';agents.forEach(a=>{const item=document.createElement('div');item.className='chat-agent-item'+(a.id===currentAgent?' active':'');const icon=a.id==='main'?'馃':(a.name.toLowerCase().includes('code')?'</>':'鈼?);item.innerHTML=`<span class='chat-agent-dot'></span><span>${icon}</span><span>${a.name}</span>`;item.onclick=()=>setActiveAgentFromTree(a.id);tree.appendChild(item);});const quick=document.createElement('div');quick.className='chat-agent-item';quick.style.fontWeight='600';quick.textContent='+ New Agent';quick.onclick=()=>showPage('agents');tree.appendChild(quick);
-
-agentList.innerHTML='';agents.forEach(a=>{const li=document.createElement('li');li.className='agent-item';li.innerHTML=`<b>${a.name}</b> <span class='small'>(${a.id})</span>`;const row=document.createElement('div');row.className='row';const r=document.createElement('button');r.className='alt';r.textContent='Rename';r.onclick=()=>{const edit=document.createElement('div');edit.className='row';const i=document.createElement('input');i.value=a.name;const s=document.createElement('button');s.textContent='Save';const c=document.createElement('button');c.className='alt';c.textContent='Cancel';edit.append(i,s,c);li.appendChild(edit);c.onclick=()=>edit.remove();s.onclick=async()=>{const name=i.value.trim();if(!name)return alert('Agent name cannot be empty');const rs=await window.electronAPI.renameAgent({id:a.id,name});if(!rs.success)return alert(rs.error||'Rename failed');await refreshState();await refreshAgents();};};const d=document.createElement('button');d.className='alt';d.textContent='Delete';d.disabled=a.id==='main';d.onclick=async()=>{if(!confirm('Delete agent?'))return;const rs=await window.electronAPI.deleteAgent(a.id);if(!rs.success)return alert(rs.error||'Delete failed');await refreshState();await refreshAgents();renderConversation();};row.append(r,d);li.appendChild(row);agentList.appendChild(li);});}
+async function refreshAgents(){const agents=await window.electronAPI.listAgents();const agent=agents.find(a=>a.id===currentAgent)||agents[0]||{id:'main',name:'Main Agent',channels:[]};currentAgent=agent.id;chatBreadcrumb.textContent=`Chat / ${agent.name}`;chatAgentTree.innerHTML='';agents.forEach(a=>{const item=document.createElement('div');item.className='chat-agent-item'+(a.id===currentAgent?' active':'');item.innerHTML=`<span class='chat-agent-dot'></span><span>${a.name}</span>`;item.onclick=()=>setActiveAgentFromTree(a.id);chatAgentTree.appendChild(item);});const quick=document.createElement('div');quick.className='chat-agent-item';quick.style.fontWeight='600';quick.textContent='+ New Agent';quick.onclick=()=>showPage('agents');chatAgentTree.appendChild(quick);
+agentList.innerHTML='';agents.forEach(a=>{const li=document.createElement('li');li.className='agent-item';li.innerHTML=`<b>${a.name}</b> <span class='small'>(${a.id})</span>`;const row=document.createElement('div');row.className='row';const r=document.createElement('button');r.className='alt';r.textContent='Rename';r.onclick=()=>{const edit=document.createElement('div');edit.className='row';const i=document.createElement('input');i.value=a.name;const s=document.createElement('button');s.textContent='Save';const c=document.createElement('button');c.className='alt';c.textContent='Cancel';edit.append(i,s,c);li.appendChild(edit);c.onclick=()=>edit.remove();s.onclick=async()=>{const name=i.value.trim();if(!name)return showToast('Agent name cannot be empty');const rs=await window.electronAPI.renameAgent({id:a.id,name});if(!rs.success)return showToast(rs.error||'Rename failed');await refreshState();await refreshAgents();};};const d=document.createElement('button');d.className='alt';d.textContent='Delete';d.disabled=a.id==='main';d.onclick=async()=>{if(!confirm('Delete agent?'))return;const rs=await window.electronAPI.deleteAgent(a.id);if(!rs.success)return showToast(rs.error||'Delete failed');await refreshState();await refreshAgents();renderConversation();};row.append(r,d);li.appendChild(row);agentList.appendChild(li);});}
 function renderConversation(){chatBox.innerHTML='';const conv=appState?.conversations?.[currentAgent]||[];if(!conv.length)return addMsg(`Conversation with ${currentAgent} is empty.`,'ai');conv.forEach(m=>addMsg(m.content,m.role==='user'?'user':'ai'));}
-async function sendMsg(){const text=msg.value.trim();if(!text&&!pendingFiles.length)return;const note=pendingFiles.length?`\n\n[Attachments: ${pendingFiles.map(f=>f.name).join(', ')}]`:'';addMsg((text||'[Attachment]')+note,'user');msg.value='';const sending=[...pendingFiles];pendingFiles=[];renderAttachPreview();if(sending.length)await simulateUploadProgress();const r=await window.electronAPI.sendMessage({message:(text||'Please process attachments')+note,agentId:currentAgent});if(r.success){addMsg(r.response||'Received','ai');await refreshState();}else if(r.premiumRequired){alert(r.error||'Premium required');}else{addMsg('Failed: '+(r.error||'unknown'),'ai');}}
-async function addAgent(){const r=await window.electronAPI.addAgent({id:newAgentId.value.trim(),name:newAgentName.value.trim()});if(!r.success&&r.premiumRequired)return alert(r.error);if(!r.success)return alert(r.error||'failed');newAgentId.value='';newAgentName.value='';await refreshState();await refreshAgents();}
-async function saveProvider(){const map={aws:'anthropic-messages',aws2:'anthropic-messages',openai:'openai-completions','openai-codex':'openai-completions',moonshot:'openai-completions',openrouter:'openai-completions'};const r=await window.electronAPI.saveProviderConfig({providerId:providerId.value,baseUrl:baseUrl.value.trim(),apiKey:providerApiKey.value.trim(),api:map[providerId.value]||'openai-completions',modelId:modelSearch.value.trim()});alert(r.success?'Saved':'Failed: '+r.error);}
+async function sendMsg(){const text=msg.value.trim();if(!text&&!pendingFiles.length)return;const note=pendingFiles.length?`\n\n[Attachments: ${pendingFiles.map(f=>f.name).join(', ')}]`:'';addMsg((text||'[Attachment]')+note,'user');msg.value='';const sending=[...pendingFiles];pendingFiles=[];renderAttachPreview();if(sending.length)await simulateUploadProgress();const r=await window.electronAPI.sendMessage({message:(text||'Please process attachments')+note,agentId:currentAgent});if(r.success){addMsg(r.response||'Received','ai');await refreshState();}else if(r.premiumRequired){showToast(r.error||'Premium required');}else{addMsg('Failed: '+(r.error||'unknown'),'ai');}}
+async function addAgent(){const r=await window.electronAPI.addAgent({id:newAgentId.value.trim(),name:newAgentName.value.trim()});if(!r.success&&r.premiumRequired)return showToast(r.error);if(!r.success)return showToast(r.error||'failed');newAgentId.value='';newAgentName.value='';await refreshState();await refreshAgents();}
+async function saveProvider(){const map={aws:'anthropic-messages',aws2:'anthropic-messages',openai:'openai-completions','openai-codex':'openai-completions',moonshot:'openai-completions',openrouter:'openai-completions'};const r=await window.electronAPI.saveProviderConfig({providerId:providerId.value,baseUrl:baseUrl.value.trim(),apiKey:providerApiKey.value.trim(),api:map[providerId.value]||'openai-completions',modelId:modelSearch.value.trim()});showToast(r.success?'Saved':'Failed: '+r.error);}
 async function setTier(t){await window.electronAPI.setPremiumTier(t);await refreshState();}
-function buyPremium(){alert('Checkout modal can be connected here.');}
+function buyPremium(){showToast('Checkout modal can be connected here.');}
 function init(){attachBtn.onclick=()=>fileInput.click();slashBtn.onclick=()=>{msg.value=(msg.value.trim()?msg.value+' ':'')+'/';msg.focus();};fileInput.onchange=()=>{const files=[...(fileInput.files||[])];if(!files.length)return;pendingFiles=[...pendingFiles,...files];fileInput.value='';renderAttachPreview();};msg.addEventListener('input',()=>{msg.style.height='auto';msg.style.height=Math.min(msg.scrollHeight,160)+'px';});msg.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}});}
 (async()=>{const lang=localStorage.getItem('myopenclaw.lang')||'en';langSelect.value=lang;langSelect.onchange=()=>tApply(langSelect.value);init();await refreshState();await refreshAgents();renderConversation();tApply(lang);})();
 </script>
-</body>
+<div id="toast" style="position:fixed;right:18px;bottom:18px;min-width:220px;max-width:420px;background:#1f2937;color:#fff;padding:10px 12px;border-radius:10px;box-shadow:0 10px 24px rgba(0,0,0,.25);display:none;z-index:9999"></div></body>
 </html>
