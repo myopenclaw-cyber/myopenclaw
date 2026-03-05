@@ -35,6 +35,7 @@
     input,textarea,select { width:100%; border:1px solid #e9ecef; border-radius:10px; padding:10px 12px; }
     button { border:none; border-radius:10px; padding:10px 14px; color:#fff; cursor:pointer; background:linear-gradient(135deg,#667eea,#764ba2); }
     button.alt { color:#1a1a1a; background:#f8f9fa; border:1px solid #e9ecef; }
+    button.danger { color:#fff; background:linear-gradient(135deg,#ef4444,#dc2626); border:1px solid #b91c1c; }
     .chat { height:100%; overflow:auto; border:1px solid #e9ecef; border-radius:12px; background:#f8f9fa; padding:10px; }
     .input-mask { height: 12px; background: linear-gradient(to bottom, rgba(248,249,250,0), #fff); margin-top: 8px; }
     .input-bar { position: sticky; bottom: 0; background:#fff; padding-top:8px; border-top:1px solid #E5E7EB; box-shadow:0 -6px 16px rgba(0,0,0,.05); }
@@ -42,6 +43,10 @@
     .msg.user { margin-left:auto; color:#fff; background:linear-gradient(135deg,#4c86f2,#5e4fd6); }
     .msg.ai { position:relative; padding-left:32px; background:#F8F9FF; border:1px solid rgba(102,126,234,.2); }
     .msg.ai::before { content:'BOT'; position:absolute; left:8px; top:10px; font-size:10px; color:#667eea; }
+    .typing{display:inline-flex;gap:5px;align-items:center}
+    .typing i{display:block;width:6px;height:6px;border-radius:50%;background:#8b95cf;animation:blink 1.2s infinite}
+    .typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+    @keyframes blink{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-2px)}}
     .small{font-size:12px;color:#6c757d}
     .chip{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid #d7defd;background:#eef1ff;color:#4b57a8}
     ul{list-style:none}.agent-item{border:1px solid #e9ecef;border-radius:10px;padding:10px;margin:8px 0}
@@ -100,7 +105,6 @@
           <div class="row" style="margin-bottom:0;">
             <input id="fileInput" type="file" multiple style="display:none" />
             <button id="attachBtn" class="alt" title="Attach">+</button>
-            <button id="slashBtn" class="alt" title="Slash">/</button>
             <textarea id="msg" rows="2" style="max-height:160px" placeholder="Type your message... (Enter to send, Shift+Enter for new line)"></textarea>
             <button onclick="sendMsg()">Send</button>
           </div>
@@ -124,7 +128,7 @@
       <div class="row"><button onclick="saveProvider()">Save</button></div>
     </div></section>
 
-    <section id="config" class="page" style="display:none"><div class="card"><h3>Config</h3><div class="small" style="margin-bottom:10px">Reset all OpenClaw model-related config to factory defaults.</div><div class="row" style="justify-content:flex-end"><button class="alt" onclick="resetAllModelConfig()">Reset All Config</button></div></div></section>
+    <section id="config" class="page" style="display:none"><div class="card"><h3>Config</h3><div class="small" style="margin-bottom:10px">Reset all OpenClaw model-related config to factory defaults.</div><div class="row" style="justify-content:flex-end"><button class="danger" onclick="resetAllModelConfig()">Reset All Config</button></div></div></section>
 
     <section id="account" class="page" style="display:none"><div class="card"><h3>Account & Plan</h3><p id="usageInfo" class="small"></p><div class="row"><button class="alt" onclick="setTier('free')">Set Free</button><button class="alt" onclick="setTier('premium')">Set Premium</button><button class="alt" onclick="setTier('pro')">Set Pro</button><button onclick="buyPremium()">Upgrade</button></div></div></section>
   </main>
@@ -196,7 +200,8 @@ async function choosePlan(plan){
   closeUpgradeModal();
   showToast('Redirected to checkout page');
 }
-function addMsg(text,cls){const d=document.createElement('div');d.className='msg '+cls;d.textContent=text;chatBox.appendChild(d);chatBox.scrollTop=chatBox.scrollHeight;}
+function addMsg(text,cls){const d=document.createElement('div');d.className='msg '+cls;d.textContent=text;chatBox.appendChild(d);chatBox.scrollTop=chatBox.scrollHeight;return d;}
+function addTypingIndicator(){const d=document.createElement('div');d.className='msg ai';d.innerHTML="<span class='typing'><i></i><i></i><i></i></span>";chatBox.appendChild(d);chatBox.scrollTop=chatBox.scrollHeight;return d;}
 function renderAttachPreview(){attachPreview.innerHTML='';if(!pendingFiles.length){attachPreview.style.display='none';return;}attachPreview.style.display='flex';pendingFiles.forEach((f,i)=>{const c=document.createElement('span');c.className='chip';c.textContent='FILE '+f.name+' ';const x=document.createElement('button');x.className='alt';x.style.padding='2px 6px';x.textContent='x';x.onclick=()=>{pendingFiles.splice(i,1);renderAttachPreview();};c.appendChild(x);attachPreview.appendChild(c);});}
 async function simulateUploadProgress(){sendProgressWrap.style.display='block';let v=0;while(v<100){await new Promise(r=>setTimeout(r,80));v+=Math.floor(Math.random()*12)+6;if(v>100)v=100;sendProgressBar.style.width=v+'%';sendProgressText.textContent='Sending attachments... '+v+'%';}await new Promise(r=>setTimeout(r,150));sendProgressWrap.style.display='none';sendProgressBar.style.width='0%';}
 async function refreshState(){appState=await window.electronAPI.getAppState();usageInfo.textContent=`Tier: ${appState.premiumTier} | Messages sent: ${(appState.freeQuotaUsed||0)+(appState.userApiKeyQuotaUsed||0)}`;currentAgent=appState.activeAgentId||'main';}
@@ -215,7 +220,7 @@ async function renderConversation(){
   if(!conv.length)return addMsg(`Conversation with ${currentAgent} is empty.`,'ai');
   conv.forEach(m=>addMsg(m.content,m.role==='user'?'user':'ai'));
 }
-async function sendMsg(){const text=msg.value.trim();if(!text&&!pendingFiles.length)return;const note=pendingFiles.length?`\n\n[Attachments: ${pendingFiles.map(f=>f.name).join(', ')}]`:'';addMsg((text||'[Attachment]')+note,'user');msg.value='';const sending=[...pendingFiles];pendingFiles=[];renderAttachPreview();if(sending.length)await simulateUploadProgress();const r=await window.electronAPI.sendMessage({message:(text||'Please process attachments')+note,agentId:currentAgent});if(r.success){addMsg(r.response||'Received','ai');await refreshState();}else if(r.noApiKeyConfigured){showApiKeyRequiredModal();showToast(r.error||'Please configure API key first.');}else if(r.premiumRequired){showToast(r.error||'Premium required');}else{addMsg('Failed: '+(r.error||'unknown'),'ai');}}
+async function sendMsg(){const text=msg.value.trim();if(!text&&!pendingFiles.length)return;const note=pendingFiles.length?`\n\n[Attachments: ${pendingFiles.map(f=>f.name).join(', ')}]`:'';addMsg((text||'[Attachment]')+note,'user');msg.value='';const sending=[...pendingFiles];pendingFiles=[];renderAttachPreview();if(sending.length)await simulateUploadProgress();const typingEl=addTypingIndicator();const r=await window.electronAPI.sendMessage({message:(text||'Please process attachments')+note,agentId:currentAgent});if(typingEl&&typingEl.parentNode)typingEl.parentNode.removeChild(typingEl);if(r.success){addMsg(r.response||'Received','ai');await refreshState();}else if(r.noApiKeyConfigured){showApiKeyRequiredModal();showToast(r.error||'Please configure API key first.');}else if(r.premiumRequired){showToast(r.error||'Premium required');}else{addMsg('Failed: '+(r.error||'unknown'),'ai');}}
 async function addAgent(){const agents=await window.electronAPI.listAgents();if((appState?.premiumTier||'free')==='free' && agents.length>=1){showUpgradeModal();return;}if((appState?.premiumTier||'free')==='premium' && agents.length>=5){showUpgradeModal();return;}const r=await window.electronAPI.addAgent({id:newAgentId.value.trim(),name:newAgentName.value.trim()});if(!r.success&&r.premiumRequired){showUpgradeModal();return;}if(!r.success)return showToast(r.error||'failed');newAgentId.value='';newAgentName.value='';await refreshState();await refreshAgents();}
 async function saveProvider(){
   const providerId=(providerName.value||'').trim();
@@ -253,7 +258,7 @@ async function resetAllModelConfig(){
   showToast('All model-related config reset.');
 }
 function buyPremium(){showUpgradeModal();}
-function init(){attachBtn.onclick=()=>fileInput.click();slashBtn.onclick=()=>{msg.value=(msg.value.trim()?msg.value+' ':'')+'/';msg.focus();};fileInput.onchange=()=>{const files=[...(fileInput.files||[])];if(!files.length)return;pendingFiles=[...pendingFiles,...files];fileInput.value='';renderAttachPreview();};msg.addEventListener('input',()=>{msg.style.height='auto';msg.style.height=Math.min(msg.scrollHeight,160)+'px';});msg.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}});}
+function init(){attachBtn.onclick=()=>fileInput.click();fileInput.onchange=()=>{const files=[...(fileInput.files||[])];if(!files.length)return;pendingFiles=[...pendingFiles,...files];fileInput.value='';renderAttachPreview();};msg.addEventListener('input',()=>{msg.style.height='auto';msg.style.height=Math.min(msg.scrollHeight,160)+'px';});msg.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}});}
 (async()=>{init();await refreshState();await refreshAgents();await loadProvider();renderConversation();tApply('en');})();
 </script>
 <div id="toast" style="position:fixed;right:18px;bottom:18px;min-width:220px;max-width:420px;background:#1f2937;color:#fff;padding:10px 12px;border-radius:10px;box-shadow:0 10px 24px rgba(0,0,0,.25);display:none;z-index:9999"></div>
