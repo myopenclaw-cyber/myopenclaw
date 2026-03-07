@@ -1,5 +1,4 @@
-{
-    "appId":  "com.myopenclaw.app",
+{ "compression": "maximum", "appId":  "com.myopenclaw.app",
     "productName":  "MyOpenClaw",
     "artifactName":  "${productName}-${version}-${env.BUILD_VARIANT}-${env.TARGET_LABEL}.${ext}",
     "files":  [
@@ -15,7 +14,7 @@
                   "build/**/*",
                   "package.json"
               ],
-    "win":  {
+    "win":  { "electronLanguages": ["en", "zh-CN", "zh-TW"],
                 "target":  [
                                {
                                    "target":  "nsis",
@@ -25,14 +24,11 @@
                                }
                            ]
             },
-    "mac":  {
+    "mac":  { "electronLanguages": ["en", "zh-CN", "zh-TW"],
                 "target":  [
                                {
                                    "target":  "zip",
-                                   "arch":  [
-                                                "x64",
-                                                "arm64"
-                                            ]
+                                   "arch": ["arm64"]
                                }
                            ]
             },
