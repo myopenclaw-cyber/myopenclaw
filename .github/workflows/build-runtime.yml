@@ -43,7 +43,7 @@ jobs:
       - name: Build OpenClaw runtime
         run: |
           cd resources/openclaw-deps/openclaw
-          pnpm install --frozen-lockfile
+          pnpm install --no-frozen-lockfile
           pnpm build
         shell: bash
 
@@ -116,7 +116,7 @@ jobs:
       - name: Build OpenClaw runtime
         run: |
           cd resources/openclaw-deps/openclaw
-          pnpm install --frozen-lockfile
+          pnpm install --no-frozen-lockfile
           pnpm build
 
       - name: Verify dist exists
@@ -185,7 +185,7 @@ jobs:
       - name: Build OpenClaw runtime
         run: |
           cd resources/openclaw-deps/openclaw
-          pnpm install --frozen-lockfile
+          pnpm install --no-frozen-lockfile
           pnpm build
 
       - name: Verify dist exists
