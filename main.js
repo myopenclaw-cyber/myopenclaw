@@ -376,9 +376,10 @@ async function downloadFile(url, outputPath, onProgress) {
 }
 
 async function ensureEmbeddedRuntime() {
-  const runtimeEntry = path.join(__dirname, 'resources', 'openclaw-deps', 'openclaw', 'openclaw.mjs');
-  if (fs.existsSync(runtimeEntry)) {
-    console.log('[runtime] Embedded runtime found');
+  const distEntry = path.join(__dirname, 'resources', 'openclaw-deps', 'openclaw', 'dist', 'entry.js');
+  const distEntryMjs = path.join(__dirname, 'resources', 'openclaw-deps', 'openclaw', 'dist', 'entry.mjs');
+  if (fs.existsSync(distEntry) || fs.existsSync(distEntryMjs)) {
+    console.log('[runtime] Embedded runtime found (dist/entry detected)');
     updateLoadingStatus('Launching openclaw gateway...', 72);
     return;
   }
@@ -413,8 +414,8 @@ async function ensureEmbeddedRuntime() {
     execFileSync('unzip', ['-o', zipPath, '-d', resourcesDir], { stdio: 'inherit' });
   }
 
-  if (!fs.existsSync(runtimeEntry)) {
-    throw new Error('Runtime extracted but openclaw.mjs not found. Please check the archive structure.');
+  if (!fs.existsSync(distEntry) && !fs.existsSync(distEntryMjs)) {
+    throw new Error('Runtime extracted but dist/entry.(m)js not found. The runtime package may be incomplete.');
   }
 
   console.log('[runtime] Runtime ready');
@@ -437,8 +438,9 @@ async function startGateway() {
     console.log(`[startGateway] Starting gateway on port ${gatewayPort}...`);
     updateLoadingStatus('Establishing secure connections...', 48);
 
-    const runtimeEntry = path.join(__dirname, 'resources', 'openclaw-deps', 'openclaw', 'openclaw.mjs');
-    setRuntimeDownloadNeeded(!fs.existsSync(runtimeEntry));
+    const distEntryCheck = path.join(__dirname, 'resources', 'openclaw-deps', 'openclaw', 'dist', 'entry.js');
+    const distEntryMjsCheck = path.join(__dirname, 'resources', 'openclaw-deps', 'openclaw', 'dist', 'entry.mjs');
+    setRuntimeDownloadNeeded(!fs.existsSync(distEntryCheck) && !fs.existsSync(distEntryMjsCheck));
 
     await ensureEmbeddedRuntime();
     ensureAuthProfilesFromEmbeddedConfig();

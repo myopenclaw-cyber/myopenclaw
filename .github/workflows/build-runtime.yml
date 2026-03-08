@@ -30,6 +30,34 @@ jobs:
             exit 1
           }
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Build OpenClaw runtime
+        run: |
+          cd resources/openclaw-deps/openclaw
+          pnpm install --frozen-lockfile
+          pnpm build
+        shell: bash
+
+      - name: Verify dist exists
+        run: |
+          if (Test-Path "resources/openclaw-deps/openclaw/dist/entry.js") {
+            Write-Host "dist/entry.js found"
+          } elseif (Test-Path "resources/openclaw-deps/openclaw/dist/entry.mjs") {
+            Write-Host "dist/entry.mjs found"
+          } else {
+            Write-Host "dist/entry.(m)js not found after build"
+            exit 1
+          }
+
       - name: Create output directory
         run: |
           New-Item -ItemType Directory -Path "dist/first-launch-runtime" -Force | Out-Null
@@ -75,6 +103,31 @@ jobs:
             exit 1
           fi
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Build OpenClaw runtime
+        run: |
+          cd resources/openclaw-deps/openclaw
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Verify dist exists
+        run: |
+          if [ -f "resources/openclaw-deps/openclaw/dist/entry.js" ] || [ -f "resources/openclaw-deps/openclaw/dist/entry.mjs" ]; then
+            echo "dist/entry found"
+          else
+            echo "dist/entry.(m)js not found after build"
+            exit 1
+          fi
+
       - name: Create output directory
         run: mkdir -p dist/first-launch-runtime
 
@@ -116,6 +169,31 @@ jobs:
             echo "openclaw-deps found"
           else
             echo "openclaw-deps not found"
+            exit 1
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Build OpenClaw runtime
+        run: |
+          cd resources/openclaw-deps/openclaw
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Verify dist exists
+        run: |
+          if [ -f "resources/openclaw-deps/openclaw/dist/entry.js" ] || [ -f "resources/openclaw-deps/openclaw/dist/entry.mjs" ]; then
+            echo "dist/entry found"
+          else
+            echo "dist/entry.(m)js not found after build"
             exit 1
           fi
 
