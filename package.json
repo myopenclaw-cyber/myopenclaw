@@ -49,7 +49,7 @@
     "mac": {
       "target": [
         {
-          "target": "zip",
+          "target": "dmg",
           "arch": ["arm64"]
         }
       ]

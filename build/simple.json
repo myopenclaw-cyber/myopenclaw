@@ -32,7 +32,7 @@
     "electronLanguages": ["en", "zh-CN", "zh-TW"],
     "target": [
       {
-        "target": "zip"
+        "target": "dmg"
       }
     ]
   },
