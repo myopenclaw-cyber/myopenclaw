@@ -7,6 +7,10 @@ const net = require('net');
 const axios = require('axios');
 const { spawn, execFileSync } = require('child_process');
 
+// Suppress EPIPE errors on stdout/stderr (harmless when piped)
+process.stdout?.on('error', () => {});
+process.stderr?.on('error', () => {});
+
 let mainWindow;
 let gatewayPort = null;
 let gatewayBaseUrl = null;

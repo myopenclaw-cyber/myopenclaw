@@ -35,16 +35,22 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - name: Build OpenClaw runtime
+      - name: Install openclaw dist from npm
         run: |
           cd resources/openclaw-deps/openclaw
-          pnpm install --no-frozen-lockfile
-          pnpm build
+          OPENCLAW_VERSION=$(node -p "require('./package.json').version")
+          echo "Installing openclaw@${OPENCLAW_VERSION} from npm..."
+          cd /tmp
+          npm pack "openclaw@${OPENCLAW_VERSION}"
+          tar xzf "openclaw-${OPENCLAW_VERSION}.tgz"
+          cp -r package/dist "$GITHUB_WORKSPACE/resources/openclaw-deps/openclaw/"
+          echo "dist/ copied successfully"
+        shell: bash
+
+      - name: Install production dependencies
+        run: |
+          cd resources/openclaw-deps/openclaw
+          npm install --omit=dev --legacy-peer-deps
         shell: bash
 
       - name: Verify dist exists
@@ -54,7 +60,7 @@ jobs:
           } elseif (Test-Path "resources/openclaw-deps/openclaw/dist/entry.mjs") {
             Write-Host "dist/entry.mjs found"
           } else {
-            Write-Host "dist/entry.(m)js not found after build"
+            Write-Host "dist/entry.(m)js not found"
             exit 1
           }
 
@@ -108,23 +114,28 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - name: Build OpenClaw runtime
+      - name: Install openclaw dist from npm
         run: |
           cd resources/openclaw-deps/openclaw
-          pnpm install --no-frozen-lockfile
-          pnpm build
+          OPENCLAW_VERSION=$(node -p "require('./package.json').version")
+          echo "Installing openclaw@${OPENCLAW_VERSION} from npm..."
+          cd /tmp
+          npm pack "openclaw@${OPENCLAW_VERSION}"
+          tar xzf "openclaw-${OPENCLAW_VERSION}.tgz"
+          cp -r package/dist "$GITHUB_WORKSPACE/resources/openclaw-deps/openclaw/"
+          echo "dist/ copied successfully"
+
+      - name: Install production dependencies
+        run: |
+          cd resources/openclaw-deps/openclaw
+          npm install --omit=dev --legacy-peer-deps
 
       - name: Verify dist exists
         run: |
           if [ -f "resources/openclaw-deps/openclaw/dist/entry.js" ] || [ -f "resources/openclaw-deps/openclaw/dist/entry.mjs" ]; then
             echo "dist/entry found"
           else
-            echo "dist/entry.(m)js not found after build"
+            echo "dist/entry.(m)js not found"
             exit 1
           fi
 
@@ -177,23 +188,28 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - name: Build OpenClaw runtime
+      - name: Install openclaw dist from npm
         run: |
           cd resources/openclaw-deps/openclaw
-          pnpm install --no-frozen-lockfile
-          pnpm build
+          OPENCLAW_VERSION=$(node -p "require('./package.json').version")
+          echo "Installing openclaw@${OPENCLAW_VERSION} from npm..."
+          cd /tmp
+          npm pack "openclaw@${OPENCLAW_VERSION}"
+          tar xzf "openclaw-${OPENCLAW_VERSION}.tgz"
+          cp -r package/dist "$GITHUB_WORKSPACE/resources/openclaw-deps/openclaw/"
+          echo "dist/ copied successfully"
+
+      - name: Install production dependencies
+        run: |
+          cd resources/openclaw-deps/openclaw
+          npm install --omit=dev --legacy-peer-deps
 
       - name: Verify dist exists
         run: |
           if [ -f "resources/openclaw-deps/openclaw/dist/entry.js" ] || [ -f "resources/openclaw-deps/openclaw/dist/entry.mjs" ]; then
             echo "dist/entry found"
           else
-            echo "dist/entry.(m)js not found after build"
+            echo "dist/entry.(m)js not found"
             exit 1
           fi
 
