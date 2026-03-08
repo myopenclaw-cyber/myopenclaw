@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build'
+        required: false
+        default: 'V3'
 
 jobs:
   build-windows:
@@ -12,23 +17,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: V2
-      
+          ref: ${{ github.event.inputs.branch || github.ref }}
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-      
+
       - name: Install dependencies
         run: npm install
-      
+
       - name: Build Windows Simple
         run: |
           $env:BUILD_VARIANT="simple"
           $env:TARGET_LABEL="windows"
           npx electron-builder --win --x64 --publish never -c build/simple.json --config.compression=maximum
         shell: powershell
-      
+
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
@@ -40,30 +45,57 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: V2
-      
+          ref: ${{ github.event.inputs.branch || github.ref }}
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-      
+
       - name: Install dependencies
         run: npm install
-      
+
       - name: Build Mac Apple Silicon Simple
         run: |
           export BUILD_VARIANT="simple"
           export TARGET_LABEL="mac_silicon"
           npx electron-builder --mac --arm64 --publish never -c build/simple.json --config.compression=maximum --config.directories.output=dist-mac-silicon
-      
+
       - name: Upload Mac Silicon artifact
         uses: actions/upload-artifact@v4
         with:
           name: MyOpenClaw-Mac-Silicon
           path: dist-mac-silicon/**/*
 
+  build-mac-intel:
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Mac Intel Simple
+        run: |
+          export BUILD_VARIANT="simple"
+          export TARGET_LABEL="mac_intel"
+          npx electron-builder --mac --x64 --publish never -c build/simple.json --config.compression=maximum --config.directories.output=dist-mac-intel
+
+      - name: Upload Mac Intel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyOpenClaw-Mac-Intel
+          path: dist-mac-intel/**/*
+
   create-release:
-    needs: [build-windows, build-mac-silicon]
+    needs: [build-windows, build-mac-silicon, build-mac-intel]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
@@ -73,10 +105,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: ./artifacts
-      
+
       - name: Display structure of downloaded files
         run: ls -R ./artifacts
-      
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -87,20 +119,20 @@ jobs:
           prerelease: false
           body: |
             ## MyOpenClaw Release
-            
+
             ### Downloads
             - **Windows 10/11 (64-bit)**: MyOpenClaw-*-simple-windows.exe
             - **macOS Apple Silicon (M1/M2/M3/M4)**: MyOpenClaw-*-simple-mac_silicon.zip
-            
+            - **macOS Intel**: MyOpenClaw-*-simple-mac_intel.zip
+
             ### Installation
             1. Download the appropriate file for your platform
             2. Run the installer (Windows) or unzip and drag to Applications (Mac)
             3. MyOpenClaw will automatically download OpenClaw on first launch
-            
+
             ### Notes
             - This is the Simple version (lightweight, ~80MB)
             - OpenClaw runtime will be downloaded automatically on first launch
             - No technical knowledge required
-            - macOS Intel build temporarily unavailable (use Rosetta 2 with Silicon build)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

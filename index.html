@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -16,15 +16,7 @@
     .nav button { width:100%; text-align:left; padding:11px 12px; margin:4px 0; border:none; border-radius:10px; background:transparent; color:#6c757d; cursor:pointer; }
     .nav button.active { background:linear-gradient(135deg, rgba(102,126,234,.14), rgba(118,75,162,.1)); color:#667eea; box-shadow: inset 3px 0 0 #667eea; }
     .sidebar > .nav:not(.nav-bottom){overflow:auto;min-height:0;align-self:stretch}
-    .chat-nav { display:flex; gap:6px; align-items:center; }
-    .chat-agent-tree { margin:0 0 8px 12px; border-left:1px solid #e9ecef; padding-left:8px; max-height:0; overflow:hidden; transition:max-height .2s ease; }
-    .chat-agent-tree.open { max-height: 220px; }
-    .chat-agent-item { display:flex; align-items:center; gap:6px; padding:6px 8px; border-radius:8px; cursor:pointer; margin:2px 0; font-size:13px; }
-    .chat-agent-item.active { background:#F3F0FF; }
-    .chat-agent-dot { width:6px; height:6px; border-radius:50%; background:#8c7cf5; }
     .nav-bottom { position:static; padding:0; align-self:stretch; }
-    .nav-bottom #tab-account{background:linear-gradient(135deg,#f4f7ff,#eef2ff);border:1px solid #dbe3ff;color:#4c57a8;font-weight:600;box-shadow:0 4px 10px rgba(99,102,241,.08)}
-    .nav-bottom #tab-account.active{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border-color:transparent;box-shadow:0 10px 18px rgba(102,126,234,.35)}
     .main { padding:18px; min-width:0; overflow:hidden; }
     .hero { padding:16px 16px; border-radius:14px; background:linear-gradient(90deg,rgba(11,18,48,.72),rgba(18,24,60,.38)), url('./assets/premium/images/hero-banner.jpg') center/cover no-repeat; color:#fff; margin-bottom:12px; min-height:92px; display:flex; align-items:center; border:1px solid rgba(255,255,255,.18); box-shadow:0 10px 24px rgba(30,41,59,.25); }
     .hero h1{font-family:Inter,Arial,sans-serif;font-size:20px;letter-spacing:.2px;text-shadow:0 2px 12px rgba(0,0,0,.35)}
@@ -50,28 +42,8 @@
     @keyframes blink{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-2px)}}
     .small{font-size:12px;color:#6c757d}
     .chip{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid #d7defd;background:#eef1ff;color:#4b57a8}
-    ul{list-style:none}.agent-item{border:1px solid #e9ecef;border-radius:10px;padding:10px;margin:8px 0}
     .modal-mask{position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:10000}
-    .modal{width:min(980px,95vw);max-height:90vh;overflow:auto;background:linear-gradient(180deg,#ffffff,#f8f9ff);border-radius:18px;padding:18px;border:1px solid #e5e7eb;box-shadow:0 24px 64px rgba(31,41,55,.35)}
-    .pay-hero{height:132px;border-radius:14px;background:url('./assets/premium/images/hero-banner.jpg') center/cover no-repeat;position:relative;overflow:hidden;margin:8px 0 12px}
-    .pay-hero::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,rgba(17,24,39,.62),rgba(17,24,39,.2));}
-    .pay-hero .txt{position:absolute;left:14px;bottom:12px;color:#fff;z-index:1}
-    .plans{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}
-    .plan{border:1px solid #e5e7eb;border-radius:14px;padding:14px;background:#fff;position:relative;transition:all .18s ease}
-    .plan h4{margin-bottom:4px}
-    .plan ul{margin-top:8px;padding-left:0;list-style:none}
-    .plan .icon{width:34px;height:34px;object-fit:contain;margin-bottom:6px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.12))}
-    .plan .price{font-size:26px;font-weight:800;color:#111827;margin:8px 0 2px}
-    .plan .sub{font-size:12px;color:#6b7280}
-    .feat{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px}
-    .mk{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;font-size:12px;font-weight:800}
-    .mk.yes{background:#eafaf1;color:#16a34a;border:1px solid #86efac}
-    .mk.no{background:#fff1f2;color:#ef4444;border:1px solid #fecdd3}
-
-    .plan.reco{border-color:#667eea;box-shadow:0 0 0 2px rgba(102,126,234,.14),0 10px 24px rgba(102,126,234,.12)}
-    .plan.tier-premium:hover,.plan.tier-pro:hover{transform:translateY(-2px);border-color:#667eea;box-shadow:0 0 0 2px rgba(102,126,234,.20),0 14px 30px rgba(102,126,234,.18)}
-    .plan .cta{width:100%;margin-top:10px}
-    @media (max-width: 860px){.plans{grid-template-columns:1fr}}
+    .modal{width:min(620px,95vw);max-height:90vh;overflow:auto;background:linear-gradient(180deg,#ffffff,#f8f9ff);border-radius:18px;padding:18px;border:1px solid #e5e7eb;box-shadow:0 24px 64px rgba(31,41,55,.35)}
   </style>
 </head>
 <body>
@@ -80,20 +52,15 @@
     <div class="gateway"><span class="dot"></span><span id="gatewayLabel">Local OpenClaw Gateway Running</span></div>
     <div class="row" style="display:none"></div>
     <nav class="nav">
-      <div class="chat-nav" style="margin-bottom:4px;">
-        <button id="tab-chat" class="active" onclick="onChatNavClick()">Chat</button>
-        <button id="chatToggle" class="alt" style="width:36px;padding:8px" onclick="toggleChatAgents()">v</button>
-      </div>
-      <div id="chatAgentTree" class="chat-agent-tree"></div>
-      <button id="tab-agents" onclick="showPage('agents')">Agents</button>
+      <button id="tab-chat" class="active" onclick="showPage('chat');renderConversation();">Chat</button>
       <button id="tab-keys" onclick="showPage('keys')">API Keys</button>
       <button id="tab-config" onclick="showPage('config')">Config</button>
     </nav>
-    <nav class="nav nav-bottom"><button id="tab-account" onclick="showPage('account')">Account</button></nav>
+    <nav class="nav nav-bottom"><button id="tab-about" class="alt" onclick="showPage('about')">About</button></nav>
   </aside>
 
   <main class="main">
-    <section class="hero"><h1 id="heroTitle" style="font-size:18px;">Full OpenClaw Power - Zero Technical Hassle</h1></section>
+    <section class="hero"><h1 style="font-size:18px;">Full OpenClaw Power - Zero Technical Hassle</h1></section>
 
     <section id="chat" class="page" style="display:block">
       <div class="card chat-card">
@@ -101,22 +68,13 @@
         <div class="chat-scroll"><div id="chatBox" class="chat"></div></div>
         <div class="input-mask"></div>
         <div class="input-bar">
-          <div id="attachPreview" class="row" style="display:none;flex-wrap:wrap"></div>
-          <div id="sendProgressWrap" style="display:none;margin:6px 0 10px;"><div style="height:8px;background:#eceef8;border-radius:999px;overflow:hidden;"><div id="sendProgressBar" style="height:100%;width:0%;background:linear-gradient(90deg,#667eea,#764ba2);"></div></div><div id="sendProgressText" class="small" style="margin-top:4px">Sending attachments... 0%</div></div>
           <div class="row" style="margin-bottom:0;">
-            <input id="fileInput" type="file" multiple style="display:none" />
-            <button id="attachBtn" class="alt" title="Attach">+</button>
             <textarea id="msg" rows="2" style="max-height:160px" placeholder="Type your message... (Enter to send, Shift+Enter for new line)"></textarea>
             <button onclick="sendMsg()">Send</button>
           </div>
         </div>
       </div>
     </section>
-
-    <section id="agents" class="page" style="display:none"><div class="card">
-      <div class="row"><input id="newAgentId" placeholder="Agent ID (default: agentN)" /><input id="newAgentName" placeholder="Agent Name" /><button onclick="addAgent()">Add Agent</button></div>
-      <ul id="agentList"></ul>
-    </div></section>
 
     <section id="keys" class="page" style="display:none"><div class="card">
       <h3>API Provider Config</h3>
@@ -131,57 +89,21 @@
 
     <section id="config" class="page" style="display:none"><div class="card"><h3>Config</h3><div class="row" style="justify-content:space-between;align-items:center"><div style="font-size:14px;color:#4b5563">Reset all OpenClaw model-related config to factory defaults.</div><button class="danger" onclick="resetAllModelConfig()">Reset All Config</button></div></div></section>
 
-    <section id="account" class="page" style="display:none"><div class="card"><h3>Account & Plan</h3><p id="usageInfo" class="small"></p><div class="row"><button class="alt" onclick="setTier('free')">Set Free</button><button class="alt" onclick="setTier('premium')">Set Premium</button><button class="alt" onclick="setTier('pro')">Set Pro</button><button onclick="buyPremium()">Upgrade</button></div></div></section>
+    <section id="about" class="page" style="display:none"><div class="card">
+      <h3>About MyOpenClaw</h3>
+      <p class="small" style="margin-top:8px">Version: 0.1.0</p>
+      <p class="small" style="margin-top:4px">A desktop client for OpenClaw Gateway with BYOK (Bring Your Own Key) support.</p>
+      <p class="small" style="margin-top:4px">Agent: Main Agent (built-in)</p>
+      <div class="row" style="margin-top:12px"><button class="alt" onclick="window.electronAPI.openGatewayDashboard()">Open Gateway Dashboard</button></div>
+    </div></section>
   </main>
 </div>
 
 <script>
-let appState=null,currentAgent='main',pendingFiles=[],chatAgentsExpanded=false;
-const I18N={
-  en:{gateway:'Local OpenClaw Gateway Running',hero:'Full OpenClaw Power - Zero Technical Hassle',chat:'Chat',agents:'Agents',keys:'API Keys',account:'Account',msg:'Type your message... (Enter to send, Shift+Enter for new line)',add:'Add Agent',aid:'Agent ID (default: agentN)',an:'Agent Name',pc:'Provider Config',save:'Save',acc:'Account & Plan',up:'Upgrade'},
-  zh:{gateway:'本地 OpenClaw 网关运行中',hero:'完整 OpenClaw 能力 - 零技术门槛',chat:'对话',agents:'Agents',keys:'API Keys',account:'账户',msg:'输入消息...（回车发送，Shift+回车换行）',add:'新建 Agent',aid:'Agent ID（默认: agentN）',an:'Agent 名称',pc:'Provider Config',save:'Save',acc:'账户与套餐',up:'升级'}
-};
+let appState=null,currentAgent='main';
+
 function showPage(id){document.querySelectorAll('.page').forEach(p=>p.style.display='none');document.getElementById(id).style.display='block';document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));const tab=document.getElementById('tab-'+id);if(tab)tab.classList.add('active');}
-function onChatNavClick(){showPage('chat');renderConversation();}
-function toggleChatAgents(){chatAgentsExpanded=!chatAgentsExpanded;chatAgentTree.classList.toggle('open',chatAgentsExpanded);chatToggle.textContent=chatAgentsExpanded?'^':'v';}
-async function setActiveAgentFromTree(id){await window.electronAPI.setActiveAgent(id);currentAgent=id;showPage('chat');await refreshState();renderConversation();await refreshAgents();msg.focus();}
-function tApply(lang){
-  const t=I18N[lang]||I18N.en;
-  localStorage.setItem('myopenclaw.lang',lang);
-  gatewayLabel.textContent=t.gateway;
-  heroTitle.textContent=t.hero;
-  tabChat.textContent=t.chat;
-  tabAgents.textContent=t.agents;
-  tabKeys.textContent=t.keys;
-  if(window.tabConfig) tabConfig.textContent='Config';
-  tabAccount.textContent=t.account;
-  msg.placeholder=t.msg;
-  newAgentId.placeholder=t.aid;
-  newAgentName.placeholder=t.an;
-  document.querySelector('#agents .row button').textContent=t.add;
-  document.querySelector('#keys h3').textContent=t.pc;
-  document.querySelector('#keys .row:last-child button').textContent=t.save;
-  document.querySelector('#account h3').textContent=t.acc;
-  document.querySelector('#account .row button:last-child').textContent=t.up;
-
-  const providerTip=document.querySelector('#keys .small');
-  if(providerTip) providerTip.textContent = lang==='zh' ? 'Provider/Model 会自动使用默认值。' : 'Provider/Model use default values automatically.';
-
-  const accountBtns=document.querySelectorAll('#account .row button');
-  if(accountBtns[0]) accountBtns[0].textContent = lang==='zh' ? '设为 Free' : 'Set Free';
-  if(accountBtns[1]) accountBtns[1].textContent = lang==='zh' ? '设为 Premium' : 'Set Premium';
-  if(accountBtns[2]) accountBtns[2].textContent = lang==='zh' ? '设为 Pro' : 'Set Pro';
-
-  const mTitle=document.querySelector('#upgradeModalMask h3');
-  const mDesc=document.querySelector('#upgradeModalMask .small');
-  if(mTitle) mTitle.textContent = lang==='zh' ? '升级你的套餐' : 'Upgrade your plan';
-  if(mDesc) mDesc.textContent = lang==='zh' ? '解锁更多 Agent、更高配额与更快工作流。' : 'Unlock more agents, higher quota, and faster workflow.';
-  const closeBtn=document.querySelector('#upgradeModalMask .row button.alt');
-  if(closeBtn) closeBtn.textContent = lang==='zh' ? '关闭' : 'Close';
-}
-function showToast(text,ms=2200){const t=document.getElementById("toast"); if(!t)return; t.textContent=text; t.style.display="block"; clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>t.style.display="none",ms);} 
-function showUpgradeModal(){upgradeModalMask.style.display='flex';}
-function closeUpgradeModal(){upgradeModalMask.style.display='none';}
+function showToast(text,ms=2200){const t=document.getElementById("toast"); if(!t)return; t.textContent=text; t.style.display="block"; clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>t.style.display="none",ms);}
 function showApiKeyRequiredModal(){
   modalProviderName.value = providerName.value || '';
   modalModelName.value = modelName.value || '';
@@ -191,24 +113,10 @@ function showApiKeyRequiredModal(){
   apiKeyRequiredModal.style.display='flex';
 }
 function closeApiKeyRequiredModal(){apiKeyRequiredModal.style.display='none';}
-async function choosePlan(plan){
-  if(plan==='free'){closeUpgradeModal();showToast('You are on Free plan');return;}
-  const r = await window.electronAPI.createCheckoutSession(plan);
-  if(!r?.success){
-    showToast('Checkout failed: '+(r?.error||'unknown'));
-    return;
-  }
-  closeUpgradeModal();
-  showToast('Redirected to checkout page');
-}
 function fmtTime(ts){const d=ts?new Date(ts):new Date();const p=n=>String(n).padStart(2,'0');return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;}
 function addMsg(text,cls,ts){const d=document.createElement('div');d.className='msg '+cls;const body=document.createElement('div');body.textContent=text;const tm=document.createElement('span');tm.className='msg-time';tm.textContent=fmtTime(ts);d.appendChild(body);d.appendChild(tm);chatBox.appendChild(d);chatBox.scrollTop=chatBox.scrollHeight;return d;}
 function addTypingIndicator(){const d=document.createElement('div');d.className='msg ai';d.innerHTML="<span class='typing'><i></i><i></i><i></i></span>";chatBox.appendChild(d);chatBox.scrollTop=chatBox.scrollHeight;return d;}
-function renderAttachPreview(){attachPreview.innerHTML='';if(!pendingFiles.length){attachPreview.style.display='none';return;}attachPreview.style.display='flex';pendingFiles.forEach((f,i)=>{const c=document.createElement('span');c.className='chip';c.textContent='FILE '+f.name+' ';const x=document.createElement('button');x.className='alt';x.style.padding='2px 6px';x.textContent='x';x.onclick=()=>{pendingFiles.splice(i,1);renderAttachPreview();};c.appendChild(x);attachPreview.appendChild(c);});}
-async function simulateUploadProgress(){sendProgressWrap.style.display='block';let v=0;while(v<100){await new Promise(r=>setTimeout(r,80));v+=Math.floor(Math.random()*12)+6;if(v>100)v=100;sendProgressBar.style.width=v+'%';sendProgressText.textContent='Sending attachments... '+v+'%';}await new Promise(r=>setTimeout(r,150));sendProgressWrap.style.display='none';sendProgressBar.style.width='0%';}
-async function refreshState(){appState=await window.electronAPI.getAppState();usageInfo.textContent=`Tier: ${appState.premiumTier} | Messages sent: ${(appState.freeQuotaUsed||0)+(appState.userApiKeyQuotaUsed||0)}`;currentAgent=appState.activeAgentId||'main';}
-async function refreshAgents(){const agents=await window.electronAPI.listAgents();const agent=agents.find(a=>a.id===currentAgent)||agents[0]||{id:'main',name:'Main Agent',channels:[]};currentAgent=agent.id;chatBreadcrumb.textContent=`Chat / ${agent.name}`;chatAgentTree.innerHTML='';agents.forEach(a=>{const item=document.createElement('div');item.className='chat-agent-item'+(a.id===currentAgent?' active':'');item.innerHTML=`<span class='chat-agent-dot'></span><span>${a.name}</span>`;item.onclick=()=>setActiveAgentFromTree(a.id);chatAgentTree.appendChild(item);});const quick=document.createElement('div');quick.className='chat-agent-item';quick.style.fontWeight='600';quick.textContent='+ New Agent';quick.onclick=()=>showPage('agents');chatAgentTree.appendChild(quick);
-agentList.innerHTML='';agents.forEach(a=>{const li=document.createElement('li');li.className='agent-item';li.innerHTML=`<b>${a.name}</b> <span class='small'>(${a.id})</span>`;const row=document.createElement('div');row.className='row';const r=document.createElement('button');r.className='alt';r.textContent='Rename';r.onclick=()=>{const edit=document.createElement('div');edit.className='row';const i=document.createElement('input');i.value=a.name;const s=document.createElement('button');s.textContent='Save';const c=document.createElement('button');c.className='alt';c.textContent='Cancel';edit.append(i,s,c);li.appendChild(edit);c.onclick=()=>edit.remove();s.onclick=async()=>{const name=i.value.trim();if(!name)return showToast('Agent name cannot be empty');const rs=await window.electronAPI.renameAgent({id:a.id,name});if(!rs.success)return showToast(rs.error||'Rename failed');await refreshState();await refreshAgents();};};const d=document.createElement('button');d.className='alt';d.textContent='Delete';d.disabled=a.id==='main';d.onclick=async()=>{if(!confirm('Delete agent?'))return;const rs=await window.electronAPI.deleteAgent(a.id);if(!rs.success)return showToast(rs.error||'Delete failed');await refreshState();await refreshAgents();renderConversation();};row.append(r,d);li.appendChild(row);agentList.appendChild(li);});}
+async function refreshState(){appState=await window.electronAPI.getAppState();currentAgent=appState.activeAgentId||'main';}
 async function renderConversation(){
   chatBox.innerHTML='';
   let conv=[];
@@ -216,9 +124,7 @@ async function renderConversation(){
     const r=await window.electronAPI.getAgentConversation(currentAgent);
     if(r?.success && Array.isArray(r.conversation)) conv=r.conversation;
   }catch{}
-  if(!conv.length){
-    conv=appState?.conversations?.[currentAgent]||[];
-  }
+  if(!conv.length) conv=appState?.conversations?.[currentAgent]||[];
   conv = conv.filter(m=>{
     const t=String(m?.content||'').trim().toLowerCase();
     if((m?.role==='user' && t==='ping') || (m?.role==='assistant' && (t==='pong' || t==='pong!'))) return false;
@@ -227,8 +133,24 @@ async function renderConversation(){
   if(!conv.length)return;
   conv.forEach(m=>addMsg(m.content,m.role==='user'?'user':'ai',m.timestamp));
 }
-async function sendMsg(){const text=msg.value.trim();if(!text&&!pendingFiles.length)return;const note=pendingFiles.length?`\n\n[Attachments: ${pendingFiles.map(f=>f.name).join(', ')}]`:'';addMsg((text||'[Attachment]')+note,'user');msg.value='';const sending=[...pendingFiles];pendingFiles=[];renderAttachPreview();if(sending.length)await simulateUploadProgress();const typingEl=addTypingIndicator();const r=await window.electronAPI.sendMessage({message:(text||'Please process attachments')+note,agentId:currentAgent});if(typingEl&&typingEl.parentNode)typingEl.parentNode.removeChild(typingEl);if(r.success){addMsg(r.response||'Received','ai');await refreshState();}else if(r.noApiKeyConfigured){showApiKeyRequiredModal();showToast(r.error||'Please configure API key first.');}else if(r.premiumRequired){showToast(r.error||'Premium required');}else{addMsg('Failed: '+(r.error||'unknown'),'ai');}}
-async function addAgent(){const agents=await window.electronAPI.listAgents();if((appState?.premiumTier||'free')==='free' && agents.length>=1){showUpgradeModal();return;}if((appState?.premiumTier||'free')==='premium' && agents.length>=5){showUpgradeModal();return;}const r=await window.electronAPI.addAgent({id:newAgentId.value.trim(),name:newAgentName.value.trim()});if(!r.success&&r.premiumRequired){showUpgradeModal();return;}if(!r.success)return showToast(r.error||'failed');newAgentId.value='';newAgentName.value='';await refreshState();await refreshAgents();}
+async function sendMsg(){
+  const text=msg.value.trim();
+  if(!text)return;
+  addMsg(text,'user');
+  msg.value='';
+  const typingEl=addTypingIndicator();
+  const r=await window.electronAPI.sendMessage({message:text,agentId:currentAgent});
+  if(typingEl&&typingEl.parentNode)typingEl.parentNode.removeChild(typingEl);
+  if(r.success){
+    addMsg(r.response||'Received','ai');
+    await refreshState();
+  }else if(r.noApiKeyConfigured){
+    showApiKeyRequiredModal();
+    showToast(r.error||'Please configure API key first.');
+  }else{
+    addMsg('Failed: '+(r.error||'unknown'),'ai');
+  }
+}
 async function saveProvider(){
   const providerId=(providerName.value||'').trim();
   const modelId=(modelName.value||'').trim();
@@ -255,7 +177,6 @@ async function loadProvider(){
   baseUrl.value=r.provider.baseUrl||'';
   providerApiKey.value=r.provider.apiKey||'';
 }
-async function setTier(t){await window.electronAPI.setPremiumTier(t);await refreshState();}
 async function resetAllModelConfig(){
   const ok=confirm('This will reset all OpenClaw model/API related configuration to factory defaults. Continue?');
   if(!ok) return;
@@ -267,14 +188,16 @@ async function resetAllModelConfig(){
   try{await renderConversation();}catch{}
   showToast('All model-related config reset.');
 }
-function buyPremium(){showUpgradeModal();}
-function init(){attachBtn.onclick=()=>fileInput.click();fileInput.onchange=()=>{const files=[...(fileInput.files||[])];if(!files.length)return;pendingFiles=[...pendingFiles,...files];fileInput.value='';renderAttachPreview();};msg.addEventListener('input',()=>{msg.style.height='auto';msg.style.height=Math.min(msg.scrollHeight,160)+'px';});msg.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}});}
-(async()=>{init();await refreshState();await refreshAgents();await loadProvider();renderConversation();tApply('en');})();
+function init(){
+  msg.addEventListener('input',()=>{msg.style.height='auto';msg.style.height=Math.min(msg.scrollHeight,160)+'px';});
+  msg.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}});
+}
+(async()=>{init();await refreshState();await loadProvider();renderConversation();})();
 </script>
 <div id="toast" style="position:fixed;right:18px;bottom:18px;min-width:220px;max-width:420px;background:#1f2937;color:#fff;padding:10px 12px;border-radius:10px;box-shadow:0 10px 24px rgba(0,0,0,.25);display:none;z-index:9999"></div>
 
 <div id="apiKeyRequiredModal" class="modal-mask" onclick="if(event.target===this) closeApiKeyRequiredModal()">
-  <div class="modal" style="max-width:620px">
+  <div class="modal">
     <h3 style="font-size:22px;margin-bottom:8px">Configure API Key Required</h3>
     <div class="small" style="margin-bottom:10px">OpenClaw depends on an LLM model to provide intelligence. Please configure your API key.</div>
     <div class="row"><label style="min-width:130px" class="small">Provider Name</label><input id="modalProviderName" placeholder="e.g. openai_main"/></div>
@@ -285,66 +208,5 @@ function init(){attachBtn.onclick=()=>fileInput.click();fileInput.onchange=()=>{
     <div class="row" style="justify-content:flex-end"><button class="alt" onclick="closeApiKeyRequiredModal()">Cancel</button><button onclick="saveProviderFromModal()">Save API Key</button></div>
   </div>
 </div>
-
-<div id="upgradeModalMask" class="modal-mask" onclick="if(event.target===this) closeUpgradeModal()">
-  <div class="modal">
-    <div class="row" style="justify-content:space-between;margin-top:0;align-items:flex-start">
-      <div>
-        <h3 style="font-size:24px;margin-bottom:6px">Upgrade your plan</h3>
-        <div class="small">Unlock more agents, higher quota, and faster workflow.</div>
-      </div>
-      <button class="alt" onclick="closeUpgradeModal()">Close</button>
-    </div>
-
-
-    <div class="pay-hero"></div>
-
-    <div class="plans">
-      <div class="plan tier-free">
-        <img class="icon" src="./assets/premium/images/icon-free-shield.jpg" alt="Free" />
-        <h4>Free</h4>
-        <div class="price">$0</div>
-        <div class="sub">Forever free</div>
-        <ul>
-          <li class="feat"><span class="mk yes">✓</span><span>1 Agent</span></li>
-          <li class="feat"><span class="mk yes">✓</span><span>Basic Quota</span></li>
-          <li class="feat"><span class="mk no">✕</span><span>Priority Support</span></li>
-          <li class="feat"><span class="mk no">✕</span><span>Automation Features</span></li>
-        </ul>
-        <button class="alt cta" onclick="choosePlan('free')">Keep Free</button>
-      </div>
-
-      <div class="plan reco tier-premium">
-
-        <img class="icon" src="./assets/premium/images/icon-premium-crown.jpg" alt="Premium" />
-        <h4>Premium ⭐</h4>
-        <div class="price">$9.9 <span class="sub">/ month</span></div>
-        <div class="sub">$19.9 / month</div>
-        <ul>
-          <li class="feat"><span class="mk yes">✓</span><span>Up to 5 Agents</span></li>
-          <li class="feat"><span class="mk yes">✓</span><span>Higher Quota</span></li>
-          <li class="feat"><span class="mk yes">✓</span><span>Priority Support</span></li>
-          <li class="feat"><span class="mk no">✕</span><span>Unlimited Automation</span></li>
-        </ul>
-        <button class="cta" onclick="choosePlan('premium')">Upgrade to Premium</button>
-      </div>
-
-      <div class="plan tier-pro">
-        <img class="icon" src="./assets/premium/images/icon-pro-rocket.jpg" alt="Pro" />
-        <h4>Pro 🚀</h4>
-        <div class="price">$39</div>
-        <div class="sub">/ month</div>
-        <ul>
-          <li class="feat"><span class="mk yes">✓</span><span>Unlimited Agents</span></li>
-          <li class="feat"><span class="mk yes">✓</span><span>Maximum Quota</span></li>
-          <li class="feat"><span class="mk yes">✓</span><span>Priority Support</span></li>
-          <li class="feat"><span class="mk yes">✓</span><span>Advanced Automation</span></li>
-        </ul>
-        <button class="cta" onclick="choosePlan('pro')">Go Pro</button>
-      </div>
-    </div>
-  </div>
-</div>
 </body>
 </html>
-

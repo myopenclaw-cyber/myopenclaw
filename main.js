@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, shell, Menu } = require('electron');
+const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -11,15 +12,41 @@ let gatewayPort = null;
 let gatewayBaseUrl = null;
 let gatewayProcess = null;
 
+// ---------------------------------------------------------------------------
+// Config paths
+// ---------------------------------------------------------------------------
+const OPENCLAW_CONFIG_DIR = path.join(os.homedir(), '.openclaw');
+const CONFIG_FILE = path.join(OPENCLAW_CONFIG_DIR, 'openclaw.json');
+const DEFAULT_PORT = 18800;
+const EMBEDDED_CONFIG_FILE = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'openclaw.json');
+const APP_STATE_FILE = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'app-state.json');
+
+// ---------------------------------------------------------------------------
+// Gateway token helpers
+// ---------------------------------------------------------------------------
 function readGatewayTokenFromConfig() {
   try {
-    const configPath = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'openclaw.json');
-    if (!fs.existsSync(configPath)) return '';
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8').replace(/^\uFEFF/, ''));
+    if (!fs.existsSync(EMBEDDED_CONFIG_FILE)) return '';
+    const config = JSON.parse(fs.readFileSync(EMBEDDED_CONFIG_FILE, 'utf8').replace(/^\uFEFF/, ''));
     return String(config?.gateway?.auth?.token || '').trim();
   } catch {
     return '';
   }
+}
+
+function ensureRandomGatewayToken() {
+  const cfg = loadEmbeddedConfig();
+  cfg.gateway = cfg.gateway || {};
+  cfg.gateway.auth = cfg.gateway.auth || {};
+  if (!cfg.gateway.auth.token || cfg.gateway.auth.token === 'myopenclaw_2024_secure_token_a8f3e9d2c1b7f6e5d4c3b2a1') {
+    cfg.gateway.auth.token = crypto.randomUUID();
+    cfg.gateway.auth.mode = 'token';
+  }
+  cfg.gateway.http = cfg.gateway.http || {};
+  cfg.gateway.http.endpoints = cfg.gateway.http.endpoints || {};
+  cfg.gateway.http.endpoints.chatCompletions = { enabled: true };
+  saveEmbeddedConfig(cfg);
+  return cfg.gateway.auth.token;
 }
 
 function buildDashboardUrl(baseUrl) {
@@ -33,6 +60,9 @@ function buildDashboardUrl(baseUrl) {
   return u.toString();
 }
 
+// ---------------------------------------------------------------------------
+// Loading screen helpers
+// ---------------------------------------------------------------------------
 function updateLoadingStatus(message, percent) {
   try {
     if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -49,29 +79,12 @@ function setRuntimeDownloadNeeded(needed) {
   } catch {}
 }
 
-const OPENCLAW_CONFIG_DIR = path.join(os.homedir(), '.openclaw');
-const CONFIG_FILE = path.join(OPENCLAW_CONFIG_DIR, 'openclaw.json');
-const DEFAULT_PORT = 18800;
-const EMBEDDED_CONFIG_FILE = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'openclaw.json');
-const APP_STATE_FILE = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'app-state.json');
-const LOCAL_APP_CONFIG_FILE = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'local-app-config.json');
-
+// ---------------------------------------------------------------------------
+// App state (simplified - BYOK only, no premium/quota)
+// ---------------------------------------------------------------------------
 function getDefaultAppState() {
   return {
-    premiumTier: 'free', // free | premium | pro
-    isPremium: false,
-    backendUserId: '',
-    freeQuotaUsed: 0,
-    userApiKey: '',
-    userApiKeyQuotaUsed: 0,
     activeAgentId: 'main',
-    agents: [
-      {
-        id: 'main',
-        name: 'Main Agent',
-        channels: []
-      }
-    ],
     conversations: {}
   };
 }
@@ -82,10 +95,7 @@ function loadAppState() {
       saveAppState(getDefaultAppState());
       return getDefaultAppState();
     }
-    const state = { ...getDefaultAppState(), ...JSON.parse(fs.readFileSync(APP_STATE_FILE, 'utf8')) };
-    if (!state.premiumTier) state.premiumTier = state.isPremium ? 'premium' : 'free';
-    state.isPremium = state.premiumTier !== 'free';
-    return state;
+    return { ...getDefaultAppState(), ...JSON.parse(fs.readFileSync(APP_STATE_FILE, 'utf8')) };
   } catch (error) {
     console.error('[app-state] load failed, using default:', error.message);
     return getDefaultAppState();
@@ -100,6 +110,9 @@ function saveAppState(state) {
   fs.writeFileSync(APP_STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
 }
 
+// ---------------------------------------------------------------------------
+// Embedded OpenClaw config
+// ---------------------------------------------------------------------------
 function loadEmbeddedConfig() {
   try {
     if (!fs.existsSync(EMBEDDED_CONFIG_FILE)) return {};
@@ -117,69 +130,21 @@ function saveEmbeddedConfig(config) {
   fs.writeFileSync(EMBEDDED_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
 }
 
-function hasUsableProviderConfig() {
-  const cfg = loadEmbeddedConfig();
-  const providers = cfg?.models?.providers || {};
-  const list = Object.values(providers);
-  return list.some(p => (p?.apiKey && String(p.apiKey).trim()) || (p?.baseUrl && String(p.baseUrl).trim() && p?.api));
-}
-
 function getUserProviderConfig() {
   const cfg = loadEmbeddedConfig();
   const providers = cfg?.models?.providers || {};
   for (const [providerId, p] of Object.entries(providers)) {
     const apiKey = String(p?.apiKey || '').trim();
-    const baseUrl = String(p?.baseUrl || '').trim();
-    const modelId = p?.models?.[0]?.id || 'default';
     if (apiKey) {
-      return { providerId, baseUrl, apiKey, modelId, api: p?.api || 'openai-completions' };
+      return { providerId, baseUrl: String(p?.baseUrl || '').trim(), apiKey, modelId: p?.models?.[0]?.id || 'default', api: p?.api || 'openai-completions' };
     }
   }
   return null;
 }
 
-function getDefaultLocalAppConfig() {
-  return {
-    backend: {
-      baseUrl: "",
-      apiKey: "",
-      webhookSecret: ""
-    },
-    stripe: {
-      publishableKey: "pk_test_mock_replace_me",
-      secretKey: "sk_test_mock_replace_me",
-      webhookSecret: "whsec_mock_replace_me",
-      pricePremiumMonthly: "",
-      priceProMonthly: "",
-      priceProYearly: ""
-    },
-    auth: {
-      jwtSecret: "mock_jwt_secret_replace_me",
-      deviceBindSalt: "mock_device_bind_salt_replace_me"
-    }
-  };
-}
-
-function loadLocalAppConfig() {
-  try {
-    if (!fs.existsSync(LOCAL_APP_CONFIG_FILE)) {
-      const def = getDefaultLocalAppConfig();
-      fs.mkdirSync(path.dirname(LOCAL_APP_CONFIG_FILE), { recursive: true });
-      fs.writeFileSync(LOCAL_APP_CONFIG_FILE, JSON.stringify(def, null, 2), 'utf8');
-      return def;
-    }
-    return { ...getDefaultLocalAppConfig(), ...JSON.parse(fs.readFileSync(LOCAL_APP_CONFIG_FILE, 'utf8')) };
-  } catch (e) {
-    console.error('[local-app-config] load failed:', e.message);
-    return getDefaultLocalAppConfig();
-  }
-}
-
-function saveLocalAppConfig(cfg) {
-  fs.mkdirSync(path.dirname(LOCAL_APP_CONFIG_FILE), { recursive: true });
-  fs.writeFileSync(LOCAL_APP_CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf8');
-}
-
+// ---------------------------------------------------------------------------
+// Auth profile sync
+// ---------------------------------------------------------------------------
 function syncAuthProfileForProvider(providerId, apiKey, api = '') {
   try {
     const key = String(apiKey || '').trim();
@@ -194,16 +159,13 @@ function syncAuthProfileForProvider(providerId, apiKey, api = '') {
       auth.lastGood = auth.lastGood || {};
       auth.usageStats = auth.usageStats || {};
     }
-
     const bind = (pid) => {
       const profileId = `${pid}:default`;
       auth.profiles[profileId] = { type: 'api_key', provider: pid, key };
       auth.lastGood[pid] = profileId;
     };
-
     bind(providerId);
     if (String(api).trim() === 'anthropic-messages') bind('anthropic');
-
     fs.writeFileSync(authFile, JSON.stringify(auth, null, 2), 'utf8');
   } catch (e) {
     console.error('[auth-profile-sync] failed:', e.message);
@@ -225,6 +187,9 @@ function ensureAuthProfilesFromEmbeddedConfig() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Conversation loading
+// ---------------------------------------------------------------------------
 function extractTextFromMessageContent(content) {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
@@ -240,18 +205,14 @@ function extractTextFromMessageContent(content) {
 function normalizeConversationText(role, text) {
   let t = String(text || '').trim();
   if (!t) return t;
-
   if (role === 'user') {
     const marker = '[Current message - respond to this]';
     const idx = t.lastIndexOf(marker);
     if (idx >= 0) t = t.slice(idx + marker.length).trim();
     t = t.replace(/^\s*User\s*:\s*/i, '').trim();
   }
-
-  // Remove nested context envelope blocks if they leaked into display
   t = t.replace(/^\s*\[Chat messages since your last reply - for context\][\s\S]*?\[Current message - respond to this\]\s*/i, '');
   t = t.replace(/^\s*User\s*:\s*/i, '').trim();
-
   return t;
 }
 
@@ -305,72 +266,12 @@ function loadAgentConversationFromOpenClaw(agentId = 'main', limit = 80) {
   }
 }
 
-async function ensureBackendUser(state) {
-  const localCfg = loadLocalAppConfig();
-  const baseUrl = (localCfg?.backend?.baseUrl || '').trim();
-  if (!baseUrl) throw new Error('Backend baseUrl is empty. Please set backend.baseUrl in local-app-config.json');
-
-  if (state.backendUserId) return { baseUrl, userId: state.backendUserId };
-
-  const resp = await axios.post(`${baseUrl}/v1/users/init`, {
-    email: '',
-    name: 'MyOpenClaw Local User'
-  }, { timeout: 10000 });
-
-  const userId = resp?.data?.user?.id;
-  if (!userId) throw new Error('Backend user init failed');
-  state.backendUserId = userId;
-  saveAppState(state);
-  return { baseUrl, userId };
-}
-
-async function checkQuotaByBackend(state) {
-  const { baseUrl, userId } = await ensureBackendUser(state);
-  const resp = await axios.get(`${baseUrl}/v1/quota/${userId}`, { timeout: 10000 });
-  const data = resp?.data || {};
-  const plan = data.plan || 'free';
-  if (plan === 'premium' || plan === 'pro') {
-    return { allow: true, plan, mode: 'premium' };
-  }
-  const freeRemain = Number(data?.remaining?.free ?? 0);
-  const apiKeyRemain = Number(data?.remaining?.apiKeyTrial ?? 0);
-  if (freeRemain > 0) return { allow: true, plan, mode: 'free' };
-  if (apiKeyRemain > 0) return { allow: true, plan, mode: 'apiKeyTrial' };
-  return { allow: false, error: 'Quota exhausted. Please upgrade.' };
-}
-
-async function consumeQuotaByBackend(state, mode) {
-  const { baseUrl, userId } = await ensureBackendUser(state);
-  await axios.post(`${baseUrl}/v1/quota/consume`, { userId, mode }, { timeout: 10000 });
-}
-
-function checkPremiumGate(state) {
-  if (state.premiumTier === 'premium' || state.premiumTier === 'pro') {
-    return { allow: true, tier: state.premiumTier };
-  }
-  if (state.freeQuotaUsed < 10) {
-    return { allow: true, tier: 'free' };
-  }
-  if (!state.userApiKey) {
-    return { allow: false, reason: 'free_exhausted', message: 'Free quota reached. Add your API key or upgrade to Premium.' };
-  }
-  if (state.userApiKeyQuotaUsed < 300) {
-    return { allow: true, tier: 'user_api_key' };
-  }
-  return { allow: false, reason: 'key_quota_exhausted', message: 'API key trial quota reached (300). Upgrade to Premium to continue.' };
-}
-
-function consumeQuota(state, tier) {
-  if (tier === 'free') state.freeQuotaUsed += 1;
-  if (tier === 'user_api_key') state.userApiKeyQuotaUsed += 1;
-}
-
-// 查找可用端口
+// ---------------------------------------------------------------------------
+// Port & network helpers
+// ---------------------------------------------------------------------------
 async function findAvailablePort(startPort = DEFAULT_PORT) {
   for (let port = startPort; port < startPort + 100; port++) {
-    if (await isPortAvailable(port)) {
-      return port;
-    }
+    if (await isPortAvailable(port)) return port;
   }
   throw new Error('No available port found');
 }
@@ -379,10 +280,7 @@ function isPortAvailable(port) {
   return new Promise((resolve) => {
     const server = net.createServer();
     server.once('error', () => resolve(false));
-    server.once('listening', () => {
-      server.close();
-      resolve(true);
-    });
+    server.once('listening', () => { server.close(); resolve(true); });
     server.listen(port, '127.0.0.1');
   });
 }
@@ -397,6 +295,9 @@ async function isOpenClawGatewayRunning(port) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Runtime download & extraction
+// ---------------------------------------------------------------------------
 function getRuntimeTargetLabel() {
   if (process.platform === 'win32') return 'windows';
   if (process.platform === 'darwin') return process.arch === 'arm64' ? 'mac_silicon' : 'mac_intel';
@@ -408,15 +309,12 @@ async function downloadFile(url, outputPath, onProgress) {
   const response = await axios({ method: 'get', url, responseType: 'stream', timeout: 0 });
   const total = Number(response.headers['content-length'] || 0);
   let loaded = 0;
-
   response.data.on('data', (chunk) => {
     loaded += chunk.length;
     if (total > 0 && typeof onProgress === 'function') {
-      const pct = Math.round((loaded / total) * 100);
-      onProgress(Math.max(0, Math.min(100, pct)));
+      onProgress(Math.max(0, Math.min(100, Math.round((loaded / total) * 100))));
     }
   });
-
   response.data.pipe(writer);
   return new Promise((resolve, reject) => {
     writer.on('finish', resolve);
@@ -434,7 +332,7 @@ async function ensureEmbeddedRuntime() {
 
   const manifestPath = path.join(__dirname, 'resources', 'runtime-manifest.json');
   if (!fs.existsSync(manifestPath)) {
-    throw new Error('缺少 runtime-manifest.json，simple 版本无法自动下载运行时');
+    throw new Error('Missing runtime-manifest.json. Cannot download runtime automatically.');
   }
 
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
@@ -442,7 +340,7 @@ async function ensureEmbeddedRuntime() {
   const url = manifest?.[target]?.url;
 
   if (!url) {
-    throw new Error(`runtime-manifest.json 未配置 ${target} 的下载 URL`);
+    throw new Error(`No runtime download URL configured for platform "${target}". Please download the runtime manually or use the full installer.`);
   }
 
   const zipPath = path.join(os.tmpdir(), `myopenclaw-runtime-${target}.zip`);
@@ -451,31 +349,28 @@ async function ensureEmbeddedRuntime() {
   console.log(`[runtime] Downloading runtime for ${target}...`);
   updateLoadingStatus('Downloading openclaw ...', 52);
   await downloadFile(url, zipPath, (p) => {
-    const mapped = 52 + Math.round(p * 0.28); // 52 -> 80
-    updateLoadingStatus('Downloading openclaw ...', mapped);
+    updateLoadingStatus('Downloading openclaw ...', 52 + Math.round(p * 0.28));
   });
 
   console.log('[runtime] Extracting runtime...');
   updateLoadingStatus('Extracting openclaw runtime...', 84);
   if (process.platform === 'win32') {
-    execFileSync('powershell.exe', [
-      '-NoProfile',
-      '-Command',
-      `Expand-Archive -Path '${zipPath}' -DestinationPath '${resourcesDir}' -Force`
-    ], { stdio: 'inherit' });
+    execFileSync('powershell.exe', ['-NoProfile', '-Command', `Expand-Archive -Path '${zipPath}' -DestinationPath '${resourcesDir}' -Force`], { stdio: 'inherit' });
   } else {
     execFileSync('unzip', ['-o', zipPath, '-d', resourcesDir], { stdio: 'inherit' });
   }
 
   if (!fs.existsSync(runtimeEntry)) {
-    throw new Error('runtime 解压完成但未找到 openclaw.mjs，请检查压缩包目录结构');
+    throw new Error('Runtime extracted but openclaw.mjs not found. Please check the archive structure.');
   }
 
   console.log('[runtime] Runtime ready');
   updateLoadingStatus('Launching openclaw gateway...', 88);
 }
 
-// 启动内置 Gateway（使用独立配置目录）
+// ---------------------------------------------------------------------------
+// Gateway startup (cross-platform)
+// ---------------------------------------------------------------------------
 async function startGateway() {
   try {
     global.__MYOPENCLAW_STARTUP_WARNING__ = '';
@@ -485,68 +380,49 @@ async function startGateway() {
       gatewayPort = await findAvailablePort(18800);
     }
     gatewayBaseUrl = `http://127.0.0.1:${gatewayPort}`;
-    
+
     console.log(`[startGateway] Starting gateway on port ${gatewayPort}...`);
     updateLoadingStatus('Establishing secure connections...', 48);
 
     const runtimeEntry = path.join(__dirname, 'resources', 'openclaw-deps', 'openclaw', 'openclaw.mjs');
     setRuntimeDownloadNeeded(!fs.existsSync(runtimeEntry));
 
-    // simple 版本：若未内置 runtime，则自动下载并解压到 resources/openclaw-deps
     await ensureEmbeddedRuntime();
     ensureAuthProfilesFromEmbeddedConfig();
 
-    // 使用 gateway.cmd 脚本启动（设置了独立的 OPENCLAW_STATE_DIR）
-    const gatewayCmdPath = path.join(__dirname, 'resources', 'gateway.cmd');
-    
-    console.log(`[startGateway] Gateway script: ${gatewayCmdPath}`);
-    
-    // 启动 gateway
+    // Generate random gateway token on each startup
+    ensureRandomGatewayToken();
+
     updateLoadingStatus('Launching openclaw gateway...', 90);
-    gatewayProcess = spawn('cmd.exe', ['/c', gatewayCmdPath, String(gatewayPort)], {
-      stdio: 'pipe',
-      cwd: path.join(__dirname, 'resources'),
-      windowsHide: true  // 隐藏窗口
-    });
 
-    gatewayProcess.stdout.on('data', (data) => {
-      const msg = data.toString();
-      console.log(`[Gateway stdout] ${msg}`);
-    });
+    // Platform-specific gateway launch
+    const resourcesDir = path.join(__dirname, 'resources');
+    if (process.platform === 'win32') {
+      const gatewayCmdPath = path.join(resourcesDir, 'gateway.cmd');
+      gatewayProcess = spawn('cmd.exe', ['/c', gatewayCmdPath, String(gatewayPort)], {
+        stdio: 'pipe', cwd: resourcesDir, windowsHide: true
+      });
+    } else {
+      const gatewayShPath = path.join(resourcesDir, 'gateway.sh');
+      gatewayProcess = spawn('bash', [gatewayShPath, String(gatewayPort)], {
+        stdio: 'pipe', cwd: resourcesDir
+      });
+    }
 
-    gatewayProcess.stderr.on('data', (data) => {
-      const msg = data.toString();
-      console.error(`[Gateway stderr] ${msg}`);
-    });
-
+    gatewayProcess.stdout.on('data', (data) => console.log(`[Gateway stdout] ${data}`));
+    gatewayProcess.stderr.on('data', (data) => console.error(`[Gateway stderr] ${data}`));
     gatewayProcess.on('exit', (code, signal) => {
       console.log(`[Gateway] Process exited with code ${code}, signal ${signal}`);
-      if (code !== 0) {
-        console.error('[Gateway] Unexpected exit!');
-      }
+      if (code !== 0) console.error('[Gateway] Unexpected exit!');
     });
+    gatewayProcess.on('error', (err) => console.error('[Gateway] Process error:', err));
 
-    gatewayProcess.on('error', (err) => {
-      console.error('[Gateway] Process error:', err);
-    });
-
-    // 等待 gateway 启动
     console.log('[startGateway] Waiting for gateway to start...');
     updateLoadingStatus('Checking gateway health...', 94);
-    await new Promise(resolve => setTimeout(resolve, 8000));  // 等待 8 秒
-    
-    // 验证 gateway 是否启动
+    await new Promise(resolve => setTimeout(resolve, 8000));
+
     await waitForGateway();
 
-    // 启动后做一次最小对话自检（失败不阻断启动，避免 gateway 实际可用却被误判）
-    try {
-      await smokeTestChat();
-    } catch (probeErr) {
-      const detail = probeErr?.message || String(probeErr);
-      console.warn('[startGateway] Chat probe failed, but gateway is healthy. Continue startup. Detail:', detail);
-      global.__MYOPENCLAW_STARTUP_WARNING__ = detail;
-    }
-    
     updateLoadingStatus('Startup complete. Opening workspace...', 100);
     console.log(`[startGateway] Gateway started successfully on ${gatewayBaseUrl}`);
   } catch (error) {
@@ -555,10 +431,8 @@ async function startGateway() {
   }
 }
 
-// 等待 Gateway 就绪
 async function waitForGateway(maxRetries = 30) {
   console.log(`[waitForGateway] Checking ${gatewayBaseUrl}/health...`);
-  
   for (let i = 0; i < maxRetries; i++) {
     try {
       console.log(`[waitForGateway] Attempt ${i + 1}/${maxRetries}...`);
@@ -571,14 +445,12 @@ async function waitForGateway(maxRetries = 30) {
     }
   }
   console.error('[waitForGateway] Max retries reached, gateway failed to start');
-  throw new Error('Gateway failed to start');
+  throw new Error('Gateway failed to start after 30 attempts. Please check your configuration and try again.');
 }
 
-async function smokeTestChat() {
-  console.log('[smokeTestChat] Startup probe skipped to avoid polluting conversation history');
-  return true;
-}
-
+// ---------------------------------------------------------------------------
+// Window creation
+// ---------------------------------------------------------------------------
 function createWindow() {
   Menu.setApplicationMenu(null);
 
@@ -592,26 +464,18 @@ function createWindow() {
     }
   });
 
-  // 所有外链都走系统默认浏览器
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     const target = /^https?:\/\/127\.0\.0\.1:\d+\/?$/i.test(String(url || '')) ? buildDashboardUrl(url) : url;
     shell.openExternal(target);
     return { action: 'deny' };
   });
 
-  // 检查是否首次启动
   if (!fs.existsSync(CONFIG_FILE)) {
     mainWindow.loadFile('setup.html');
   } else {
-    // 显示加载页面
     mainWindow.loadFile('loading.html');
-    
-    // 启动 Gateway
     startGateway()
-      .then(() => {
-        // 启动成功，加载聊天界面
-        mainWindow.loadFile('index.html');
-      })
+      .then(() => mainWindow.loadFile('index.html'))
       .catch(err => {
         console.error('Gateway startup failed:', err);
         global.__MYOPENCLAW_STARTUP_ERROR__ = err?.message || String(err);
@@ -620,13 +484,16 @@ function createWindow() {
   }
 }
 
-// 保存配置
+// ---------------------------------------------------------------------------
+// IPC handlers
+// ---------------------------------------------------------------------------
+
+// Setup wizard - save initial config
 ipcMain.handle('save-config', async (event, config) => {
   try {
     if (!fs.existsSync(OPENCLAW_CONFIG_DIR)) {
       fs.mkdirSync(OPENCLAW_CONFIG_DIR, { recursive: true });
     }
-
     const openclawConfig = {
       models: {
         default: config.provider === 'openai' ? 'openai/gpt-4' : 'anthropic/claude-3-5-sonnet-20241022'
@@ -636,25 +503,17 @@ ipcMain.handle('save-config', async (event, config) => {
         baseUrl: config.baseUrl || undefined
       }
     };
-
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(openclawConfig, null, 2));
-    
-    // 配置保存后启动 gateway
     await startGateway();
-    
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
   }
 });
 
-// 获取 Gateway 信息和 token
+// Gateway info
 ipcMain.handle('get-gateway-info', async () => {
-  return {
-    port: gatewayPort,
-    baseUrl: gatewayBaseUrl,
-    token: readGatewayTokenFromConfig()
-  };
+  return { port: gatewayPort, baseUrl: gatewayBaseUrl, token: readGatewayTokenFromConfig() };
 });
 
 ipcMain.handle('open-gateway-dashboard', async () => {
@@ -668,66 +527,21 @@ ipcMain.handle('open-gateway-dashboard', async () => {
 });
 
 ipcMain.handle('open-external', async (event, url) => {
-  try {
-    await shell.openExternal(url);
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
+  try { await shell.openExternal(url); return { success: true }; }
+  catch (error) { return { success: false, error: error.message }; }
 });
 
 ipcMain.handle('get-startup-error', async () => {
   return { error: global.__MYOPENCLAW_STARTUP_ERROR__ || '' };
 });
 
-ipcMain.handle('get-local-app-config', async () => {
-  return { success: true, config: loadLocalAppConfig() };
-});
-
-ipcMain.handle('save-local-app-config', async (event, patch) => {
-  try {
-    const cfg = loadLocalAppConfig();
-    const next = {
-      ...cfg,
-      ...patch,
-      backend: { ...(cfg.backend || {}), ...(patch?.backend || {}) },
-      stripe: { ...(cfg.stripe || {}), ...(patch?.stripe || {}) },
-      auth: { ...(cfg.auth || {}), ...(patch?.auth || {}) }
-    };
-    saveLocalAppConfig(next);
-    return { success: true, config: next };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-});
-
-ipcMain.handle('create-checkout-session', async (event, plan) => {
-  try {
-    if (!['premium', 'pro'].includes(plan)) {
-      return { success: false, error: 'Invalid plan' };
-    }
-    const state = loadAppState();
-    const { baseUrl, userId } = await ensureBackendUser(state);
-    const resp = await axios.post(`${baseUrl}/v1/payments/checkout-session`, { userId, plan }, { timeout: 15000 });
-    const checkoutUrl = resp?.data?.checkoutUrl;
-    if (!checkoutUrl) return { success: false, error: 'No checkoutUrl returned' };
-    await shell.openExternal(checkoutUrl);
-    return { success: true, checkoutUrl };
-  } catch (e) {
-    const msg = e?.response?.data?.error || e.message;
-    return { success: false, error: msg };
-  }
-});
-
-// 发送消息到 main agent
+// Chat - send message to main agent
 ipcMain.handle('send-message', async (event, payload) => {
   try {
     if (!gatewayBaseUrl) throw new Error('Gateway not started');
 
     const message = typeof payload === 'string' ? payload : payload?.message;
-    const agentId = payload?.agentId || 'main';
 
-    const state = loadAppState();
     const history = loadAgentConversationFromOpenClaw('main', 20)
       .filter(m => m && (m.role === 'user' || m.role === 'assistant') && m.content)
       .map(m => ({ role: m.role, content: m.content }));
@@ -742,7 +556,7 @@ ipcMain.handle('send-message', async (event, payload) => {
       };
     }
 
-    const token = 'myopenclaw_2024_secure_token_a8f3e9d2c1b7f6e5d4c3b2a1';
+    const token = readGatewayTokenFromConfig();
     const response = await axios.post(`${gatewayBaseUrl}/v1/chat/completions`, {
       model: 'openclaw:main',
       messages,
@@ -757,12 +571,7 @@ ipcMain.handle('send-message', async (event, payload) => {
     });
 
     const content = response?.data?.choices?.[0]?.message?.content || 'No response from OpenClaw.';
-
-    return {
-      success: true,
-      response: content,
-      state
-    };
+    return { success: true, response: content };
   } catch (error) {
     const apiDetail = error?.response?.data?.error?.message || error?.response?.data?.message || error?.response?.data?.error;
     const status = error?.response?.status;
@@ -770,23 +579,13 @@ ipcMain.handle('send-message', async (event, payload) => {
     if (status === 500 && /internal error/i.test(msg)) {
       msg = 'Gateway provider error. Please verify API Keys (Base URL / API Key / Model) in API Keys page.';
     }
-    return {
-      success: false,
-      error: msg,
-      status
-    };
+    return { success: false, error: msg, status };
   }
 });
 
+// App state (simplified)
 ipcMain.handle('get-app-state', async () => {
-  const state = loadAppState();
-  let gate = { allow: true, mode: 'free' };
-  try {
-    gate = await checkQuotaByBackend(state);
-  } catch (e) {
-    gate = { allow: false, error: e.message };
-  }
-  return { ...state, gate };
+  return loadAppState();
 });
 
 ipcMain.handle('get-agent-conversation', async (event, agentId = 'main') => {
@@ -794,52 +593,9 @@ ipcMain.handle('get-agent-conversation', async (event, agentId = 'main') => {
   return { success: true, conversation };
 });
 
-ipcMain.handle('set-user-api-key', async (event, apiKey) => {
-  const state = loadAppState();
-  state.userApiKey = (apiKey || '').trim();
-  state.userApiKeyQuotaUsed = 0;
-  saveAppState(state);
-  return { success: true, state };
-});
-
-ipcMain.handle('set-premium-status', async (event, isPremium) => {
-  const state = loadAppState();
-  state.premiumTier = isPremium ? 'premium' : 'free';
-  state.isPremium = state.premiumTier !== 'free';
-  saveAppState(state);
-  return { success: true, state };
-});
-
-ipcMain.handle('set-premium-tier', async (event, tier) => {
-  const state = loadAppState();
-  if (!['free', 'premium', 'pro'].includes(tier)) {
-    return { success: false, error: 'Invalid tier' };
-  }
-  state.premiumTier = tier;
-  state.isPremium = tier !== 'free';
-  saveAppState(state);
-  return { success: true, state };
-});
-
+// Agent listing (single agent only)
 ipcMain.handle('list-agents', async () => {
-  // Single source of truth: OpenClaw built-in main agent only (v1)
   return [{ id: 'main', name: 'Main Agent', channels: [] }];
-});
-
-ipcMain.handle('add-agent', async () => {
-  return { success: false, error: 'Custom agents are disabled in current version. Uses OpenClaw built-in agent only.' };
-});
-
-ipcMain.handle('rename-agent', async () => {
-  return { success: false, error: 'Rename is disabled in current version.' };
-});
-
-ipcMain.handle('set-agent-channels', async () => {
-  return { success: false, error: 'Channel binding by custom agent is disabled in current version.' };
-});
-
-ipcMain.handle('delete-agent', async () => {
-  return { success: false, error: 'Delete is disabled in current version.' };
 });
 
 ipcMain.handle('set-active-agent', async (event, id) => {
@@ -849,6 +605,7 @@ ipcMain.handle('set-active-agent', async (event, id) => {
   return { success: true, state };
 });
 
+// Provider config CRUD
 ipcMain.handle('save-provider-config', async (event, payload) => {
   try {
     const { providerId = 'default', baseUrl = '', apiKey = '', api = '', modelId = 'default' } = payload || {};
@@ -872,9 +629,7 @@ ipcMain.handle('save-provider-config', async (event, payload) => {
 
     cfg.models.providers[cleanProviderId] = {
       ...(cfg.models.providers[cleanProviderId] || {}),
-      baseUrl,
-      apiKey,
-      api: autoApi,
+      baseUrl, apiKey, api: autoApi,
       models: [{ id: cleanModelId, name: cleanModelId }]
     };
 
@@ -934,23 +689,6 @@ ipcMain.handle('delete-provider-config', async (event, providerId) => {
   }
 });
 
-ipcMain.handle('save-agent-channel-config', async (event, payload) => {
-  try {
-    const { agentId, channelType, configJson } = payload || {};
-    const parsed = configJson ? JSON.parse(configJson) : {};
-    const cfg = loadEmbeddedConfig();
-    cfg.channels = cfg.channels || {};
-    cfg.channels[channelType] = cfg.channels[channelType] || { enabled: true, accounts: {} };
-    cfg.channels[channelType].enabled = true;
-    cfg.channels[channelType].accounts = cfg.channels[channelType].accounts || {};
-    cfg.channels[channelType].accounts[agentId || 'default'] = parsed;
-    saveEmbeddedConfig(cfg);
-    return { success: true };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-});
-
 ipcMain.handle('reset-model-config', async () => {
   try {
     const cfg = loadEmbeddedConfig();
@@ -970,21 +708,16 @@ ipcMain.handle('reset-model-config', async () => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// App lifecycle
+// ---------------------------------------------------------------------------
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
-  // 停止 gateway
-  if (gatewayProcess) {
-    gatewayProcess.kill();
-  }
-  
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  if (gatewayProcess) gatewayProcess.kill();
+  if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
+  if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });

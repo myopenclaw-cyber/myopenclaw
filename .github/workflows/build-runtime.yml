@@ -5,6 +5,11 @@ on:
     tags:
       - 'runtime-v*'
   workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build'
+        required: false
+        default: 'V3'
 
 jobs:
   build-windows-runtime:
@@ -13,15 +18,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: V2
+          ref: ${{ github.event.inputs.branch || github.ref }}
           lfs: true
 
       - name: Check openclaw-deps exists
         run: |
           if (Test-Path "resources/openclaw-deps") {
-            Write-Host "✓ openclaw-deps found"
+            Write-Host "openclaw-deps found"
           } else {
-            Write-Host "✗ openclaw-deps not found"
+            Write-Host "openclaw-deps not found"
             exit 1
           }
 
@@ -39,9 +44,9 @@ jobs:
           $file = "dist/first-launch-runtime/openclaw-runtime-windows.zip"
           if (Test-Path $file) {
             $size = (Get-Item $file).Length / 1MB
-            Write-Host "✓ Package created: $([math]::Round($size, 2)) MB"
+            Write-Host "Package created: $([math]::Round($size, 2)) MB"
           } else {
-            Write-Host "✗ Package not found"
+            Write-Host "Package not found"
             exit 1
           }
 
@@ -58,15 +63,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: V2
+          ref: ${{ github.event.inputs.branch || github.ref }}
           lfs: true
 
       - name: Check openclaw-deps exists
         run: |
           if [ -d "resources/openclaw-deps" ]; then
-            echo "✓ openclaw-deps found"
+            echo "openclaw-deps found"
           else
-            echo "✗ openclaw-deps not found"
+            echo "openclaw-deps not found"
             exit 1
           fi
 
@@ -83,9 +88,9 @@ jobs:
           file="dist/first-launch-runtime/openclaw-runtime-mac-silicon.zip"
           if [ -f "$file" ]; then
             size=$(du -m "$file" | cut -f1)
-            echo "✓ Package created: ${size} MB"
+            echo "Package created: ${size} MB"
           else
-            echo "✗ Package not found"
+            echo "Package not found"
             exit 1
           fi
 
@@ -96,8 +101,52 @@ jobs:
           path: dist/first-launch-runtime/openclaw-runtime-mac-silicon.zip
           retention-days: 7
 
+  build-mac-intel-runtime:
+    runs-on: macos-13
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref }}
+          lfs: true
+
+      - name: Check openclaw-deps exists
+        run: |
+          if [ -d "resources/openclaw-deps" ]; then
+            echo "openclaw-deps found"
+          else
+            echo "openclaw-deps not found"
+            exit 1
+          fi
+
+      - name: Create output directory
+        run: mkdir -p dist/first-launch-runtime
+
+      - name: Package macOS Intel runtime
+        run: |
+          cd resources
+          ditto -c -k --sequesterRsrc --keepParent openclaw-deps ../dist/first-launch-runtime/openclaw-runtime-mac-intel.zip
+
+      - name: Verify package
+        run: |
+          file="dist/first-launch-runtime/openclaw-runtime-mac-intel.zip"
+          if [ -f "$file" ]; then
+            size=$(du -m "$file" | cut -f1)
+            echo "Package created: ${size} MB"
+          else
+            echo "Package not found"
+            exit 1
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openclaw-runtime-mac-intel
+          path: dist/first-launch-runtime/openclaw-runtime-mac-intel.zip
+          retention-days: 7
+
   create-release:
-    needs: [build-windows-runtime, build-mac-silicon-runtime]
+    needs: [build-windows-runtime, build-mac-silicon-runtime, build-mac-intel-runtime]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
@@ -106,7 +155,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: V2
+          ref: ${{ github.event.inputs.branch || github.ref }}
           lfs: true
 
       - name: Download all artifacts
@@ -125,24 +174,24 @@ jobs:
           files: |
             artifacts/openclaw-runtime-windows/openclaw-runtime-windows.zip
             artifacts/openclaw-runtime-mac-silicon/openclaw-runtime-mac-silicon.zip
+            artifacts/openclaw-runtime-mac-intel/openclaw-runtime-mac-intel.zip
           draft: false
           prerelease: false
           body: |
             OpenClaw Runtime Packages
-            
+
             Available platforms:
             - Windows x64
             - macOS Apple Silicon (M1/M2/M3/M4)
-            
-            Note: macOS Intel build is temporarily unavailable due to GitHub Actions runner limitations.
+            - macOS Intel (x86_64)
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get release URLs
-        id: get-urls
         run: |
           TAG_NAME=${GITHUB_REF#refs/tags/}
           REPO="${{ github.repository }}"
           echo "Windows: https://github.com/${REPO}/releases/download/${TAG_NAME}/openclaw-runtime-windows.zip"
           echo "Mac Silicon: https://github.com/${REPO}/releases/download/${TAG_NAME}/openclaw-runtime-mac-silicon.zip"
+          echo "Mac Intel: https://github.com/${REPO}/releases/download/${TAG_NAME}/openclaw-runtime-mac-intel.zip"

@@ -8,11 +8,14 @@
     "index.html",
     "setup.html",
     "loading.html",
+    "error.html",
     "start-myopenclaw.cmd",
     "resources/gateway.cmd",
+    "resources/gateway.sh",
     "resources/runtime-manifest.json",
     "resources/openclaw-deps/**/*",
     "resources/.openclaw-myopenclaw/openclaw.json",
+    "assets/**/*",
     "build/**/*",
     "package.json"
   ],
@@ -20,9 +23,7 @@
     "target": [
       {
         "target": "nsis",
-        "arch": [
-          "x64"
-        ]
+        "arch": ["x64"]
       }
     ]
   },
@@ -30,10 +31,7 @@
     "target": [
       {
         "target": "dmg",
-        "arch": [
-          "x64",
-          "arm64"
-        ]
+        "arch": ["x64", "arm64"]
       }
     ]
   },

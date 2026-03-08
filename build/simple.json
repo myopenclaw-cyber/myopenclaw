@@ -1,39 +1,44 @@
-{ "compression": "maximum", "appId":  "com.myopenclaw.app",
-    "productName":  "MyOpenClaw",
-    "artifactName":  "${productName}-${version}-${env.BUILD_VARIANT}-${env.TARGET_LABEL}.${ext}",
-    "files":  [
-                  "main.js",
-                  "preload.js",
-                  "index.html",
-                  "setup.html",
-                  "loading.html",
-                  "start-myopenclaw.cmd",
-                  "resources/gateway.cmd",
-                  "resources/runtime-manifest.json",
-                  "resources/.openclaw-myopenclaw/openclaw.json",
-                  "build/**/*",
-                  "package.json"
-              ],
-    "win":  { "electronLanguages": ["en", "zh-CN", "zh-TW"],
-                "target":  [
-                               {
-                                   "target":  "nsis",
-                                   "arch":  [
-                                                "x64"
-                                            ]
-                               }
-                           ]
-            },
-    "mac":  { "electronLanguages": ["en", "zh-CN", "zh-TW"],
-                "target":  [
-                               {
-                                   "target":  "zip",
-                                   "arch": ["arm64"]
-                               }
-                           ]
-            },
-    "nsis":  {
-                 "oneClick":  false,
-                 "allowToChangeInstallationDirectory":  true
-             }
+{
+  "compression": "maximum",
+  "appId": "com.myopenclaw.app",
+  "productName": "MyOpenClaw",
+  "artifactName": "${productName}-${version}-${env.BUILD_VARIANT}-${env.TARGET_LABEL}.${ext}",
+  "files": [
+    "main.js",
+    "preload.js",
+    "index.html",
+    "setup.html",
+    "loading.html",
+    "error.html",
+    "start-myopenclaw.cmd",
+    "resources/gateway.cmd",
+    "resources/gateway.sh",
+    "resources/runtime-manifest.json",
+    "resources/.openclaw-myopenclaw/openclaw.json",
+    "assets/**/*",
+    "build/**/*",
+    "package.json"
+  ],
+  "win": {
+    "electronLanguages": ["en", "zh-CN", "zh-TW"],
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ]
+  },
+  "mac": {
+    "electronLanguages": ["en", "zh-CN", "zh-TW"],
+    "target": [
+      {
+        "target": "zip",
+        "arch": ["arm64", "x64"]
+      }
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  }
 }
