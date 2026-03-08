@@ -80,13 +80,37 @@ function setRuntimeDownloadNeeded(needed) {
 }
 
 // ---------------------------------------------------------------------------
-// App state (simplified - BYOK only, no premium/quota)
+// App state - merged: relay (Worktree A) + plan/planExpiresAt (Worktree B)
 // ---------------------------------------------------------------------------
 function getDefaultAppState() {
   return {
+    premiumTier: 'free', // free | premium | pro
+    isPremium: false,
+    plan: 'free',
+    planExpiresAt: null,
+    freeQuotaUsed: 0,
+    userApiKey: '',
+    userApiKeyQuotaUsed: 0,
     activeAgentId: 'main',
-    conversations: {}
+    agents: [
+      {
+        id: 'main',
+        name: 'Main Agent',
+        channels: []
+      }
+    ],
+    conversations: {},
+    relay: { baseUrl: '', authToken: '' }
   };
+}
+
+function getPlanFeatures(plan) {
+  const features = {
+    free: { maxAgents: 1, canUseRelay: false, modelTier: 'basic' },
+    premium: { maxAgents: 5, canUseRelay: true, modelTier: 'sonnet' },
+    pro: { maxAgents: -1, canUseRelay: true, modelTier: 'opus' }
+  };
+  return features[plan] || features.free;
 }
 
 function loadAppState() {
@@ -95,7 +119,12 @@ function loadAppState() {
       saveAppState(getDefaultAppState());
       return getDefaultAppState();
     }
-    return { ...getDefaultAppState(), ...JSON.parse(fs.readFileSync(APP_STATE_FILE, 'utf8')) };
+    const state = { ...getDefaultAppState(), ...JSON.parse(fs.readFileSync(APP_STATE_FILE, 'utf8')) };
+    if (!state.premiumTier) state.premiumTier = state.isPremium ? 'premium' : 'free';
+    state.isPremium = state.premiumTier !== 'free';
+    // Sync plan with premiumTier for backward compatibility
+    if (!state.plan || state.plan === 'free') state.plan = state.premiumTier;
+    return state;
   } catch (error) {
     console.error('[app-state] load failed, using default:', error.message);
     return getDefaultAppState();
@@ -108,6 +137,30 @@ function saveAppState(state) {
     fs.mkdirSync(dir, { recursive: true });
   }
   fs.writeFileSync(APP_STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+}
+
+// ---------------------------------------------------------------------------
+// Premium / quota helpers
+// ---------------------------------------------------------------------------
+function checkPremiumGate(state) {
+  if (state.premiumTier === 'premium' || state.premiumTier === 'pro') {
+    return { allow: true, tier: state.premiumTier };
+  }
+  if (state.freeQuotaUsed < 10) {
+    return { allow: true, tier: 'free' };
+  }
+  if (!state.userApiKey) {
+    return { allow: false, reason: 'free_exhausted', message: 'Free quota reached. Add your API key or upgrade to Premium.' };
+  }
+  if (state.userApiKeyQuotaUsed < 300) {
+    return { allow: true, tier: 'user_api_key' };
+  }
+  return { allow: false, reason: 'key_quota_exhausted', message: 'API key trial quota reached (300). Upgrade to Premium to continue.' };
+}
+
+function consumeQuota(state, tier) {
+  if (tier === 'free') state.freeQuotaUsed += 1;
+  if (tier === 'user_api_key') state.userApiKeyQuotaUsed += 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -485,6 +538,53 @@ function createWindow() {
 }
 
 // ---------------------------------------------------------------------------
+// Relay helpers (from Worktree A)
+// ---------------------------------------------------------------------------
+async function checkRelayHealth(baseUrl, token) {
+  const response = await axios.get(`${baseUrl}/health`, {
+    headers: { 'Authorization': `Bearer ${token}` },
+    timeout: 8000
+  });
+  return response.data;
+}
+
+// Send message via local gateway (BYOK path)
+async function sendViaGateway(messages) {
+  if (!gatewayBaseUrl) {
+    throw new Error('Gateway not started');
+  }
+  const token = readGatewayTokenFromConfig();
+  const response = await axios.post(`${gatewayBaseUrl}/v1/chat/completions`, {
+    model: 'openclaw:main',
+    messages,
+    stream: false
+  }, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'x-openclaw-agent-id': 'main'
+    },
+    timeout: 60000
+  });
+  return response?.data?.choices?.[0]?.message?.content || 'No response from OpenClaw.';
+}
+
+// Send message via cloud relay
+async function sendViaRelay(relayBaseUrl, relayAuthToken, messages) {
+  const response = await axios.post(`${relayBaseUrl}/v1/chat/completions`, {
+    model: 'openclaw:main',
+    messages
+  }, {
+    headers: {
+      'Authorization': `Bearer ${relayAuthToken}`,
+      'Content-Type': 'application/json'
+    },
+    timeout: 60000
+  });
+  return response?.data?.choices?.[0]?.message?.content || 'No response from relay.';
+}
+
+// ---------------------------------------------------------------------------
 // IPC handlers
 // ---------------------------------------------------------------------------
 
@@ -535,43 +635,74 @@ ipcMain.handle('get-startup-error', async () => {
   return { error: global.__MYOPENCLAW_STARTUP_ERROR__ || '' };
 });
 
-// Chat - send message to main agent
+// Chat - send message with dual-path routing + plan awareness
 ipcMain.handle('send-message', async (event, payload) => {
   try {
-    if (!gatewayBaseUrl) throw new Error('Gateway not started');
-
     const message = typeof payload === 'string' ? payload : payload?.message;
+    const agentId = payload?.agentId || 'main';
 
-    const history = loadAgentConversationFromOpenClaw('main', 20)
-      .filter(m => m && (m.role === 'user' || m.role === 'assistant') && m.content)
-      .map(m => ({ role: m.role, content: m.content }));
-    const messages = [...history, { role: 'user', content: message }].slice(-24);
-
-    const userProvider = getUserProviderConfig();
-    if (!userProvider) {
+    const state = loadAppState();
+    const gate = checkPremiumGate(state);
+    if (!gate.allow) {
       return {
         success: false,
-        noApiKeyConfigured: true,
-        error: 'OpenClaw depends on an LLM model to provide intelligence. Please configure your API key first.'
+        premiumRequired: true,
+        reason: gate.reason,
+        error: gate.message,
+        state
       };
     }
 
-    const token = readGatewayTokenFromConfig();
-    const response = await axios.post(`${gatewayBaseUrl}/v1/chat/completions`, {
-      model: 'openclaw:main',
-      messages,
-      stream: false
-    }, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'x-openclaw-agent-id': 'main'
-      },
-      timeout: 60000
-    });
+    // Per-agent conversation context (app-level isolation)
+    state.conversations = state.conversations || {};
+    const conv = state.conversations[agentId] || [];
+    const messages = [...conv, { role: 'user', content: message }].slice(-20);
 
-    const content = response?.data?.choices?.[0]?.message?.content || 'No response from OpenClaw.';
-    return { success: true, response: content };
+    // Routing: BYOK takes priority, then relay (if plan allows), then gateway fallback
+    const embeddedCfg = loadEmbeddedConfig();
+    const hasLocalProvider = !!(embeddedCfg?.models?.providers && Object.keys(embeddedCfg.models.providers).length > 0);
+    const relay = state.relay || {};
+    const hasRelay = !!(relay.baseUrl && relay.authToken);
+    const plan = state.plan || state.premiumTier || 'free';
+    const planFeatures = getPlanFeatures(plan);
+    const relayAllowedByPlan = planFeatures.canUseRelay;
+
+    let content;
+    if (hasLocalProvider && gatewayBaseUrl) {
+      // BYOK path: user has configured their own API key
+      content = await sendViaGateway(messages);
+    } else if (hasRelay && relayAllowedByPlan) {
+      // Relay path: user has relay configured and plan permits it
+      content = await sendViaRelay(relay.baseUrl, relay.authToken, messages);
+    } else if (hasRelay && !relayAllowedByPlan) {
+      // Relay configured but plan does not permit it
+      return {
+        success: false,
+        premiumRequired: true,
+        reason: 'relay_not_allowed',
+        error: 'Cloud Relay requires a Premium or Pro plan. Please upgrade or configure a direct API key.',
+        state
+      };
+    } else if (gatewayBaseUrl) {
+      // Fallback: try gateway without explicit BYOK (may fail if no provider configured)
+      const userProvider = getUserProviderConfig();
+      if (!userProvider) {
+        return {
+          success: false,
+          noApiKeyConfigured: true,
+          error: 'OpenClaw depends on an LLM model to provide intelligence. Please configure your API key or a relay service.'
+        };
+      }
+      content = await sendViaGateway(messages);
+    } else {
+      throw new Error('No AI provider configured. Add an API key or configure a relay service.');
+    }
+
+    state.conversations[agentId] = [...messages, { role: 'assistant', content }].slice(-20);
+    consumeQuota(state, gate.tier);
+    saveAppState(state);
+
+    return { success: true, response: content, state };
   } catch (error) {
     const apiDetail = error?.response?.data?.error?.message || error?.response?.data?.message || error?.response?.data?.error;
     const status = error?.response?.status;
@@ -583,9 +714,11 @@ ipcMain.handle('send-message', async (event, payload) => {
   }
 });
 
-// App state (simplified)
+// App state
 ipcMain.handle('get-app-state', async () => {
-  return loadAppState();
+  const state = loadAppState();
+  const gate = checkPremiumGate(state);
+  return { ...state, gate };
 });
 
 ipcMain.handle('get-agent-conversation', async (event, agentId = 'main') => {
@@ -593,14 +726,131 @@ ipcMain.handle('get-agent-conversation', async (event, agentId = 'main') => {
   return { success: true, conversation };
 });
 
-// Agent listing (single agent only)
+// Premium / subscription handlers
+ipcMain.handle('set-user-api-key', async (event, apiKey) => {
+  const state = loadAppState();
+  state.userApiKey = (apiKey || '').trim();
+  state.userApiKeyQuotaUsed = 0;
+  saveAppState(state);
+  return { success: true, state };
+});
+
+ipcMain.handle('set-premium-status', async (event, isPremium) => {
+  const state = loadAppState();
+  state.premiumTier = isPremium ? 'premium' : 'free';
+  state.isPremium = state.premiumTier !== 'free';
+  state.plan = state.premiumTier;
+  saveAppState(state);
+  return { success: true, state };
+});
+
+ipcMain.handle('set-premium-tier', async (event, tier) => {
+  const state = loadAppState();
+  if (!['free', 'premium', 'pro'].includes(tier)) {
+    return { success: false, error: 'Invalid tier' };
+  }
+  state.premiumTier = tier;
+  state.isPremium = tier !== 'free';
+  state.plan = tier;
+  saveAppState(state);
+  return { success: true, state };
+});
+
+// Subscription handlers (from Worktree B)
+ipcMain.handle('get-subscription-status', async () => {
+  const state = loadAppState();
+  const plan = state.plan || state.premiumTier || 'free';
+  const features = getPlanFeatures(plan);
+  return { plan, planExpiresAt: state.planExpiresAt || null, features };
+});
+
+ipcMain.handle('create-checkout-session', async (event, data) => {
+  const { plan } = data || {};
+  if (!['free', 'premium', 'pro'].includes(plan)) {
+    return { success: false, error: 'Invalid plan' };
+  }
+  const state = loadAppState();
+  state.plan = plan;
+  state.planExpiresAt = null;
+  state.premiumTier = plan;
+  state.isPremium = plan !== 'free';
+  saveAppState(state);
+  return { success: true, mock: true };
+});
+
+ipcMain.handle('activate-subscription', async (event, data) => {
+  const { plan, expiresAt } = data || {};
+  if (!['free', 'premium', 'pro'].includes(plan)) {
+    return { success: false, error: 'Invalid plan' };
+  }
+  const state = loadAppState();
+  state.plan = plan;
+  state.planExpiresAt = expiresAt || null;
+  state.premiumTier = plan;
+  state.isPremium = plan !== 'free';
+  saveAppState(state);
+  return { success: true };
+});
+
+// Agent CRUD handlers (merged from A + B)
 ipcMain.handle('list-agents', async () => {
-  return [{ id: 'main', name: 'Main Agent', channels: [] }];
+  const state = loadAppState();
+  return state.agents;
+});
+
+ipcMain.handle('add-agent', async (event, data) => {
+  const state = loadAppState();
+  const plan = state.plan || state.premiumTier || 'free';
+  const features = getPlanFeatures(plan);
+  const totalAgents = state.agents.length;
+
+  if (features.maxAgents !== -1 && totalAgents >= features.maxAgents) {
+    return { error: 'upgrade_required', message: 'Upgrade to add more agents' };
+  }
+
+  const name = (typeof data === 'string' ? data : data?.name) || `Agent ${state.agents.length + 1}`;
+  const newAgent = { id: crypto.randomUUID(), name, channels: [] };
+  state.agents.push(newAgent);
+  saveAppState(state);
+  return newAgent;
+});
+
+ipcMain.handle('rename-agent', async (event, payload) => {
+  const state = loadAppState();
+  const agentId = payload.agentId || payload.id;
+  if (agentId === 'main') return { success: false, error: 'Cannot rename main agent' };
+  const agent = state.agents.find(a => a.id === agentId);
+  if (!agent) return { success: false, error: 'Agent not found' };
+  agent.name = payload.name || agent.name;
+  saveAppState(state);
+  return { success: true, agents: state.agents };
+});
+
+ipcMain.handle('set-agent-channels', async (event, payload) => {
+  const state = loadAppState();
+  const agent = state.agents.find(a => a.id === payload.id);
+  if (!agent) return { success: false, error: 'Agent not found' };
+  agent.channels = Array.isArray(payload.channels) ? payload.channels : [];
+  saveAppState(state);
+  return { success: true, agents: state.agents };
+});
+
+ipcMain.handle('delete-agent', async (event, agentId) => {
+  const state = loadAppState();
+  if (agentId === 'main') return { success: false, error: 'Main agent cannot be deleted' };
+  const index = state.agents.findIndex(a => a.id === agentId);
+  if (index < 0) return { success: false, error: 'Agent not found' };
+  state.agents.splice(index, 1);
+  if (state.activeAgentId === agentId) state.activeAgentId = 'main';
+  if (state.conversations) delete state.conversations[agentId];
+  saveAppState(state);
+  return { success: true, agents: state.agents, state };
 });
 
 ipcMain.handle('set-active-agent', async (event, id) => {
   const state = loadAppState();
-  state.activeAgentId = 'main';
+  if (!state.agents.find(a => a.id === id)) return { success: false, error: 'Agent not found' };
+  state.activeAgentId = id;
   saveAppState(state);
   return { success: true, state };
 });
@@ -620,12 +870,6 @@ ipcMain.handle('save-provider-config', async (event, payload) => {
     cfg.models = cfg.models || {};
     cfg.models.mode = cfg.models.mode || 'merge';
     cfg.models.providers = cfg.models.providers || {};
-
-    const existingKeys = Object.keys(cfg.models.providers || {});
-    const isNew = !cfg.models.providers[cleanProviderId];
-    if (isNew && existingKeys.length > 0) {
-      return { success: false, error: 'Only one provider is supported in current version. Please edit or delete existing one first.' };
-    }
 
     cfg.models.providers[cleanProviderId] = {
       ...(cfg.models.providers[cleanProviderId] || {}),
@@ -702,6 +946,61 @@ ipcMain.handle('reset-model-config', async () => {
     fs.mkdirSync(path.dirname(authFile), { recursive: true });
     fs.writeFileSync(authFile, JSON.stringify({ version: 1, profiles: {}, lastGood: {}, usageStats: {} }, null, 2), 'utf8');
 
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// Relay config handlers (from Worktree A)
+ipcMain.handle('save-relay-config', async (event, config) => {
+  try {
+    const { baseUrl = '', authToken = '' } = config || {};
+    const state = loadAppState();
+    state.relay = { baseUrl: baseUrl.trim(), authToken: authToken.trim() };
+    saveAppState(state);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle('get-relay-config', async () => {
+  try {
+    const state = loadAppState();
+    return { success: true, relay: state.relay || { baseUrl: '', authToken: '' } };
+  } catch (e) {
+    return { success: false, error: e.message, relay: { baseUrl: '', authToken: '' } };
+  }
+});
+
+ipcMain.handle('test-relay-connection', async () => {
+  try {
+    const state = loadAppState();
+    const relay = state.relay || {};
+    if (!relay.baseUrl || !relay.authToken) {
+      return { success: false, error: 'Relay URL and auth token are required.' };
+    }
+    await checkRelayHealth(relay.baseUrl, relay.authToken);
+    return { success: true };
+  } catch (e) {
+    const detail = e?.response?.data ? JSON.stringify(e.response.data) : e.message;
+    return { success: false, error: detail };
+  }
+});
+
+// Channel config handler
+ipcMain.handle('save-agent-channel-config', async (event, payload) => {
+  try {
+    const { agentId, channelType, configJson } = payload || {};
+    const parsed = configJson ? JSON.parse(configJson) : {};
+    const cfg = loadEmbeddedConfig();
+    cfg.channels = cfg.channels || {};
+    cfg.channels[channelType] = cfg.channels[channelType] || { enabled: true, accounts: {} };
+    cfg.channels[channelType].enabled = true;
+    cfg.channels[channelType].accounts = cfg.channels[channelType].accounts || {};
+    cfg.channels[channelType].accounts[agentId || 'default'] = parsed;
+    saveEmbeddedConfig(cfg);
     return { success: true };
   } catch (e) {
     return { success: false, error: e.message };

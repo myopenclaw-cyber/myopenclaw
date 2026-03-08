@@ -1,212 +1,862 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MyOpenClaw</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html,body{height:100%;overflow:hidden}
-    body { font-family: Inter, Arial, sans-serif; background:#fff; color:#1a1a1a; }
-    .app { display:grid; grid-template-columns:260px 1fr; min-height:100vh; }
-    .sidebar { padding:18px; background:#f8f9fa; border-right:1px solid #e9ecef; display:grid; grid-template-rows:auto auto 1fr auto; min-height:100vh; height:100vh; row-gap:8px; }
-    .gateway { display:flex; align-items:center; gap:8px; font-size:11px; white-space:nowrap; padding:9px 10px; border:1px solid #68d391; background:#f0fff4; border-radius:10px; margin-bottom:10px; }
-    .dot { width:8px; height:8px; border-radius:50%; background:#68d391; box-shadow:0 0 10px #68d391; animation:pulse 2s infinite; }
-    @keyframes pulse { 50% { transform:scale(1.15);} }
-    .nav button { width:100%; text-align:left; padding:11px 12px; margin:4px 0; border:none; border-radius:10px; background:transparent; color:#6c757d; cursor:pointer; }
-    .nav button.active { background:linear-gradient(135deg, rgba(102,126,234,.14), rgba(118,75,162,.1)); color:#667eea; box-shadow: inset 3px 0 0 #667eea; }
-    .sidebar > .nav:not(.nav-bottom){overflow:auto;min-height:0;align-self:stretch}
-    .nav-bottom { position:static; padding:0; align-self:stretch; }
-    .main { padding:18px; min-width:0; overflow:hidden; }
-    .hero { padding:16px 16px; border-radius:14px; background:linear-gradient(90deg,rgba(11,18,48,.72),rgba(18,24,60,.38)), url('./assets/premium/images/hero-banner.jpg') center/cover no-repeat; color:#fff; margin-bottom:12px; min-height:92px; display:flex; align-items:center; border:1px solid rgba(255,255,255,.18); box-shadow:0 10px 24px rgba(30,41,59,.25); }
-    .hero h1{font-family:Inter,Arial,sans-serif;font-size:20px;letter-spacing:.2px;text-shadow:0 2px 12px rgba(0,0,0,.35)}
-    .card { padding:14px; border:1px solid #e9ecef; border-radius:12px; background:#fff; box-shadow:0 4px 12px rgba(0,0,0,.06); }
-    .chat-card { height: calc(100vh - 120px); display:flex; flex-direction:column; }
-    .chat-scroll { flex:1; min-height:0; overflow:auto; }
-    .row { display:flex; align-items:center; gap:8px; margin:10px 0; }
-    input,textarea,select { width:100%; border:1px solid #e9ecef; border-radius:10px; padding:10px 12px; }
-    button { border:none; border-radius:10px; padding:10px 14px; color:#fff; cursor:pointer; background:linear-gradient(135deg,#667eea,#764ba2); }
-    button.alt { color:#1a1a1a; background:#f8f9fa; border:1px solid #e9ecef; }
-    button.danger { color:#fff; background:linear-gradient(135deg,#ef4444,#dc2626); border:1px solid #b91c1c; }
-    .chat { height:100%; overflow:auto; border:1px solid #e9ecef; border-radius:12px; background:#f8f9fa; padding:10px; }
-    .input-mask { height: 12px; background: linear-gradient(to bottom, rgba(248,249,250,0), #fff); margin-top: 8px; }
-    .input-bar { position: sticky; bottom: 0; background:#fff; padding-top:8px; border-top:1px solid #E5E7EB; box-shadow:0 -6px 16px rgba(0,0,0,.05); }
-    .msg { max-width:78%; margin:12px 0; padding:10px 12px; border-radius:12px; line-height:1.5; }
-    .msg-time{display:block;margin-top:6px;font-size:11px;opacity:.7}
-    .msg.user { margin-left:auto; color:#fff; background:linear-gradient(135deg,#4c86f2,#5e4fd6); }
-    .msg.ai { position:relative; padding-left:32px; background:#F8F9FF; border:1px solid rgba(102,126,234,.2); }
-    .msg.ai::before { content:'BOT'; position:absolute; left:8px; top:10px; font-size:10px; color:#667eea; }
-    .typing{display:inline-flex;gap:5px;align-items:center}
-    .typing i{display:block;width:6px;height:6px;border-radius:50%;background:#8b95cf;animation:blink 1.2s infinite}
-    .typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
-    @keyframes blink{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-2px)}}
-    .small{font-size:12px;color:#6c757d}
-    .chip{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid #d7defd;background:#eef1ff;color:#4b57a8}
-    .modal-mask{position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:10000}
-    .modal{width:min(620px,95vw);max-height:90vh;overflow:auto;background:linear-gradient(180deg,#ffffff,#f8f9ff);border-radius:18px;padding:18px;border:1px solid #e5e7eb;box-shadow:0 24px 64px rgba(31,41,55,.35)}
-  </style>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>MyOpenClaw</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Inter, sans-serif; background: radial-gradient(1200px 600px at 20% -10%, #7c93ff55, transparent), linear-gradient(135deg, #0b1220, #1a1f3a 45%, #251a3a); color: #e8ecff; min-height: 100vh; }
+.shell { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+.side { padding: 18px; border-right: 1px solid #ffffff22; background: #0b1020aa; display: flex; flex-direction: column; min-height: 100vh; }
+.brand { display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 800; margin-bottom: 12px; }
+.brand img { width: 34px; height: 34px; border-radius: 8px; object-fit: cover; }
+.gateway { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 8px 10px; border: 1px solid #2c8f4a55; background: #173b2655; border-radius: 999px; margin-bottom: 12px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #45e07a; box-shadow: 0 0 10px #45e07a; }
+.gateway img { width: 16px; height: 16px; border-radius: 4px; }
+.menu button { width: 100%; text-align: left; margin: 6px 0; padding: 10px; border-radius: 10px; border: 1px solid #ffffff20; background: #ffffff12; color: #eef1ff; cursor: pointer; font-family: inherit; font-size: 14px; }
+.menu button.active { background: #ffffff; color: #4b4fca; font-weight: 700; }
+.main { padding: 22px; overflow: auto; min-height: 100vh; }
+.hero { padding: 16px 18px; border-radius: 16px; border: 1px solid #ffffff22; background: linear-gradient(135deg, #ffffff18, #ffffff08); box-shadow: 0 20px 45px #00000044; margin-bottom: 14px; }
+.hero h1 { margin: 0 0 6px; font-size: 24px; }
+.hero p { margin: 0; opacity: .9; }
+.page { display: none; }
+.page.active { display: block; }
+.card { padding: 14px; border-radius: 14px; border: 1px solid #ffffff22; background: #ffffff10; margin-bottom: 12px; }
+.row { display: flex; gap: 8px; align-items: center; margin: 10px 0; }
+input, textarea, select { width: 100%; padding: 10px; border: 1px solid #ffffff22; border-radius: 10px; background: #0d1530aa; color: #f5f7ff; font-family: inherit; font-size: 14px; }
+input::placeholder, textarea::placeholder { color: #8898cc; }
+button { padding: 10px 14px; border: none; border-radius: 10px; background: #8aa1ff; color: #0d1330; font-weight: 700; cursor: pointer; font-family: inherit; font-size: 14px; }
+button.alt { background: #ffffff14; color: #fff; border: 1px solid #ffffff22; }
+button.danger { background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff; border: 1px solid #b91c1c; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+.chat { height: 400px; overflow: auto; padding: 10px; border-radius: 12px; border: 1px solid #ffffff22; background: #080d1fcc; }
+.m { max-width: 78%; padding: 10px 12px; border-radius: 12px; margin: 8px 0; line-height: 1.5; word-break: break-word; }
+.u { margin-left: auto; background: linear-gradient(90deg, #4f9eff, #6d71ff); }
+.a { background: #ffffff18; }
+ul { list-style: none; padding: 0; }
+li { padding: 10px; border: 1px solid #ffffff1f; background: #0b1229aa; border-radius: 10px; margin: 8px 0; }
+.small { font-size: 12px; opacity: .85; }
+hr { border: none; border-top: 1px solid #ffffff22; margin: 18px 0; }
+/* Modals */
+.modal { position: fixed; inset: 0; background: #0009; display: none; align-items: center; justify-content: center; z-index: 100; }
+.modal.show { display: flex; }
+.box { width: 640px; max-width: 95vw; padding: 18px; border-radius: 16px; border: 1px solid #ffffff2a; background: linear-gradient(135deg, #1a214b, #2a1b46); max-height: 90vh; overflow: auto; }
+/* Plan badges */
+.plan-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 700; }
+.plan-free { background: #ffffff18; color: #ccd4ff; }
+.plan-premium { background: #4f46e522; color: #a78bfa; border: 1px solid #7c3aed55; }
+.plan-pro { background: #d9770622; color: #fb923c; border: 1px solid #c2410c55; }
+.plan-dot { width: 8px; height: 8px; border-radius: 50%; }
+.plan-free .plan-dot { background: #94a3b8; }
+.plan-premium .plan-dot { background: #a78bfa; box-shadow: 0 0 8px #7c3aed; }
+.plan-pro .plan-dot { background: #fb923c; box-shadow: 0 0 8px #ea580c; }
+/* Feature list */
+.feature-list { list-style: none; padding: 0; margin: 10px 0; }
+.feature-list li { padding: 5px 0; font-size: 13px; display: flex; align-items: center; gap: 8px; border: none; background: none; margin: 0; }
+.feature-list li::before { content: ''; display: inline-block; width: 16px; height: 16px; border-radius: 50%; background: #45e07a22; border: 1px solid #45e07a55; flex-shrink: 0; }
+/* Plan table */
+.plan-table { border-collapse: collapse; width: 100%; }
+.plan-table th, .plan-table td { padding: 10px 12px; border-bottom: 1px solid #ffffff15; text-align: center; font-size: 13px; }
+.plan-table th:first-child, .plan-table td:first-child { text-align: left; opacity: .8; }
+.plan-table thead th { font-size: 14px; font-weight: 700; padding-bottom: 14px; }
+.plan-col-free { color: #94a3b8; }
+.plan-col-premium { color: #a78bfa; }
+.plan-col-pro { color: #fb923c; }
+.check { color: #45e07a; }
+.cross { color: #f87171; opacity: .6; }
+.upgrade-btn { padding: 8px 16px; font-size: 13px; }
+/* Agent items */
+.agent-item { display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid #ffffff1f; background: #0b1229aa; border-radius: 10px; margin: 8px 0; }
+.agent-item .agent-name { flex: 1; font-weight: 500; }
+.agent-item .active-badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #45e07a22; color: #45e07a; border: 1px solid #45e07a44; }
+/* Relay status */
+.relay-status-dot { width: 10px; height: 10px; border-radius: 50%; background: #888; flex-shrink: 0; }
+/* Toast */
+.toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 20px; border-radius: 12px; background: #1a214b; border: 1px solid #ffffff2a; font-size: 14px; font-weight: 500; z-index: 200; animation: fadeIn .2s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+</style>
 </head>
 <body>
-<div class="app">
-  <aside class="sidebar">
-    <div class="gateway"><span class="dot"></span><span id="gatewayLabel">Local OpenClaw Gateway Running</span></div>
-    <div class="row" style="display:none"></div>
-    <nav class="nav">
-      <button id="tab-chat" class="active" onclick="showPage('chat');renderConversation();">Chat</button>
-      <button id="tab-keys" onclick="showPage('keys')">API Keys</button>
-      <button id="tab-config" onclick="showPage('config')">Config</button>
+<div class="shell">
+  <aside class="side">
+    <div class="brand">
+      <img src="./build/assets/logo-openclaw.png" alt="logo"/>MyOpenClaw
+    </div>
+    <div class="gateway">
+      <span class="dot"></span>
+      <img src="./build/assets/logo-openclaw.png" alt="openclaw"/>
+      <span>OpenClaw Gateway Running</span>
+    </div>
+    <nav class="menu">
+      <button id="tab-chat" class="active" onclick="showPage('chat')">&#128172; Chat</button>
+      <button id="tab-agents" onclick="showPage('agents')">&#129302; Agents</button>
+      <button id="tab-keys" onclick="showPage('keys')">&#128273; API Keys</button>
+      <button id="tab-config" onclick="showPage('config')">&#9881;&#65039; Config</button>
+      <button id="tab-account" onclick="showPage('account')">&#128100; Account</button>
     </nav>
-    <nav class="nav nav-bottom"><button id="tab-about" class="alt" onclick="showPage('about')">About</button></nav>
   </aside>
 
   <main class="main">
-    <section class="hero"><h1 style="font-size:18px;">Full OpenClaw Power - Zero Technical Hassle</h1></section>
+    <section class="hero">
+      <h1>MyOpenClaw Desktop</h1>
+      <p>Elegant, secure, local-first OpenClaw experience.</p>
+    </section>
 
-    <section id="chat" class="page" style="display:block">
-      <div class="card chat-card">
-        <div class="row chat-controls" style="margin-top:0;"><div id="chatBreadcrumb" class="small" style="font-size:13px;color:#667eea;font-weight:600;">Chat / Main Agent</div></div>
-        <div class="chat-scroll"><div id="chatBox" class="chat"></div></div>
-        <div class="input-mask"></div>
-        <div class="input-bar">
-          <div class="row" style="margin-bottom:0;">
-            <textarea id="msg" rows="2" style="max-height:160px" placeholder="Type your message... (Enter to send, Shift+Enter for new line)"></textarea>
-            <button onclick="sendMsg()">Send</button>
-          </div>
+    <!-- Chat Page -->
+    <section id="chat" class="page active">
+      <div class="card">
+        <div class="row">
+          <label style="width:90px;flex-shrink:0">Agent</label>
+          <select id="agentSelect"></select>
+        </div>
+        <div id="chatBox" class="chat"></div>
+        <div class="row">
+          <textarea id="msg" rows="2" placeholder="Type your message... (Enter to send, Shift+Enter for new line)" style="max-height:160px"></textarea>
+          <button onclick="sendMsg()">Send</button>
         </div>
       </div>
     </section>
 
-    <section id="keys" class="page" style="display:none"><div class="card">
-      <h3>API Provider Config</h3>
-      <div class="row"><label style="min-width:130px" class="small">Provider Name</label><input id="providerName" placeholder="e.g. openai_main"/></div>
-      <div class="row"><label style="min-width:130px" class="small">Model Name</label><input id="modelName" placeholder="e.g. gpt-4o-mini"/></div>
-      <div class="row"><label style="min-width:130px" class="small">API Type</label><select id="apiType"><option value="openai-completions">openai-completions</option><option value="openai-responses">openai-responses</option><option value="anthropic-messages">anthropic-messages</option><option value="google-generative-ai">google-generative-ai</option></select></div>
-      <div class="row"><label style="min-width:130px" class="small">Base URL</label><input id="baseUrl" placeholder="https://api.openai.com/v1"/></div>
-      <div class="row"><label style="min-width:130px" class="small">API Key</label><input id="providerApiKey" placeholder="sk-..."/></div>
-      <div class="small">Provider Name must be unique.</div>
-      <div class="row"><button onclick="saveProvider()">Save</button></div>
-    </div></section>
+    <!-- Agents Page -->
+    <section id="agents" class="page">
+      <div class="card">
+        <h3 style="margin:0 0 10px">Agents</h3>
+        <div id="agentLimitInfo" style="font-size:13px;opacity:.75;margin-bottom:10px"></div>
+        <div class="row">
+          <input id="newAgentName" placeholder="New agent name"/>
+          <button id="addAgentBtn" onclick="addAgent()">Add Agent</button>
+        </div>
+        <div id="agentList"></div>
+      </div>
+    </section>
 
-    <section id="config" class="page" style="display:none"><div class="card"><h3>Config</h3><div class="row" style="justify-content:space-between;align-items:center"><div style="font-size:14px;color:#4b5563">Reset all OpenClaw model-related config to factory defaults.</div><button class="danger" onclick="resetAllModelConfig()">Reset All Config</button></div></div></section>
+    <!-- API Keys Page -->
+    <section id="keys" class="page">
+      <!-- BYOK Section -->
+      <div class="card">
+        <h3>Provider Config (BYOK)</h3>
+        <div class="row">
+          <label style="min-width:130px" class="small">Provider Name</label>
+          <input id="providerName" placeholder="e.g. openai_main"/>
+        </div>
+        <div class="row">
+          <label style="min-width:130px" class="small">Model Name</label>
+          <input id="modelName" placeholder="e.g. gpt-4o-mini"/>
+        </div>
+        <div class="row">
+          <label style="min-width:130px" class="small">API Type</label>
+          <select id="apiType">
+            <option value="openai-completions">openai-completions</option>
+            <option value="openai-responses">openai-responses</option>
+            <option value="anthropic-messages">anthropic-messages</option>
+            <option value="google-generative-ai">google-generative-ai</option>
+          </select>
+        </div>
+        <div class="row">
+          <label style="min-width:130px" class="small">Base URL</label>
+          <input id="baseUrl" placeholder="https://api.openai.com/v1"/>
+        </div>
+        <div class="row">
+          <label style="min-width:130px" class="small">API Key</label>
+          <input id="providerApiKey" placeholder="sk-..."/>
+        </div>
+        <div class="small" style="opacity:.7;margin-bottom:6px">Provider Name must be unique. Only one provider supported at a time.</div>
+        <div class="row">
+          <button onclick="saveProvider()">Save Provider</button>
+          <button class="alt" onclick="loadProvider()">Refresh</button>
+          <button class="danger" onclick="deleteCurrentProvider()" style="margin-left:auto">Delete Provider</button>
+        </div>
+      </div>
 
-    <section id="about" class="page" style="display:none"><div class="card">
-      <h3>About MyOpenClaw</h3>
-      <p class="small" style="margin-top:8px">Version: 0.1.0</p>
-      <p class="small" style="margin-top:4px">A desktop client for OpenClaw Gateway with BYOK (Bring Your Own Key) support.</p>
-      <p class="small" style="margin-top:4px">Agent: Main Agent (built-in)</p>
-      <div class="row" style="margin-top:12px"><button class="alt" onclick="window.electronAPI.openGatewayDashboard()">Open Gateway Dashboard</button></div>
-    </div></section>
+      <!-- Cloud Relay Section -->
+      <div class="card">
+        <h3>Cloud Relay</h3>
+        <p class="small" style="opacity:.7;margin:0 0 12px">Configure a relay service to use AI without your own API key. Requires Premium or Pro plan.</p>
+        <div class="row">
+          <span id="relayStatusDot" class="relay-status-dot"></span>
+          <span id="relayStatusText" class="small">Not configured</span>
+        </div>
+        <div class="row">
+          <label style="min-width:130px" class="small">Relay URL</label>
+          <input id="relayBaseUrl" placeholder="https://relay.example.com"/>
+        </div>
+        <div class="row">
+          <label style="min-width:130px" class="small">Auth Token</label>
+          <input id="relayAuthToken" type="password" placeholder="Auth Token"/>
+        </div>
+        <div class="row">
+          <button onclick="testRelay()">Test Connection</button>
+          <button onclick="saveRelay()" style="margin-left:8px">Save</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Config Page -->
+    <section id="config" class="page">
+      <div class="card">
+        <h3>Configuration</h3>
+        <div class="row" style="justify-content:space-between;align-items:center">
+          <div style="font-size:14px;opacity:.8">Reset all OpenClaw model-related config to factory defaults.</div>
+          <button class="danger" onclick="resetAllModelConfig()">Reset All Config</button>
+        </div>
+      </div>
+      <div class="card" style="opacity:.7;font-size:13px">
+        <div class="row" style="margin:0;justify-content:space-between">
+          <span>MyOpenClaw Desktop &mdash; v1.0</span>
+          <button class="alt" style="padding:6px 12px;font-size:12px" onclick="window.electronAPI.openGatewayDashboard()">Open Gateway Dashboard</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Account Page -->
+    <section id="account" class="page">
+      <div class="card">
+        <h3 style="margin:0 0 12px">Current Plan</h3>
+        <div class="row" style="margin:0 0 12px">
+          <span id="planBadge" class="plan-badge plan-free">
+            <span class="plan-dot"></span>
+            <span id="planName">Free</span>
+          </span>
+          <span id="planExpiry" style="font-size:12px;opacity:.6;margin-left:8px"></span>
+        </div>
+        <div id="planFeaturesList"></div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 12px">Plans</h3>
+        <table class="plan-table">
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th class="plan-col-free">Free</th>
+              <th class="plan-col-premium">Premium</th>
+              <th class="plan-col-pro">Pro</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Price</td>
+              <td class="plan-col-free">$0</td>
+              <td class="plan-col-premium">$9.9/mo</td>
+              <td class="plan-col-pro">$29.9/mo</td>
+            </tr>
+            <tr>
+              <td>Max Agents</td>
+              <td class="plan-col-free">1</td>
+              <td class="plan-col-premium">5</td>
+              <td class="plan-col-pro">Unlimited</td>
+            </tr>
+            <tr>
+              <td>Relay Access</td>
+              <td class="plan-col-free"><span class="cross">No</span></td>
+              <td class="plan-col-premium"><span class="check">Yes</span></td>
+              <td class="plan-col-pro"><span class="check">Yes</span></td>
+            </tr>
+            <tr>
+              <td>Model Tier</td>
+              <td class="plan-col-free">Basic</td>
+              <td class="plan-col-premium">Sonnet</td>
+              <td class="plan-col-pro">Opus</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="row" style="margin-top:14px;flex-wrap:wrap;gap:10px">
+          <button id="upgradeFreeBtnAccount" class="alt upgrade-btn" onclick="upgradePlan('free')">Use Free</button>
+          <button id="upgradePremiumBtnAccount" class="alt upgrade-btn" onclick="upgradePlan('premium')">Upgrade to Premium</button>
+          <button id="upgradeProBtnAccount" class="alt upgrade-btn" onclick="upgradePlan('pro')">Upgrade to Pro</button>
+        </div>
+      </div>
+    </section>
   </main>
 </div>
 
-<script>
-let appState=null,currentAgent='main';
+<!-- Upgrade / Premium Modal -->
+<div id="premiumModal" class="modal">
+  <div class="box">
+    <h3>Upgrade Required</h3>
+    <p id="premiumMsg">This action exceeds your plan.</p>
+    <table class="plan-table">
+      <thead>
+        <tr>
+          <th>Plan</th>
+          <th>Agents</th>
+          <th>Relay</th>
+          <th>Model</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="plan-col-premium">Premium</td>
+          <td>5</td>
+          <td><span class="check">Yes</span></td>
+          <td>Sonnet</td>
+          <td><button class="upgrade-btn" onclick="upgradePlan('premium');closePremium()">Upgrade</button></td>
+        </tr>
+        <tr>
+          <td class="plan-col-pro">Pro</td>
+          <td>Unlimited</td>
+          <td><span class="check">Yes</span></td>
+          <td>Opus</td>
+          <td><button class="upgrade-btn" onclick="upgradePlan('pro');closePremium()">Upgrade</button></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="row" style="justify-content:flex-end;margin-top:14px">
+      <button class="alt" onclick="showPage('keys');closePremium()">Use API Key / Relay</button>
+      <button class="alt" onclick="closePremium()">Cancel</button>
+    </div>
+  </div>
+</div>
 
-function showPage(id){document.querySelectorAll('.page').forEach(p=>p.style.display='none');document.getElementById(id).style.display='block';document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));const tab=document.getElementById('tab-'+id);if(tab)tab.classList.add('active');}
-function showToast(text,ms=2200){const t=document.getElementById("toast"); if(!t)return; t.textContent=text; t.style.display="block"; clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>t.style.display="none",ms);}
-function showApiKeyRequiredModal(){
-  modalProviderName.value = providerName.value || '';
-  modalModelName.value = modelName.value || '';
-  modalApiType.value = apiType.value || 'openai-completions';
-  modalBaseUrl.value = baseUrl.value || '';
-  modalProviderApiKey.value = providerApiKey.value || '';
-  apiKeyRequiredModal.style.display='flex';
+<!-- No API Key Modal (BYOK path) -->
+<div id="apiKeyRequiredModal" class="modal" onclick="if(event.target===this) closeApiKeyRequiredModal()">
+  <div class="box">
+    <h3 style="font-size:20px;margin-bottom:8px">Configure API Key</h3>
+    <div class="small" style="margin-bottom:10px;opacity:.8">OpenClaw needs an LLM provider to work. Configure your API key below, or set up a Cloud Relay in the API Keys page.</div>
+    <div class="row"><label style="min-width:130px" class="small">Provider Name</label><input id="modalProviderName" placeholder="e.g. openai_main"/></div>
+    <div class="row"><label style="min-width:130px" class="small">Model Name</label><input id="modalModelName" placeholder="e.g. gpt-4o-mini"/></div>
+    <div class="row"><label style="min-width:130px" class="small">API Type</label>
+      <select id="modalApiType">
+        <option value="openai-completions">openai-completions</option>
+        <option value="openai-responses">openai-responses</option>
+        <option value="anthropic-messages">anthropic-messages</option>
+        <option value="google-generative-ai">google-generative-ai</option>
+      </select>
+    </div>
+    <div class="row"><label style="min-width:130px" class="small">Base URL</label><input id="modalBaseUrl" placeholder="https://api.openai.com/v1"/></div>
+    <div class="row"><label style="min-width:130px" class="small">API Key</label><input id="modalProviderApiKey" placeholder="sk-..."/></div>
+    <div class="row" style="justify-content:flex-end">
+      <button class="alt" onclick="showPage('keys');closeApiKeyRequiredModal()">Go to API Keys</button>
+      <button onclick="saveProviderFromModal()">Save API Key</button>
+    </div>
+  </div>
+</div>
+
+<!-- Channel Config Modal -->
+<div id="channelModal" class="modal">
+  <div class="box">
+    <h3>Configure Channel</h3>
+    <div class="row">
+      <select id="channelType" onchange="renderChannelFields()">
+        <option>telegram</option>
+        <option>discord</option>
+        <option>slack</option>
+        <option>whatsapp</option>
+        <option>signal</option>
+        <option>imessage</option>
+        <option>googlechat</option>
+        <option>irc</option>
+      </select>
+      <input id="channelAgentId" placeholder="agent id (default: active)"/>
+    </div>
+    <div id="channelFields"></div>
+    <div class="row" style="justify-content:flex-end">
+      <button class="alt" onclick="closeChannelModal()">Cancel</button>
+      <button onclick="saveChannelConfig()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let appState = null;
+let subscription = null;
+let currentAgent = 'main';
+
+const channelSchemas = {
+  telegram: ['botToken', 'allowFrom(comma-separated)'],
+  discord: ['token'],
+  slack: ['botToken'],
+  whatsapp: ['sessionName'],
+  signal: ['phoneNumber'],
+  imessage: ['account'],
+  googlechat: ['webhookUrl'],
+  irc: ['server', 'nick', 'channels(comma-separated)']
+};
+
+// ---------------------------------------------------------------------------
+// Navigation
+// ---------------------------------------------------------------------------
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.menu > button').forEach(b => b.classList.remove('active'));
+  const tab = document.getElementById('tab-' + id);
+  if (tab) tab.classList.add('active');
 }
-function closeApiKeyRequiredModal(){apiKeyRequiredModal.style.display='none';}
-function fmtTime(ts){const d=ts?new Date(ts):new Date();const p=n=>String(n).padStart(2,'0');return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;}
-function addMsg(text,cls,ts){const d=document.createElement('div');d.className='msg '+cls;const body=document.createElement('div');body.textContent=text;const tm=document.createElement('span');tm.className='msg-time';tm.textContent=fmtTime(ts);d.appendChild(body);d.appendChild(tm);chatBox.appendChild(d);chatBox.scrollTop=chatBox.scrollHeight;return d;}
-function addTypingIndicator(){const d=document.createElement('div');d.className='msg ai';d.innerHTML="<span class='typing'><i></i><i></i><i></i></span>";chatBox.appendChild(d);chatBox.scrollTop=chatBox.scrollHeight;return d;}
-async function refreshState(){appState=await window.electronAPI.getAppState();currentAgent=appState.activeAgentId||'main';}
-async function renderConversation(){
-  chatBox.innerHTML='';
-  let conv=[];
-  try{
-    const r=await window.electronAPI.getAgentConversation(currentAgent);
-    if(r?.success && Array.isArray(r.conversation)) conv=r.conversation;
-  }catch{}
-  if(!conv.length) conv=appState?.conversations?.[currentAgent]||[];
-  conv = conv.filter(m=>{
-    const t=String(m?.content||'').trim().toLowerCase();
-    if((m?.role==='user' && t==='ping') || (m?.role==='assistant' && (t==='pong' || t==='pong!'))) return false;
-    return true;
+
+// ---------------------------------------------------------------------------
+// Toast
+// ---------------------------------------------------------------------------
+function showToast(msg, ms) {
+  ms = ms || 3000;
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => { if (t.parentNode) t.parentNode.removeChild(t); }, ms);
+}
+
+// ---------------------------------------------------------------------------
+// Premium modal
+// ---------------------------------------------------------------------------
+function closePremium() {
+  document.getElementById('premiumModal').classList.remove('show');
+}
+
+function openPremium(msg) {
+  document.getElementById('premiumMsg').textContent = msg || 'Upgrade required';
+  document.getElementById('premiumModal').classList.add('show');
+}
+
+// ---------------------------------------------------------------------------
+// No-API-key modal (BYOK quick-configure)
+// ---------------------------------------------------------------------------
+function showApiKeyRequiredModal() {
+  document.getElementById('modalProviderName').value = document.getElementById('providerName').value || '';
+  document.getElementById('modalModelName').value = document.getElementById('modelName').value || '';
+  document.getElementById('modalApiType').value = document.getElementById('apiType').value || 'openai-completions';
+  document.getElementById('modalBaseUrl').value = document.getElementById('baseUrl').value || '';
+  document.getElementById('modalProviderApiKey').value = document.getElementById('providerApiKey').value || '';
+  document.getElementById('apiKeyRequiredModal').classList.add('show');
+}
+
+function closeApiKeyRequiredModal() {
+  document.getElementById('apiKeyRequiredModal').classList.remove('show');
+}
+
+async function saveProviderFromModal() {
+  const providerId = (document.getElementById('modalProviderName').value || '').trim();
+  const modelId = (document.getElementById('modalModelName').value || '').trim();
+  const api = (document.getElementById('modalApiType').value || 'openai-completions').trim();
+  const r = await window.electronAPI.saveProviderConfig({
+    providerId,
+    baseUrl: document.getElementById('modalBaseUrl').value.trim(),
+    apiKey: document.getElementById('modalProviderApiKey').value.trim(),
+    api,
+    modelId
   });
-  if(!conv.length)return;
-  conv.forEach(m=>addMsg(m.content,m.role==='user'?'user':'ai',m.timestamp));
-}
-async function sendMsg(){
-  const text=msg.value.trim();
-  if(!text)return;
-  addMsg(text,'user');
-  msg.value='';
-  const typingEl=addTypingIndicator();
-  const r=await window.electronAPI.sendMessage({message:text,agentId:currentAgent});
-  if(typingEl&&typingEl.parentNode)typingEl.parentNode.removeChild(typingEl);
-  if(r.success){
-    addMsg(r.response||'Received','ai');
-    await refreshState();
-  }else if(r.noApiKeyConfigured){
-    showApiKeyRequiredModal();
-    showToast(r.error||'Please configure API key first.');
-  }else{
-    addMsg('Failed: '+(r.error||'unknown'),'ai');
-  }
-}
-async function saveProvider(){
-  const providerId=(providerName.value||'').trim();
-  const modelId=(modelName.value||'').trim();
-  const api=(apiType.value||'openai-completions').trim();
-  const r=await window.electronAPI.saveProviderConfig({providerId,baseUrl:baseUrl.value.trim(),apiKey:providerApiKey.value.trim(),api,modelId});
-  showToast(r.success?'Saved':'Failed: '+r.error);
-}
-async function saveProviderFromModal(){
-  const providerId=(modalProviderName.value||'').trim();
-  const modelId=(modalModelName.value||'').trim();
-  const api=(modalApiType.value||'openai-completions').trim();
-  const r=await window.electronAPI.saveProviderConfig({providerId,baseUrl:modalBaseUrl.value.trim(),apiKey:modalProviderApiKey.value.trim(),api,modelId});
-  if(!r?.success){showToast('Failed: '+(r?.error||'unknown'));return;}
-  providerName.value=providerId; modelName.value=modelId; apiType.value=api; baseUrl.value=modalBaseUrl.value.trim(); providerApiKey.value=modalProviderApiKey.value.trim();
+  if (!r || !r.success) { showToast('Failed: ' + (r && r.error || 'unknown')); return; }
+  document.getElementById('providerName').value = providerId;
+  document.getElementById('modelName').value = modelId;
+  document.getElementById('apiType').value = api;
+  document.getElementById('baseUrl').value = document.getElementById('modalBaseUrl').value.trim();
+  document.getElementById('providerApiKey').value = document.getElementById('modalProviderApiKey').value.trim();
   closeApiKeyRequiredModal();
   showToast('Saved. Please send again.');
 }
-async function loadProvider(){
-  const r=await window.electronAPI.getProviderConfig();
-  if(!r?.success||!r?.provider)return;
-  providerName.value=r.provider.providerId||'';
-  modelName.value=r.provider.modelId||'';
-  apiType.value=r.provider.api||'openai-completions';
-  baseUrl.value=r.provider.baseUrl||'';
-  providerApiKey.value=r.provider.apiKey||'';
+
+// ---------------------------------------------------------------------------
+// Channel modal
+// ---------------------------------------------------------------------------
+function openChannelModal(agentId) {
+  document.getElementById('channelAgentId').value = agentId || currentAgent;
+  renderChannelFields();
+  document.getElementById('channelModal').classList.add('show');
 }
-async function resetAllModelConfig(){
-  const ok=confirm('This will reset all OpenClaw model/API related configuration to factory defaults. Continue?');
-  if(!ok) return;
-  const r=await window.electronAPI.resetModelConfig();
-  if(!r?.success){showToast('Reset failed: '+(r?.error||'unknown'));return;}
-  providerName.value=''; modelName.value=''; if(window.apiType) apiType.value='openai-completions'; baseUrl.value=''; providerApiKey.value='';
-  try{await loadProvider();}catch{}
-  try{await refreshState();}catch{}
-  try{await renderConversation();}catch{}
+
+function closeChannelModal() {
+  document.getElementById('channelModal').classList.remove('show');
+}
+
+function renderChannelFields() {
+  const type = document.getElementById('channelType').value;
+  const box = document.getElementById('channelFields');
+  box.innerHTML = '';
+  (channelSchemas[type] || []).forEach(k => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const i = document.createElement('input');
+    i.placeholder = k;
+    i.dataset.key = k;
+    row.appendChild(i);
+    box.appendChild(row);
+  });
+}
+
+async function saveChannelConfig() {
+  const type = document.getElementById('channelType').value;
+  const fields = [...document.querySelectorAll('#channelFields input')];
+  const payload = {};
+  fields.forEach(i => {
+    const key = i.dataset.key.split('(')[0];
+    if (i.value.trim()) payload[key] = i.value.trim();
+  });
+  if (payload.allowFrom) payload.allowFrom = payload.allowFrom.split(',').map(s => s.trim()).filter(Boolean);
+  if (payload.channels) payload.channels = payload.channels.split(',').map(s => s.trim()).filter(Boolean);
+  const r = await window.electronAPI.saveAgentChannelConfig({
+    agentId: document.getElementById('channelAgentId').value.trim() || currentAgent,
+    channelType: type,
+    configJson: JSON.stringify(payload)
+  });
+  if (!r || !r.success) { showToast('Failed: ' + (r && r.error || 'unknown')); return; }
+  closeChannelModal();
+  showToast('Channel config saved');
+}
+
+// ---------------------------------------------------------------------------
+// Chat helpers
+// ---------------------------------------------------------------------------
+function chat(t, c) {
+  const d = document.createElement('div');
+  d.className = 'm ' + c;
+  d.textContent = t;
+  const b = document.getElementById('chatBox');
+  b.appendChild(d);
+  b.scrollTop = b.scrollHeight;
+}
+
+// ---------------------------------------------------------------------------
+// State & subscription
+// ---------------------------------------------------------------------------
+async function refreshState() {
+  appState = await window.electronAPI.getAppState();
+  subscription = await window.electronAPI.getSubscriptionStatus();
+  currentAgent = appState.activeAgentId || 'main';
+  updateAccountUI();
+}
+
+function updateAccountUI() {
+  if (!subscription) return;
+  const plan = subscription.plan || 'free';
+  const features = subscription.features || { maxAgents: 1, canUseRelay: false, modelTier: 'basic' };
+
+  const badge = document.getElementById('planBadge');
+  const planName = document.getElementById('planName');
+  badge.className = 'plan-badge plan-' + plan;
+  planName.textContent = plan.charAt(0).toUpperCase() + plan.slice(1);
+
+  const expiry = document.getElementById('planExpiry');
+  expiry.textContent = subscription.planExpiresAt
+    ? 'Expires: ' + new Date(subscription.planExpiresAt).toLocaleDateString()
+    : '';
+
+  const featList = document.getElementById('planFeaturesList');
+  const agentLabel = features.maxAgents === -1 ? 'Unlimited agents' : features.maxAgents + ' agent' + (features.maxAgents === 1 ? '' : 's');
+  featList.innerHTML = '<ul class="feature-list">' +
+    '<li>' + agentLabel + '</li>' +
+    '<li>Relay access: ' + (features.canUseRelay ? 'Yes' : 'No') + '</li>' +
+    '<li>Model tier: ' + features.modelTier + '</li>' +
+    '</ul>';
+
+  const freeBtn = document.getElementById('upgradeFreeBtnAccount');
+  const premiumBtn = document.getElementById('upgradePremiumBtnAccount');
+  const proBtn = document.getElementById('upgradeProBtnAccount');
+  if (freeBtn) freeBtn.disabled = plan === 'free';
+  if (premiumBtn) premiumBtn.disabled = plan === 'premium';
+  if (proBtn) proBtn.disabled = plan === 'pro';
+}
+
+async function upgradePlan(plan) {
+  const result = await window.electronAPI.createCheckoutSession(plan);
+  if (result && result.success) {
+    await refreshState();
+    await refreshAgents();
+    showToast('Plan changed to ' + plan.charAt(0).toUpperCase() + plan.slice(1) + '!');
+  } else {
+    showToast('Failed to change plan');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Agents
+// ---------------------------------------------------------------------------
+async function refreshAgents() {
+  const agents = await window.electronAPI.listAgents();
+  const plan = subscription ? (subscription.plan || 'free') : 'free';
+  const features = subscription ? (subscription.features || { maxAgents: 1 }) : { maxAgents: 1 };
+  const maxAgents = features.maxAgents;
+  const atLimit = maxAgents !== -1 && agents.length >= maxAgents;
+
+  // Update agent selector in chat
+  const sel = document.getElementById('agentSelect');
+  sel.innerHTML = '';
+  agents.forEach(a => {
+    const o = document.createElement('option');
+    o.value = a.id;
+    o.textContent = a.name;
+    if (currentAgent === a.id) o.selected = true;
+    sel.appendChild(o);
+  });
+  sel.onchange = async () => {
+    await window.electronAPI.setActiveAgent(sel.value);
+    currentAgent = sel.value;
+    renderConversation();
+  };
+
+  // Update agents limit info
+  const limitInfo = document.getElementById('agentLimitInfo');
+  if (maxAgents === -1) {
+    limitInfo.textContent = agents.length + ' agents (unlimited on Pro)';
+  } else {
+    limitInfo.textContent = agents.length + ' / ' + maxAgents + ' agents on ' + plan.charAt(0).toUpperCase() + plan.slice(1) + ' plan';
+  }
+
+  // Update add agent button state
+  const addBtn = document.getElementById('addAgentBtn');
+  if (atLimit) {
+    addBtn.textContent = 'Upgrade to Add More';
+    addBtn.onclick = () => openPremium('Upgrade your plan to add more agents.');
+  } else {
+    addBtn.textContent = 'Add Agent';
+    addBtn.onclick = addAgent;
+  }
+
+  // Render agent list
+  const list = document.getElementById('agentList');
+  list.innerHTML = '';
+  agents.forEach(a => {
+    const item = document.createElement('div');
+    item.className = 'agent-item';
+
+    const namePart = document.createElement('span');
+    namePart.className = 'agent-name';
+    namePart.textContent = a.name;
+    item.appendChild(namePart);
+
+    if (a.id === currentAgent) {
+      const activeBadge = document.createElement('span');
+      activeBadge.className = 'active-badge';
+      activeBadge.textContent = 'Active';
+      item.appendChild(activeBadge);
+    }
+
+    const actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.gap = '6px';
+
+    if (a.id !== 'main') {
+      const renameBtn = document.createElement('button');
+      renameBtn.className = 'alt';
+      renameBtn.style.cssText = 'padding:6px 10px;font-size:12px';
+      renameBtn.textContent = 'Rename';
+      renameBtn.onclick = async () => {
+        const name = prompt('New name', a.name);
+        if (!name) return;
+        const rs = await window.electronAPI.renameAgent({ agentId: a.id, name });
+        if (!rs || !rs.success) { alert(rs && rs.error || 'Rename failed'); return; }
+        await refreshAgents();
+      };
+      actions.appendChild(renameBtn);
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'alt';
+      deleteBtn.style.cssText = 'padding:6px 10px;font-size:12px;color:#f87171';
+      deleteBtn.textContent = 'Delete';
+      deleteBtn.onclick = async () => {
+        if (!confirm('Delete agent "' + a.name + '"?')) return;
+        const rs = await window.electronAPI.deleteAgent(a.id);
+        if (!rs || !rs.success) { alert(rs && rs.error || 'Delete failed'); return; }
+        if (currentAgent === a.id) currentAgent = 'main';
+        await refreshState();
+        await refreshAgents();
+        renderConversation();
+      };
+      actions.appendChild(deleteBtn);
+    }
+
+    const channelBtn = document.createElement('button');
+    channelBtn.className = 'alt';
+    channelBtn.style.cssText = 'padding:6px 10px;font-size:12px';
+    channelBtn.textContent = 'Channels';
+    channelBtn.onclick = () => openChannelModal(a.id);
+    actions.appendChild(channelBtn);
+
+    item.appendChild(actions);
+    list.appendChild(item);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Conversation rendering
+// ---------------------------------------------------------------------------
+function renderConversation() {
+  const box = document.getElementById('chatBox');
+  box.innerHTML = '';
+  const conv = (appState && appState.conversations && appState.conversations[currentAgent]) || [];
+  if (!conv.length) {
+    chat('Conversation with ' + currentAgent + ' is empty.', 'a');
+    return;
+  }
+  conv.forEach(m => chat(m.content, m.role === 'user' ? 'u' : 'a'));
+}
+
+// ---------------------------------------------------------------------------
+// Send message
+// ---------------------------------------------------------------------------
+async function sendMsg() {
+  const text = document.getElementById('msg').value.trim();
+  if (!text) return;
+  chat(text, 'u');
+  document.getElementById('msg').value = '';
+  const r = await window.electronAPI.sendMessage({ message: text, agentId: currentAgent });
+  if (r.success) {
+    chat(r.response || 'Received', 'a');
+    await refreshState();
+    renderConversation();
+  } else if (r.premiumRequired) {
+    openPremium(r.error);
+  } else if (r.noApiKeyConfigured) {
+    showApiKeyRequiredModal();
+  } else {
+    chat('Failed: ' + (r.error || 'unknown'), 'a');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Add agent
+// ---------------------------------------------------------------------------
+async function addAgent() {
+  const name = document.getElementById('newAgentName').value.trim();
+  const result = await window.electronAPI.addAgent({ name });
+  if (result && result.error === 'upgrade_required') {
+    openPremium(result.message || 'Upgrade to add more agents');
+    return;
+  }
+  if (!result || !result.id) {
+    showToast('Failed to create agent');
+    return;
+  }
+  document.getElementById('newAgentName').value = '';
+  await refreshState();
+  await refreshAgents();
+  showToast('Agent "' + result.name + '" created');
+}
+
+// ---------------------------------------------------------------------------
+// Provider config (BYOK)
+// ---------------------------------------------------------------------------
+async function saveProvider() {
+  const providerId = (document.getElementById('providerName').value || '').trim();
+  const modelId = (document.getElementById('modelName').value || '').trim();
+  const api = (document.getElementById('apiType').value || 'openai-completions').trim();
+  const r = await window.electronAPI.saveProviderConfig({
+    providerId,
+    baseUrl: document.getElementById('baseUrl').value.trim(),
+    apiKey: document.getElementById('providerApiKey').value.trim(),
+    api,
+    modelId
+  });
+  showToast(r.success ? 'Saved' : 'Failed: ' + r.error);
+}
+
+async function loadProvider() {
+  const r = await window.electronAPI.getProviderConfig();
+  if (!r || !r.success || !r.provider) return;
+  document.getElementById('providerName').value = r.provider.providerId || '';
+  document.getElementById('modelName').value = r.provider.modelId || '';
+  document.getElementById('apiType').value = r.provider.api || 'openai-completions';
+  document.getElementById('baseUrl').value = r.provider.baseUrl || '';
+  document.getElementById('providerApiKey').value = r.provider.apiKey || '';
+}
+
+async function deleteCurrentProvider() {
+  const providerId = (document.getElementById('providerName').value || '').trim();
+  if (!providerId) { showToast('No provider loaded'); return; }
+  if (!confirm('Delete provider "' + providerId + '"?')) return;
+  const r = await window.electronAPI.deleteProviderConfig(providerId);
+  if (r && r.success) {
+    document.getElementById('providerName').value = '';
+    document.getElementById('modelName').value = '';
+    document.getElementById('baseUrl').value = '';
+    document.getElementById('providerApiKey').value = '';
+    showToast('Provider deleted');
+  } else {
+    showToast('Failed: ' + (r && r.error || 'unknown'));
+  }
+}
+
+async function resetAllModelConfig() {
+  if (!confirm('This will reset all OpenClaw model/API related configuration to factory defaults. Continue?')) return;
+  const r = await window.electronAPI.resetModelConfig();
+  if (!r || !r.success) { showToast('Reset failed: ' + (r && r.error || 'unknown')); return; }
+  document.getElementById('providerName').value = '';
+  document.getElementById('modelName').value = '';
+  document.getElementById('apiType').value = 'openai-completions';
+  document.getElementById('baseUrl').value = '';
+  document.getElementById('providerApiKey').value = '';
   showToast('All model-related config reset.');
 }
-function init(){
-  msg.addEventListener('input',()=>{msg.style.height='auto';msg.style.height=Math.min(msg.scrollHeight,160)+'px';});
-  msg.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}});
-}
-(async()=>{init();await refreshState();await loadProvider();renderConversation();})();
-</script>
-<div id="toast" style="position:fixed;right:18px;bottom:18px;min-width:220px;max-width:420px;background:#1f2937;color:#fff;padding:10px 12px;border-radius:10px;box-shadow:0 10px 24px rgba(0,0,0,.25);display:none;z-index:9999"></div>
 
-<div id="apiKeyRequiredModal" class="modal-mask" onclick="if(event.target===this) closeApiKeyRequiredModal()">
-  <div class="modal">
-    <h3 style="font-size:22px;margin-bottom:8px">Configure API Key Required</h3>
-    <div class="small" style="margin-bottom:10px">OpenClaw depends on an LLM model to provide intelligence. Please configure your API key.</div>
-    <div class="row"><label style="min-width:130px" class="small">Provider Name</label><input id="modalProviderName" placeholder="e.g. openai_main"/></div>
-    <div class="row"><label style="min-width:130px" class="small">Model Name</label><input id="modalModelName" placeholder="e.g. gpt-4o-mini"/></div>
-    <div class="row"><label style="min-width:130px" class="small">API Type</label><select id="modalApiType"><option value="openai-completions">openai-completions</option><option value="openai-responses">openai-responses</option><option value="anthropic-messages">anthropic-messages</option><option value="google-generative-ai">google-generative-ai</option></select></div>
-    <div class="row"><label style="min-width:130px" class="small">Base URL</label><input id="modalBaseUrl" placeholder="https://api.openai.com/v1"/></div>
-    <div class="row"><label style="min-width:130px" class="small">API Key</label><input id="modalProviderApiKey" placeholder="sk-..."/></div>
-    <div class="row" style="justify-content:flex-end"><button class="alt" onclick="closeApiKeyRequiredModal()">Cancel</button><button onclick="saveProviderFromModal()">Save API Key</button></div>
-  </div>
-</div>
+// ---------------------------------------------------------------------------
+// Relay config
+// ---------------------------------------------------------------------------
+function setRelayStatus(connected, label) {
+  const dot = document.getElementById('relayStatusDot');
+  const txt = document.getElementById('relayStatusText');
+  dot.style.background = connected ? '#45e07a' : '#888';
+  dot.style.boxShadow = connected ? '0 0 8px #45e07a' : 'none';
+  txt.textContent = label || 'Not configured';
+}
+
+async function loadRelayConfig() {
+  const r = await window.electronAPI.getRelayConfig();
+  if (r && r.success && r.relay) {
+    document.getElementById('relayBaseUrl').value = r.relay.baseUrl || '';
+    document.getElementById('relayAuthToken').value = r.relay.authToken || '';
+    if (r.relay.baseUrl && r.relay.authToken) {
+      setRelayStatus(true, 'Configured');
+    } else {
+      setRelayStatus(false, 'Not configured');
+    }
+  }
+}
+
+async function testRelay() {
+  setRelayStatus(false, 'Testing...');
+  const r = await window.electronAPI.testRelayConnection();
+  if (r && r.success) {
+    setRelayStatus(true, 'Connected');
+  } else {
+    setRelayStatus(false, 'Connection failed');
+    showToast('Relay connection failed: ' + (r && r.error || 'unknown error'));
+  }
+}
+
+async function saveRelay() {
+  const r = await window.electronAPI.saveRelayConfig({
+    baseUrl: document.getElementById('relayBaseUrl').value.trim(),
+    authToken: document.getElementById('relayAuthToken').value.trim()
+  });
+  if (r && r.success) {
+    await loadRelayConfig();
+    showToast('Relay config saved');
+  } else {
+    showToast('Failed: ' + (r && r.error || 'unknown'));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Keyboard shortcuts
+// ---------------------------------------------------------------------------
+function initKeyboard() {
+  const msgEl = document.getElementById('msg');
+  msgEl.addEventListener('input', () => {
+    msgEl.style.height = 'auto';
+    msgEl.style.height = Math.min(msgEl.scrollHeight, 160) + 'px';
+  });
+  msgEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMsg();
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
+(async () => {
+  initKeyboard();
+  renderChannelFields();
+  await refreshState();
+  await refreshAgents();
+  await loadProvider();
+  await loadRelayConfig();
+  renderConversation();
+})();
+</script>
 </body>
 </html>
