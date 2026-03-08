@@ -68,7 +68,7 @@ jobs:
           path: dist-mac-silicon/**/*
 
   build-mac-intel:
-    runs-on: macos-13
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -82,7 +82,7 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build Mac Intel Simple
+      - name: Build Mac Intel Simple (cross-compile on ARM)
         run: |
           export BUILD_VARIANT="simple"
           export TARGET_LABEL="mac_intel"
