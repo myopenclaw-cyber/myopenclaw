@@ -22,8 +22,10 @@ let gatewayProcess = null;
 const OPENCLAW_CONFIG_DIR = path.join(os.homedir(), '.openclaw');
 const CONFIG_FILE = path.join(OPENCLAW_CONFIG_DIR, 'openclaw.json');
 const DEFAULT_PORT = 18800;
-const EMBEDDED_CONFIG_FILE = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'openclaw.json');
-const APP_STATE_FILE = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'app-state.json');
+const EMBEDDED_CONFIG_FILE = path.join(OPENCLAW_CONFIG_DIR, 'embedded-config.json');
+const APP_STATE_FILE = path.join(OPENCLAW_CONFIG_DIR, 'app-state.json');
+const AUTH_PROFILES_DIR = path.join(OPENCLAW_CONFIG_DIR, 'agents', 'main', 'agent');
+const AUTH_PROFILES_FILE = path.join(AUTH_PROFILES_DIR, 'auth-profiles.json');
 
 // ---------------------------------------------------------------------------
 // Gateway token helpers
@@ -241,11 +243,10 @@ function syncAuthProfileForProvider(providerId, apiKey, api = '') {
   try {
     const key = String(apiKey || '').trim();
     if (!providerId || !key) return;
-    const authFile = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'agents', 'main', 'agent', 'auth-profiles.json');
-    fs.mkdirSync(path.dirname(authFile), { recursive: true });
+    fs.mkdirSync(AUTH_PROFILES_DIR, { recursive: true });
     let auth = { version: 1, profiles: {}, lastGood: {}, usageStats: {} };
-    if (fs.existsSync(authFile)) {
-      auth = JSON.parse(fs.readFileSync(authFile, 'utf8').replace(/^\uFEFF/, ''));
+    if (fs.existsSync(AUTH_PROFILES_FILE)) {
+      auth = JSON.parse(fs.readFileSync(AUTH_PROFILES_FILE, 'utf8').replace(/^\uFEFF/, ''));
       auth.version = auth.version || 1;
       auth.profiles = auth.profiles || {};
       auth.lastGood = auth.lastGood || {};
@@ -258,7 +259,7 @@ function syncAuthProfileForProvider(providerId, apiKey, api = '') {
     };
     bind(providerId);
     if (String(api).trim() === 'anthropic-messages') bind('anthropic');
-    fs.writeFileSync(authFile, JSON.stringify(auth, null, 2), 'utf8');
+    fs.writeFileSync(AUTH_PROFILES_FILE, JSON.stringify(auth, null, 2), 'utf8');
   } catch (e) {
     console.error('[auth-profile-sync] failed:', e.message);
   }
@@ -991,9 +992,8 @@ ipcMain.handle('reset-model-config', async () => {
     if (cfg.agents.defaults.model !== undefined) delete cfg.agents.defaults.model;
     saveEmbeddedConfig(cfg);
 
-    const authFile = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'agents', 'main', 'agent', 'auth-profiles.json');
-    fs.mkdirSync(path.dirname(authFile), { recursive: true });
-    fs.writeFileSync(authFile, JSON.stringify({ version: 1, profiles: {}, lastGood: {}, usageStats: {} }, null, 2), 'utf8');
+    fs.mkdirSync(AUTH_PROFILES_DIR, { recursive: true });
+    fs.writeFileSync(AUTH_PROFILES_FILE, JSON.stringify({ version: 1, profiles: {}, lastGood: {}, usageStats: {} }, null, 2), 'utf8');
 
     return { success: true };
   } catch (e) {
