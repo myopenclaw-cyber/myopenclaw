@@ -23,6 +23,12 @@
   "build": {
     "appId": "com.myopenclaw.app",
     "productName": "MyOpenClaw",
+    "protocols": [
+      {
+        "name": "MyOpenClaw",
+        "schemes": ["myopenclaw"]
+      }
+    ],
     "directories": {
       "output": "dist"
     },

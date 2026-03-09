@@ -2,6 +2,12 @@
   "compression": "maximum",
   "appId": "com.myopenclaw.app",
   "productName": "MyOpenClaw",
+  "protocols": [
+    {
+      "name": "MyOpenClaw",
+      "schemes": ["myopenclaw"]
+    }
+  ],
   "artifactName": "${productName}-${version}-${env.BUILD_VARIANT}-${env.TARGET_LABEL}.${ext}",
   "files": [
     "main.js",
