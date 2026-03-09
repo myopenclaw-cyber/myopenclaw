@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getDeviceId: () => ipcRenderer.invoke('get-device-id'),
   checkQuota: () => ipcRenderer.invoke('check-quota'),
   openLogin: () => ipcRenderer.invoke('open-login'),
+  logout: () => ipcRenderer.invoke('logout'),
 
   // Channel config
   saveAgentChannelConfig: (payload) => ipcRenderer.invoke('save-agent-channel-config', payload)

@@ -237,9 +237,8 @@ hr { border: none; border-top: 1px solid #ffffff22; margin: 18px 0; }
           <span id="accountQuotaText" class="small" style="opacity:.75">Loading...</span>
           <button class="alt" style="flex-shrink:0;padding:8px 10px;font-size:12px;margin-left:auto" onclick="refreshQuota()">Refresh</button>
         </div>
-        <div class="row" style="margin-top:6px">
-          <button onclick="openLogin()">Login / Register</button>
-          <span class="small" style="opacity:.6;margin-left:10px">Opens myopenclaws.app in your browser</span>
+        <div id="accountAuthRow" class="row" style="align-items:center;margin-top:6px">
+          <!-- Populated by updateAuthUI() -->
         </div>
       </div>
 
@@ -570,6 +569,7 @@ async function refreshState() {
   subscription = await window.electronAPI.getSubscriptionStatus();
   currentAgent = appState.activeAgentId || 'main';
   updateAccountUI();
+  updateAuthUI();
 }
 
 function updateAccountUI() {
@@ -601,6 +601,37 @@ function updateAccountUI() {
   if (freeBtn) freeBtn.disabled = plan === 'free';
   if (premiumBtn) premiumBtn.disabled = plan === 'premium';
   if (proBtn) proBtn.disabled = plan === 'pro';
+}
+
+function updateAuthUI() {
+  const row = document.getElementById('accountAuthRow');
+  if (!row) return;
+  const relay = appState && appState.relay;
+  const email = relay && relay.userEmail;
+  const hasToken = relay && relay.accessToken;
+  if (hasToken && email) {
+    row.innerHTML =
+      '<label style="min-width:130px" class="small">Account</label>' +
+      '<span class="small" style="color:#6ee7b7;font-weight:500">' + email + '</span>' +
+      '<button class="alt" style="flex-shrink:0;padding:8px 10px;font-size:12px;margin-left:auto" onclick="logout()">Logout</button>';
+  } else if (hasToken) {
+    row.innerHTML =
+      '<label style="min-width:130px" class="small">Account</label>' +
+      '<span class="small" style="color:#6ee7b7;font-weight:500">Logged in</span>' +
+      '<button class="alt" style="flex-shrink:0;padding:8px 10px;font-size:12px;margin-left:auto" onclick="logout()">Logout</button>';
+  } else {
+    row.innerHTML =
+      '<button onclick="openLogin()">Login / Register</button>' +
+      '<span class="small" style="opacity:.6;margin-left:10px">Opens myopenclaws.app in your browser</span>';
+  }
+}
+
+async function logout() {
+  await window.electronAPI.logout();
+  await refreshState();
+  await loadRelayConfig();
+  await refreshQuota();
+  showToast('Logged out');
 }
 
 async function upgradePlan(plan) {

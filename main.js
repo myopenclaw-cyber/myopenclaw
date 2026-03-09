@@ -1465,6 +1465,22 @@ ipcMain.handle('save-relay-auth', async (event, { accessToken, refreshToken }) =
   }
 });
 
+// Logout – clear relay auth tokens
+ipcMain.handle('logout', async () => {
+  try {
+    const state = loadAppState();
+    if (state.relay) {
+      delete state.relay.accessToken;
+      delete state.relay.refreshToken;
+      delete state.relay.userEmail;
+    }
+    saveAppState(state);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
 // Channel config handler
 ipcMain.handle('save-agent-channel-config', async (event, payload) => {
   try {
