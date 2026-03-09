@@ -43,6 +43,7 @@ const APP_STATE_FILE = path.join(OPENCLAW_CONFIG_DIR, 'app-state.json');
 const AUTH_PROFILES_DIR = path.join(OPENCLAW_CONFIG_DIR, 'agents', 'main', 'agent');
 const AUTH_PROFILES_FILE = path.join(AUTH_PROFILES_DIR, 'auth-profiles.json');
 const DOWNLOADED_RUNTIME_DIR = path.join(OPENCLAW_CONFIG_DIR, 'runtime');
+const RELAY_BASE_URL = 'https://myopenclaw-relay-service-production.up.railway.app';
 
 // ---------------------------------------------------------------------------
 // Gateway token helpers
@@ -180,13 +181,7 @@ function ensureDeviceId() {
 
 async function registerDevice(deviceId) {
   try {
-    const state = loadAppState();
-    const relay = state.relay || {};
-    if (!relay.baseUrl) {
-      console.log('[device-registration] No relay baseUrl configured, skipping registration');
-      return;
-    }
-    await axios.post(`${relay.baseUrl}/v1/devices`, {
+    await axios.post(`${RELAY_BASE_URL}/v1/devices`, {
       deviceId,
       platform: process.platform,
       appVersion: app.getVersion()
@@ -1402,10 +1397,11 @@ ipcMain.handle('test-relay-connection', async () => {
     const state = loadAppState();
     const relay = state.relay || {};
     const authToken = relay.accessToken || relay.authToken;
-    if (!relay.baseUrl || !authToken) {
-      return { success: false, error: 'Relay URL and auth token are required.' };
+    const baseUrl = relay.baseUrl || RELAY_BASE_URL;
+    if (!authToken) {
+      return { success: false, error: 'Auth token is required. Please log in first.' };
     }
-    await checkRelayHealth(relay.baseUrl, authToken);
+    await checkRelayHealth(baseUrl, authToken);
     return { success: true };
   } catch (e) {
     const detail = e?.response?.data ? JSON.stringify(e.response.data) : e.message;
@@ -1425,7 +1421,8 @@ ipcMain.handle('check-quota', async () => {
   const relay = state.relay || {};
   const deviceId = state.deviceId;
 
-  if (!relay.baseUrl || !deviceId) {
+  const baseUrl = relay.baseUrl || RELAY_BASE_URL;
+  if (!deviceId) {
     return { success: false, error: 'not_configured' };
   }
 
@@ -1433,7 +1430,7 @@ ipcMain.handle('check-quota', async () => {
     const authToken = relay.accessToken || relay.authToken;
     const headers = {};
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
-    const response = await axios.get(`${relay.baseUrl}/v1/devices/${deviceId}/usage`, { headers, timeout: 8000 });
+    const response = await axios.get(`${baseUrl}/v1/devices/${deviceId}/usage`, { headers, timeout: 8000 });
     return response.data;
   } catch (err) {
     return { success: false, error: err.message };
@@ -1512,11 +1509,25 @@ function handleDeepLink(url) {
       if (accessToken) {
         const state = loadAppState();
         state.relay = state.relay || {};
+        state.relay.baseUrl = RELAY_BASE_URL;
         state.relay.accessToken = accessToken;
         if (refreshToken) state.relay.refreshToken = refreshToken;
         if (email) state.relay.userEmail = email;
         saveAppState(state);
         console.log('[DeepLink] Auth tokens saved from web login');
+
+        // Link device to user account
+        const deviceId = state.deviceId;
+        if (deviceId) {
+          axios.post(`${RELAY_BASE_URL}/v1/devices/${encodeURIComponent(deviceId)}/link`, {}, {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+            timeout: 8000,
+          }).then(() => {
+            console.log('[DeepLink] Device linked to user account');
+          }).catch((err) => {
+            console.log('[DeepLink] Device link failed (non-fatal):', err.message);
+          });
+        }
 
         // Notify renderer to refresh UI
         if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1524,6 +1535,7 @@ function handleDeepLink(url) {
             if (typeof loadRelayConfig === 'function') loadRelayConfig();
             if (typeof loadDeviceInfo === 'function') loadDeviceInfo();
             if (typeof refreshQuota === 'function') refreshQuota();
+            if (typeof refreshState === 'function') refreshState();
           `).catch(() => {});
           mainWindow.show();
           mainWindow.focus();
