@@ -7,6 +7,22 @@ const net = require('net');
 const axios = require('axios');
 const { spawn, execFileSync } = require('child_process');
 
+// Disable GPU if running in a VM (prevents white screen in virtual machines)
+const isVM = (() => {
+  try {
+    if (process.platform === 'darwin') {
+      const model = execFileSync('sysctl', ['-n', 'machdep.cpu.brand_string'], { encoding: 'utf8', timeout: 2000 }).trim();
+      return /virtual|Apple Virtual/i.test(model);
+    }
+    const cpuModel = os.cpus()?.[0]?.model || '';
+    return /virtual|QEMU|KVM|VirtualBox|VMware/i.test(cpuModel);
+  } catch { return false; }
+})();
+if (isVM) {
+  app.commandLine.appendSwitch('disable-gpu');
+  console.log('[gpu] Disabled GPU acceleration (VM detected)');
+}
+
 // Suppress EPIPE errors on stdout/stderr (harmless when piped)
 process.stdout?.on('error', () => {});
 process.stderr?.on('error', () => {});
@@ -565,6 +581,14 @@ function createWindow() {
     return { action: 'deny' };
   });
 
+  // Log renderer crashes and errors to terminal for debugging
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    console.error('[renderer] process gone:', details.reason, details.exitCode);
+  });
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc) => {
+    console.error('[renderer] did-fail-load:', code, desc);
+  });
+
   if (!fs.existsSync(CONFIG_FILE)) {
     // No local gateway config — go straight to main UI (user can configure later or use relay)
     mainWindow.loadFile('index.html');
@@ -1071,7 +1095,7 @@ ipcMain.handle('open-login', async () => {
   try {
     const state = loadAppState();
     const deviceId = state.deviceId || '';
-    const homepageUrl = 'https://myopenclaw.com';
+    const homepageUrl = 'https://myopenclaws.app';
     const loginUrl = `${homepageUrl}/login.html?deviceId=${deviceId}&redirect=myopenclaw`;
     await shell.openExternal(loginUrl);
     return { success: true };

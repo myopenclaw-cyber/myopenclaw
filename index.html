@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>MyOpenClaw</title>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+/* Font loaded async to prevent blocking render in offline/VM environments */
 * { box-sizing: border-box; }
 body { margin: 0; font-family: Inter, sans-serif; background: radial-gradient(1200px 600px at 20% -10%, #7c93ff55, transparent), linear-gradient(135deg, #0b1220, #1a1f3a 45%, #251a3a); color: #e8ecff; min-height: 100vh; }
 .shell { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
@@ -77,6 +77,8 @@ hr { border: none; border-top: 1px solid #ffffff22; margin: 18px 0; }
 .toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 20px; border-radius: 12px; background: #1a214b; border: 1px solid #ffffff2a; font-size: 14px; font-weight: 500; z-index: 200; animation: fadeIn .2s ease; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 </style>
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'">
 </head>
 <body>
 <div class="shell">
@@ -237,7 +239,7 @@ hr { border: none; border-top: 1px solid #ffffff22; margin: 18px 0; }
         </div>
         <div class="row" style="margin-top:6px">
           <button onclick="openLogin()">Login / Register</button>
-          <span class="small" style="opacity:.6;margin-left:10px">Opens myopenclaw.com in your browser</span>
+          <span class="small" style="opacity:.6;margin-left:10px">Opens myopenclaws.app in your browser</span>
         </div>
       </div>
 
