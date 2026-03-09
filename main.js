@@ -131,7 +131,7 @@ function getDefaultAppState() {
 
 function getPlanFeatures(plan) {
   const features = {
-    free: { maxAgents: 1, canUseRelay: false, modelTier: 'basic' },
+    free: { maxAgents: 1, canUseRelay: true, modelTier: 'basic' },
     premium: { maxAgents: 5, canUseRelay: true, modelTier: 'sonnet' },
     pro: { maxAgents: -1, canUseRelay: true, modelTier: 'opus' }
   };
@@ -199,16 +199,20 @@ function checkPremiumGate(state) {
   if (state.premiumTier === 'premium' || state.premiumTier === 'pro') {
     return { allow: true, tier: state.premiumTier };
   }
+  // Free tier: allow if has relay (quota enforced server-side) or has local API key
+  const relay = state.relay || {};
+  const hasRelay = !!(relay.accessToken || relay.authToken);
+  if (hasRelay) {
+    return { allow: true, tier: 'free' };
+  }
+  if (state.userApiKey) {
+    return { allow: true, tier: 'user_api_key' };
+  }
+  // No relay and no API key — check free local quota
   if (state.freeQuotaUsed < 10) {
     return { allow: true, tier: 'free' };
   }
-  if (!state.userApiKey) {
-    return { allow: false, reason: 'free_exhausted', message: 'Free quota reached. Add your API key or upgrade to Premium.' };
-  }
-  if (state.userApiKeyQuotaUsed < 300) {
-    return { allow: true, tier: 'user_api_key' };
-  }
-  return { allow: false, reason: 'key_quota_exhausted', message: 'API key trial quota reached (300). Upgrade to Premium to continue.' };
+  return { allow: false, reason: 'free_exhausted', message: 'Free quota reached. Login to use Cloud Relay or add your API key.' };
 }
 
 function consumeQuota(state, tier) {
@@ -1593,6 +1597,14 @@ app.whenReady().then(() => {
   console.log('[app] ready');
   const deviceId = ensureDeviceId();
   registerDevice(deviceId); // fire-and-forget
+
+  // Auto-set relay baseUrl so users don't need to configure it
+  const state = loadAppState();
+  if (!state.relay || !state.relay.baseUrl) {
+    state.relay = state.relay || {};
+    state.relay.baseUrl = RELAY_BASE_URL;
+    saveAppState(state);
+  }
   console.log('[app] creating window...');
   createWindow();
 

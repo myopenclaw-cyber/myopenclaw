@@ -175,34 +175,20 @@ hr { border: none; border-top: 1px solid #ffffff22; margin: 18px 0; }
       <!-- Cloud Relay Section -->
       <div class="card">
         <h3>Cloud Relay</h3>
-        <p class="small" style="opacity:.7;margin:0 0 12px">Configure a relay service to use AI without your own API key. Requires Premium or Pro plan.</p>
-        <div class="row">
+        <p class="small" style="opacity:.7;margin:0 0 12px">Use AI without your own API key. Login to activate.</p>
+        <div class="row" style="align-items:center;margin-bottom:8px">
           <span id="relayStatusDot" class="relay-status-dot"></span>
-          <span id="relayStatusText" class="small">Not configured</span>
+          <span id="relayStatusText" class="small">Not connected</span>
+          <button class="alt" style="flex-shrink:0;padding:8px 10px;font-size:12px;margin-left:auto" onclick="testRelay()">Test</button>
         </div>
-        <div class="row">
-          <label style="min-width:130px" class="small">Device ID</label>
-          <input id="relayDeviceId" readonly style="opacity:.7;cursor:default" placeholder="Loading..."/>
-          <button class="alt" style="flex-shrink:0;padding:8px 10px;font-size:12px" onclick="copyDeviceId()">Copy</button>
+        <div id="relayAuthRow" class="row" style="align-items:center">
+          <!-- Populated by updateRelayUI() -->
         </div>
-        <div class="row">
-          <label style="min-width:130px" class="small">Relay URL</label>
-          <input id="relayBaseUrl" placeholder="https://relay.example.com"/>
-        </div>
-        <div class="row">
-          <label style="min-width:130px" class="small">Auth Token</label>
-          <input id="relayAuthToken" type="password" placeholder="Auth Token"/>
-        </div>
-        <div class="row">
-          <label style="min-width:130px" class="small">Access Token (JWT)</label>
-          <input id="relayAccessToken" type="password" placeholder="Paste JWT access token"/>
-        </div>
-        <div class="row">
-          <button onclick="testRelay()">Test Connection</button>
-          <button onclick="saveRelay()" style="margin-left:8px">Save</button>
-          <button class="alt" onclick="saveRelayJwt()" style="margin-left:8px">Save JWT</button>
-          <button class="alt" onclick="openLogin()" style="margin-left:auto">Login to Upgrade</button>
-        </div>
+        <!-- Hidden fields for internal use -->
+        <input id="relayBaseUrl" type="hidden"/>
+        <input id="relayAuthToken" type="hidden"/>
+        <input id="relayDeviceId" type="hidden"/>
+        <input id="relayAccessToken" type="hidden"/>
       </div>
     </section>
 
@@ -893,11 +879,29 @@ async function loadRelayConfig() {
     document.getElementById('relayBaseUrl').value = r.relay.baseUrl || '';
     document.getElementById('relayAuthToken').value = r.relay.authToken || '';
     const effectiveToken = r.relay.accessToken || r.relay.authToken;
-    if (r.relay.baseUrl && effectiveToken) {
-      setRelayStatus(true, 'Configured');
+    if (effectiveToken) {
+      setRelayStatus(true, 'Connected');
     } else {
-      setRelayStatus(false, 'Not configured');
+      setRelayStatus(false, 'Not connected');
     }
+  }
+  updateRelayUI();
+}
+
+function updateRelayUI() {
+  const row = document.getElementById('relayAuthRow');
+  if (!row) return;
+  const relay = appState && appState.relay;
+  const email = relay && relay.userEmail;
+  const hasToken = relay && relay.accessToken;
+  if (hasToken) {
+    row.innerHTML =
+      '<span class="small" style="color:#6ee7b7;font-weight:500">' + (email || 'Logged in') + '</span>' +
+      '<span class="small" style="opacity:.5;margin-left:8px">Relay active</span>';
+  } else {
+    row.innerHTML =
+      '<button onclick="openLogin()">Login to Activate</button>' +
+      '<span class="small" style="opacity:.6;margin-left:10px">Free tier: 50 messages/month</span>';
   }
 }
 
