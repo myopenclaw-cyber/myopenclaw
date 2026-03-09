@@ -86,10 +86,10 @@ hr { border: none; border-top: 1px solid #ffffff22; margin: 18px 0; }
     <div class="brand">
       <img src="./build/assets/logo-openclaw.png" alt="logo"/>MyOpenClaw
     </div>
-    <div class="gateway">
-      <span class="dot"></span>
+    <div class="gateway" id="gatewayBar">
+      <span class="dot" id="gatewayDot"></span>
       <img src="./build/assets/logo-openclaw.png" alt="openclaw"/>
-      <span>OpenClaw Gateway Running</span>
+      <span id="gatewayLabel">Checking...</span>
     </div>
     <nav class="menu">
       <button id="tab-chat" class="active" onclick="showPage('chat')">&#128172; Chat</button>
@@ -540,6 +540,29 @@ function chat(t, c) {
 }
 
 // ---------------------------------------------------------------------------
+// Gateway status
+// ---------------------------------------------------------------------------
+async function refreshGatewayStatus() {
+  const info = await window.electronAPI.getGatewayInfo();
+  const dot = document.getElementById('gatewayDot');
+  const label = document.getElementById('gatewayLabel');
+  const bar = document.getElementById('gatewayBar');
+  if (info && info.baseUrl) {
+    dot.style.background = '#45e07a';
+    dot.style.boxShadow = '0 0 10px #45e07a';
+    label.textContent = 'Gateway Running';
+    bar.style.borderColor = '#2c8f4a55';
+    bar.style.background = '#173b2655';
+  } else {
+    dot.style.background = '#ff9040';
+    dot.style.boxShadow = '0 0 10px #ff9040';
+    label.textContent = 'Gateway Offline (Relay Only)';
+    bar.style.borderColor = '#8f6a2a55';
+    bar.style.background = '#3b2e1655';
+  }
+}
+
+// ---------------------------------------------------------------------------
 // State & subscription
 // ---------------------------------------------------------------------------
 async function refreshState() {
@@ -943,6 +966,7 @@ function initKeyboard() {
   try {
     initKeyboard();
     renderChannelFields();
+    await refreshGatewayStatus();
     await refreshState();
     await refreshAgents();
     await loadProvider();
