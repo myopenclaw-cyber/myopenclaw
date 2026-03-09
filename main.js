@@ -564,16 +564,19 @@ function createWindow() {
     return { action: 'deny' };
   });
 
+  mainWindow.loadFile('loading.html');
+
+  // If no local gateway config, go straight to main UI (user can configure later or use relay)
   if (!fs.existsSync(CONFIG_FILE)) {
-    mainWindow.loadFile('setup.html');
+    mainWindow.loadFile('index.html');
   } else {
-    mainWindow.loadFile('loading.html');
     startGateway()
       .then(() => mainWindow.loadFile('index.html'))
       .catch(err => {
         console.error('Gateway startup failed:', err);
         global.__MYOPENCLAW_STARTUP_ERROR__ = err?.message || String(err);
-        mainWindow.loadFile('error.html');
+        // Still load main UI, user can use relay even if gateway fails
+        mainWindow.loadFile('index.html');
       });
   }
 }
