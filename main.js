@@ -690,6 +690,9 @@ ipcMain.handle('get-gateway-info', async () => {
 
 ipcMain.handle('open-gateway-dashboard', async () => {
   try {
+    if (!gatewayBaseUrl && !gatewayPort) {
+      return { success: false, error: 'Gateway is not running. Please configure a local gateway first.' };
+    }
     const url = buildDashboardUrl(gatewayBaseUrl || `http://127.0.0.1:${gatewayPort || DEFAULT_PORT}`);
     await shell.openExternal(url);
     return { success: true, url };

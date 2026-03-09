@@ -218,7 +218,7 @@ hr { border: none; border-top: 1px solid #ffffff22; margin: 18px 0; }
       <div class="card" style="opacity:.7;font-size:13px">
         <div class="row" style="margin:0;justify-content:space-between">
           <span>MyOpenClaw Desktop &mdash; v1.0</span>
-          <button class="alt" style="padding:6px 12px;font-size:12px" onclick="window.electronAPI.openGatewayDashboard()">Open Gateway Dashboard</button>
+          <button class="alt" style="padding:6px 12px;font-size:12px" onclick="window.electronAPI.openGatewayDashboard().then(r => { if (r && !r.success) showToast(r.error); })">Open Gateway Dashboard</button>
         </div>
       </div>
     </section>
