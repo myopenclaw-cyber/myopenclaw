@@ -42,6 +42,7 @@ const EMBEDDED_CONFIG_FILE = path.join(OPENCLAW_CONFIG_DIR, 'embedded-config.jso
 const APP_STATE_FILE = path.join(OPENCLAW_CONFIG_DIR, 'app-state.json');
 const AUTH_PROFILES_DIR = path.join(OPENCLAW_CONFIG_DIR, 'agents', 'main', 'agent');
 const AUTH_PROFILES_FILE = path.join(AUTH_PROFILES_DIR, 'auth-profiles.json');
+const DOWNLOADED_RUNTIME_DIR = path.join(OPENCLAW_CONFIG_DIR, 'runtime');
 
 // ---------------------------------------------------------------------------
 // Gateway token helpers
@@ -431,12 +432,25 @@ async function downloadFile(url, outputPath, onProgress) {
   });
 }
 
+// Check for runtime in both embedded (asar) and downloaded (~/.openclaw/runtime/) locations
+function findRuntimeDir() {
+  // 1. Check embedded (full build, inside asar)
+  const embeddedDir = path.join(__dirname, 'resources', 'openclaw-deps', 'openclaw', 'dist');
+  if (fs.existsSync(path.join(embeddedDir, 'entry.js')) || fs.existsSync(path.join(embeddedDir, 'entry.mjs'))) {
+    return path.join(__dirname, 'resources');
+  }
+  // 2. Check downloaded runtime (~/.openclaw/runtime/)
+  const dlDir = path.join(DOWNLOADED_RUNTIME_DIR, 'openclaw-deps', 'openclaw', 'dist');
+  if (fs.existsSync(path.join(dlDir, 'entry.js')) || fs.existsSync(path.join(dlDir, 'entry.mjs'))) {
+    return DOWNLOADED_RUNTIME_DIR;
+  }
+  return null;
+}
+
 async function ensureEmbeddedRuntime() {
-  const distEntry = path.join(__dirname, 'resources', 'openclaw-deps', 'openclaw', 'dist', 'entry.js');
-  const distEntryMjs = path.join(__dirname, 'resources', 'openclaw-deps', 'openclaw', 'dist', 'entry.mjs');
-  if (fs.existsSync(distEntry) || fs.existsSync(distEntryMjs)) {
-    console.log('[runtime] Embedded runtime found (dist/entry detected)');
-    updateLoadingStatus('Launching openclaw gateway...', 72);
+  if (findRuntimeDir()) {
+    console.log('[runtime] Runtime found');
+    updateLoadingStatus('Runtime ready', 72);
     return;
   }
 
@@ -454,28 +468,28 @@ async function ensureEmbeddedRuntime() {
   }
 
   const zipPath = path.join(os.tmpdir(), `myopenclaw-runtime-${target}.zip`);
-  const resourcesDir = path.join(__dirname, 'resources');
 
   console.log(`[runtime] Downloading runtime for ${target}...`);
   updateLoadingStatus('Downloading openclaw ...', 52);
   await downloadFile(url, zipPath, (p) => {
-    updateLoadingStatus('Downloading openclaw ...', 52 + Math.round(p * 0.28));
+    updateLoadingStatus(`Downloading openclaw ... ${p}%`, 52 + Math.round(p * 0.28));
   });
 
   console.log('[runtime] Extracting runtime...');
   updateLoadingStatus('Extracting openclaw runtime...', 84);
+  fs.mkdirSync(DOWNLOADED_RUNTIME_DIR, { recursive: true });
   if (process.platform === 'win32') {
-    execFileSync('powershell.exe', ['-NoProfile', '-Command', `Expand-Archive -Path '${zipPath}' -DestinationPath '${resourcesDir}' -Force`], { stdio: 'inherit' });
+    execFileSync('powershell.exe', ['-NoProfile', '-Command', `Expand-Archive -Path '${zipPath}' -DestinationPath '${DOWNLOADED_RUNTIME_DIR}' -Force`], { stdio: 'inherit' });
   } else {
-    execFileSync('unzip', ['-o', zipPath, '-d', resourcesDir], { stdio: 'inherit' });
+    execFileSync('unzip', ['-o', zipPath, '-d', DOWNLOADED_RUNTIME_DIR], { stdio: 'inherit' });
   }
 
-  if (!fs.existsSync(distEntry) && !fs.existsSync(distEntryMjs)) {
+  if (!findRuntimeDir()) {
     throw new Error('Runtime extracted but dist/entry.(m)js not found. The runtime package may be incomplete.');
   }
 
   console.log('[runtime] Runtime ready');
-  updateLoadingStatus('Launching openclaw gateway...', 88);
+  updateLoadingStatus('Runtime installed', 88);
 }
 
 // ---------------------------------------------------------------------------
@@ -494,9 +508,7 @@ async function startGateway() {
     console.log(`[startGateway] Starting gateway on port ${gatewayPort}...`);
     updateLoadingStatus('Establishing secure connections...', 48);
 
-    const distEntryCheck = path.join(__dirname, 'resources', 'openclaw-deps', 'openclaw', 'dist', 'entry.js');
-    const distEntryMjsCheck = path.join(__dirname, 'resources', 'openclaw-deps', 'openclaw', 'dist', 'entry.mjs');
-    setRuntimeDownloadNeeded(!fs.existsSync(distEntryCheck) && !fs.existsSync(distEntryMjsCheck));
+    setRuntimeDownloadNeeded(!findRuntimeDir());
 
     await ensureEmbeddedRuntime();
     ensureAuthProfilesFromEmbeddedConfig();
@@ -506,19 +518,30 @@ async function startGateway() {
 
     updateLoadingStatus('Launching openclaw gateway...', 90);
 
-    // Platform-specific gateway launch
-    const resourcesDir = path.join(__dirname, 'resources');
-    if (process.platform === 'win32') {
-      const gatewayCmdPath = path.join(resourcesDir, 'gateway.cmd');
-      gatewayProcess = spawn('cmd.exe', ['/c', gatewayCmdPath, String(gatewayPort)], {
-        stdio: 'pipe', cwd: resourcesDir, windowsHide: true
-      });
-    } else {
-      const gatewayShPath = path.join(resourcesDir, 'gateway.sh');
-      gatewayProcess = spawn('bash', [gatewayShPath, String(gatewayPort)], {
-        stdio: 'pipe', cwd: resourcesDir
-      });
-    }
+    // Find runtime location and launch gateway
+    const runtimeDir = findRuntimeDir() || path.join(__dirname, 'resources');
+    const entryMjs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'openclaw.mjs');
+    const entryJs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'dist', 'entry.js');
+    const entryFile = fs.existsSync(entryMjs) ? entryMjs : entryJs;
+    const stateDir = path.join(runtimeDir, '.openclaw-myopenclaw');
+    fs.mkdirSync(stateDir, { recursive: true });
+
+    const gatewayEnv = {
+      ...process.env,
+      OPENCLAW_STATE_DIR: stateDir,
+      OPENCLAW_CONFIG_PATH: path.join(stateDir, 'openclaw.json'),
+      OPENCLAW_GATEWAY_PORT: String(gatewayPort),
+      OPENCLAW_SERVICE_MARKER: 'myopenclaw',
+      OPENCLAW_SERVICE_KIND: 'gateway',
+    };
+
+    console.log(`[startGateway] Launching: node ${entryFile} gateway run --port ${gatewayPort}`);
+    // Use system node (not Electron's bundled node) — openclaw requires Node >= 22.12
+    const nodeCmd = process.platform === 'win32' ? 'node.exe' : 'node';
+    gatewayProcess = spawn(nodeCmd, [entryFile, 'gateway', 'run', '--port', String(gatewayPort), '--allow-unconfigured'], {
+      stdio: 'pipe', cwd: runtimeDir, env: gatewayEnv,
+      ...(process.platform === 'win32' ? { windowsHide: true } : {})
+    });
 
     gatewayProcess.stdout.on('data', (data) => console.log(`[Gateway stdout] ${data}`));
     gatewayProcess.stderr.on('data', (data) => console.error(`[Gateway stderr] ${data}`));
@@ -589,20 +612,28 @@ function createWindow() {
     console.error('[renderer] did-fail-load:', code, desc);
   });
 
-  if (!fs.existsSync(CONFIG_FILE)) {
-    // No local gateway config — go straight to main UI (user can configure later or use relay)
+  // Always show loading screen first for runtime download progress
+  mainWindow.loadFile('loading.html');
+
+  (async () => {
+    try {
+      // Step 1: Ensure runtime is downloaded (shows progress on loading.html)
+      if (!findRuntimeDir()) {
+        await ensureEmbeddedRuntime();
+      }
+      // Step 2: Start gateway only if config exists
+      if (fs.existsSync(CONFIG_FILE)) {
+        await startGateway();
+      } else {
+        console.log('[startup] No gateway config, skipping gateway start (relay-only mode)');
+      }
+    } catch (err) {
+      console.error('[startup] Error:', err.message);
+      global.__MYOPENCLAW_STARTUP_ERROR__ = err?.message || String(err);
+    }
+    // Step 3: Always load main UI
     mainWindow.loadFile('index.html');
-  } else {
-    mainWindow.loadFile('loading.html');
-    startGateway()
-      .then(() => mainWindow.loadFile('index.html'))
-      .catch(err => {
-        console.error('Gateway startup failed:', err);
-        global.__MYOPENCLAW_STARTUP_ERROR__ = err?.message || String(err);
-        // Still load main UI, user can use relay even if gateway fails
-        mainWindow.loadFile('index.html');
-      });
-  }
+  })();
 }
 
 // ---------------------------------------------------------------------------
