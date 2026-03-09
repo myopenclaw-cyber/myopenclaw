@@ -493,6 +493,52 @@ async function ensureEmbeddedRuntime() {
 }
 
 // ---------------------------------------------------------------------------
+// First-time setup: openclaw onboard
+// ---------------------------------------------------------------------------
+function runOpenClawOnboard(runtimeDir) {
+  return new Promise((resolve, reject) => {
+    const entryMjs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'openclaw.mjs');
+    const entryJs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'dist', 'entry.js');
+    const entryFile = fs.existsSync(entryMjs) ? entryMjs : entryJs;
+
+    const args = [
+      entryFile, 'onboard',
+      '--non-interactive', '--accept-risk',
+      '--skip-channels', '--skip-daemon', '--skip-health', '--skip-skills', '--skip-ui',
+      '--auth-choice', 'skip',
+      '--gateway-port', String(DEFAULT_PORT),
+    ];
+
+    const env = {
+      ...process.env,
+      OPENCLAW_STATE_DIR: OPENCLAW_CONFIG_DIR,
+      OPENCLAW_CONFIG_PATH: CONFIG_FILE,
+    };
+
+    console.log(`[onboard] Running: node ${args.join(' ')}`);
+    const proc = spawn('node', args, { stdio: 'pipe', env });
+
+    let output = '';
+    proc.stdout.on('data', (d) => { output += d; console.log(`[onboard] ${d}`); });
+    proc.stderr.on('data', (d) => { output += d; console.error(`[onboard] ${d}`); });
+    proc.on('close', (code) => {
+      if (code === 0) {
+        console.log('[onboard] Setup complete');
+        resolve(output);
+      } else {
+        console.error(`[onboard] Exited with code ${code}`);
+        // Non-fatal: config might still have been created
+        resolve(output);
+      }
+    });
+    proc.on('error', (err) => {
+      console.error('[onboard] Error:', err.message);
+      resolve(''); // Non-fatal
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Gateway startup (cross-platform)
 // ---------------------------------------------------------------------------
 async function startGateway() {
@@ -617,21 +663,30 @@ function createWindow() {
 
   (async () => {
     try {
-      // Step 1: Ensure runtime is downloaded (shows progress on loading.html)
+      // Step 1: Ensure runtime is downloaded
       if (!findRuntimeDir()) {
         await ensureEmbeddedRuntime();
       }
-      // Step 2: Start gateway only if config exists
+
+      // Step 2: Run openclaw onboard if no config exists (first-time setup)
+      const runtimeDir = findRuntimeDir();
+      if (runtimeDir && !fs.existsSync(CONFIG_FILE)) {
+        updateLoadingStatus('Running first-time setup...', 90);
+        console.log('[startup] No config found, running openclaw onboard...');
+        await runOpenClawOnboard(runtimeDir);
+      }
+
+      // Step 3: Start gateway if config now exists
       if (fs.existsSync(CONFIG_FILE)) {
         await startGateway();
       } else {
-        console.log('[startup] No gateway config, skipping gateway start (relay-only mode)');
+        console.log('[startup] No gateway config after onboard, relay-only mode');
       }
     } catch (err) {
       console.error('[startup] Error:', err.message);
       global.__MYOPENCLAW_STARTUP_ERROR__ = err?.message || String(err);
     }
-    // Step 3: Always load main UI
+    // Step 4: Always load main UI
     mainWindow.loadFile('index.html');
   })();
 }
