@@ -581,14 +581,20 @@ function updateAccountUI() {
 }
 
 async function upgradePlan(plan) {
-  const result = await window.electronAPI.createCheckoutSession(plan);
-  if (result && result.success) {
-    await refreshState();
-    await refreshAgents();
-    showToast('Plan changed to ' + plan.charAt(0).toUpperCase() + plan.slice(1) + '!');
-  } else {
-    showToast('Failed to change plan');
+  // Check if user is logged in (has relay access token)
+  const relayConfig = await window.electronAPI.getRelayConfig();
+  const accessToken = relayConfig?.relay?.accessToken;
+  if (!accessToken) {
+    // Not logged in — open login page first
+    showToast('Please log in first');
+    await window.electronAPI.openLogin();
+    return;
   }
+  // Logged in — open the web pricing page to handle plan change
+  const deviceId = (await window.electronAPI.getDeviceId())?.deviceId || '';
+  await window.electronAPI.openExternal(
+    `https://myopenclaws.app/pricing.html?plan=${plan}&deviceId=${deviceId}`
+  );
 }
 
 // ---------------------------------------------------------------------------
