@@ -179,6 +179,11 @@ hr { border: none; border-top: 1px solid #ffffff22; margin: 18px 0; }
           <span id="relayStatusText" class="small">Not configured</span>
         </div>
         <div class="row">
+          <label style="min-width:130px" class="small">Device ID</label>
+          <input id="relayDeviceId" readonly style="opacity:.7;cursor:default" placeholder="Loading..."/>
+          <button class="alt" style="flex-shrink:0;padding:8px 10px;font-size:12px" onclick="copyDeviceId()">Copy</button>
+        </div>
+        <div class="row">
           <label style="min-width:130px" class="small">Relay URL</label>
           <input id="relayBaseUrl" placeholder="https://relay.example.com"/>
         </div>
@@ -187,8 +192,14 @@ hr { border: none; border-top: 1px solid #ffffff22; margin: 18px 0; }
           <input id="relayAuthToken" type="password" placeholder="Auth Token"/>
         </div>
         <div class="row">
+          <label style="min-width:130px" class="small">Access Token (JWT)</label>
+          <input id="relayAccessToken" type="password" placeholder="Paste JWT access token"/>
+        </div>
+        <div class="row">
           <button onclick="testRelay()">Test Connection</button>
           <button onclick="saveRelay()" style="margin-left:8px">Save</button>
+          <button class="alt" onclick="saveRelayJwt()" style="margin-left:8px">Save JWT</button>
+          <button class="alt" onclick="openLogin()" style="margin-left:auto">Login to Upgrade</button>
         </div>
       </div>
     </section>
@@ -212,6 +223,24 @@ hr { border: none; border-top: 1px solid #ffffff22; margin: 18px 0; }
 
     <!-- Account Page -->
     <section id="account" class="page">
+      <div class="card">
+        <h3 style="margin:0 0 12px">Account</h3>
+        <div class="row" style="align-items:center;margin-bottom:8px">
+          <label style="min-width:130px" class="small">Device ID</label>
+          <input id="accountDeviceId" readonly style="opacity:.7;cursor:default;font-size:12px" placeholder="Loading..."/>
+          <button class="alt" style="flex-shrink:0;padding:8px 10px;font-size:12px;margin-left:8px" onclick="copyDeviceId()">Copy</button>
+        </div>
+        <div class="row" style="align-items:center;margin-bottom:8px">
+          <label style="min-width:130px" class="small">Usage</label>
+          <span id="accountQuotaText" class="small" style="opacity:.75">Loading...</span>
+          <button class="alt" style="flex-shrink:0;padding:8px 10px;font-size:12px;margin-left:auto" onclick="refreshQuota()">Refresh</button>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <button onclick="openLogin()">Login / Register</button>
+          <span class="small" style="opacity:.6;margin-left:10px">Opens myopenclaw.com in your browser</span>
+        </div>
+      </div>
+
       <div class="card">
         <h3 style="margin:0 0 12px">Current Plan</h3>
         <div class="row" style="margin:0 0 12px">
@@ -796,7 +825,8 @@ async function loadRelayConfig() {
   if (r && r.success && r.relay) {
     document.getElementById('relayBaseUrl').value = r.relay.baseUrl || '';
     document.getElementById('relayAuthToken').value = r.relay.authToken || '';
-    if (r.relay.baseUrl && r.relay.authToken) {
+    const effectiveToken = r.relay.accessToken || r.relay.authToken;
+    if (r.relay.baseUrl && effectiveToken) {
       setRelayStatus(true, 'Configured');
     } else {
       setRelayStatus(false, 'Not configured');
@@ -829,6 +859,59 @@ async function saveRelay() {
 }
 
 // ---------------------------------------------------------------------------
+// Device ID helpers
+// ---------------------------------------------------------------------------
+async function loadDeviceInfo() {
+  const r = await window.electronAPI.getDeviceId();
+  const deviceId = (r && r.deviceId) || '';
+  const relayEl = document.getElementById('relayDeviceId');
+  const accountEl = document.getElementById('accountDeviceId');
+  if (relayEl) relayEl.value = deviceId;
+  if (accountEl) accountEl.value = deviceId;
+}
+
+function copyDeviceId() {
+  const el = document.getElementById('accountDeviceId') || document.getElementById('relayDeviceId');
+  if (!el || !el.value) { showToast('No device ID to copy'); return; }
+  navigator.clipboard.writeText(el.value).then(() => showToast('Device ID copied')).catch(() => showToast('Copy failed'));
+}
+
+async function refreshQuota() {
+  const quotaEl = document.getElementById('accountQuotaText');
+  if (quotaEl) quotaEl.textContent = 'Checking...';
+  const r = await window.electronAPI.checkQuota();
+  if (!quotaEl) return;
+  if (r && r.success === false && r.error === 'not_configured') {
+    quotaEl.textContent = 'Relay not configured';
+  } else if (r && r.success === false) {
+    quotaEl.textContent = 'Error: ' + (r.error || 'unknown');
+  } else if (r && (r.used !== undefined || r.limit !== undefined)) {
+    const used = r.used !== undefined ? r.used : '?';
+    const limit = r.limit !== undefined ? r.limit : '?';
+    quotaEl.textContent = used + ' / ' + limit + ' messages used';
+  } else {
+    quotaEl.textContent = 'No quota data';
+  }
+}
+
+async function openLogin() {
+  await window.electronAPI.openLogin();
+}
+
+async function saveRelayJwt() {
+  const accessToken = (document.getElementById('relayAccessToken').value || '').trim();
+  if (!accessToken) { showToast('No access token entered'); return; }
+  const r = await window.electronAPI.saveRelayAuth({ accessToken, refreshToken: '' });
+  if (r && r.success) {
+    document.getElementById('relayAccessToken').value = '';
+    await loadRelayConfig();
+    showToast('JWT token saved');
+  } else {
+    showToast('Failed: ' + (r && r.error || 'unknown'));
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Keyboard shortcuts
 // ---------------------------------------------------------------------------
 function initKeyboard() {
@@ -855,6 +938,8 @@ function initKeyboard() {
   await refreshAgents();
   await loadProvider();
   await loadRelayConfig();
+  await loadDeviceInfo();
+  await refreshQuota();
   renderConversation();
 })();
 </script>

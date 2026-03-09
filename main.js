@@ -104,7 +104,8 @@ function getDefaultAppState() {
       }
     ],
     conversations: {},
-    relay: { baseUrl: '', authToken: '' }
+    relay: { baseUrl: '', authToken: '' },
+    deviceId: ''
   };
 }
 
@@ -141,6 +142,40 @@ function saveAppState(state) {
     fs.mkdirSync(dir, { recursive: true });
   }
   fs.writeFileSync(APP_STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+}
+
+// ---------------------------------------------------------------------------
+// Device ID helpers
+// ---------------------------------------------------------------------------
+function ensureDeviceId() {
+  const state = loadAppState();
+  if (!state.deviceId) {
+    state.deviceId = crypto.randomUUID();
+    saveAppState(state);
+    console.log('[device-id] Generated new device ID:', state.deviceId);
+  } else {
+    console.log('[device-id] Loaded existing device ID:', state.deviceId);
+  }
+  return state.deviceId;
+}
+
+async function registerDevice(deviceId) {
+  try {
+    const state = loadAppState();
+    const relay = state.relay || {};
+    if (!relay.baseUrl) {
+      console.log('[device-registration] No relay baseUrl configured, skipping registration');
+      return;
+    }
+    await axios.post(`${relay.baseUrl}/v1/devices`, {
+      deviceId,
+      platform: process.platform,
+      appVersion: app.getVersion()
+    }, { timeout: 8000 });
+    console.log('[device-registration] Device registered successfully');
+  } catch (err) {
+    console.log('[device-registration] Registration failed (non-fatal):', err.message);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -576,15 +611,19 @@ async function sendViaGateway(messages) {
 }
 
 // Send message via cloud relay
-async function sendViaRelay(relayBaseUrl, relayAuthToken, messages) {
+async function sendViaRelay(relayBaseUrl, relayAuthToken, messages, deviceId) {
+  const headers = {
+    'Authorization': `Bearer ${relayAuthToken}`,
+    'Content-Type': 'application/json'
+  };
+  if (deviceId) {
+    headers['X-Device-Id'] = deviceId;
+  }
   const response = await axios.post(`${relayBaseUrl}/v1/chat/completions`, {
     model: 'openclaw:main',
     messages
   }, {
-    headers: {
-      'Authorization': `Bearer ${relayAuthToken}`,
-      'Content-Type': 'application/json'
-    },
+    headers,
     timeout: 60000
   });
   return response?.data?.choices?.[0]?.message?.content || 'No response from relay.';
@@ -668,10 +707,12 @@ ipcMain.handle('send-message', async (event, payload) => {
     const embeddedCfg = loadEmbeddedConfig();
     const hasLocalProvider = !!(embeddedCfg?.models?.providers && Object.keys(embeddedCfg.models.providers).length > 0);
     const relay = state.relay || {};
-    const hasRelay = !!(relay.baseUrl && relay.authToken);
+    const relayAuthToken = relay.accessToken || relay.authToken;
+    const hasRelay = !!(relay.baseUrl && relayAuthToken);
     const plan = state.plan || state.premiumTier || 'free';
     const planFeatures = getPlanFeatures(plan);
     const relayAllowedByPlan = planFeatures.canUseRelay;
+    const deviceId = state.deviceId || '';
 
     let content;
     if (hasLocalProvider && gatewayBaseUrl) {
@@ -679,7 +720,7 @@ ipcMain.handle('send-message', async (event, payload) => {
       content = await sendViaGateway(messages);
     } else if (hasRelay && relayAllowedByPlan) {
       // Relay path: user has relay configured and plan permits it
-      content = await sendViaRelay(relay.baseUrl, relay.authToken, messages);
+      content = await sendViaRelay(relay.baseUrl, relayAuthToken, messages, deviceId);
     } else if (hasRelay && !relayAllowedByPlan) {
       // Relay configured but plan does not permit it
       return {
@@ -963,7 +1004,7 @@ ipcMain.handle('save-relay-config', async (event, config) => {
   try {
     const { baseUrl = '', authToken = '' } = config || {};
     const state = loadAppState();
-    state.relay = { baseUrl: baseUrl.trim(), authToken: authToken.trim() };
+    state.relay = { ...(state.relay || {}), baseUrl: baseUrl.trim(), authToken: authToken.trim() };
     saveAppState(state);
     return { success: true };
   } catch (e) {
@@ -984,14 +1025,70 @@ ipcMain.handle('test-relay-connection', async () => {
   try {
     const state = loadAppState();
     const relay = state.relay || {};
-    if (!relay.baseUrl || !relay.authToken) {
+    const authToken = relay.accessToken || relay.authToken;
+    if (!relay.baseUrl || !authToken) {
       return { success: false, error: 'Relay URL and auth token are required.' };
     }
-    await checkRelayHealth(relay.baseUrl, relay.authToken);
+    await checkRelayHealth(relay.baseUrl, authToken);
     return { success: true };
   } catch (e) {
     const detail = e?.response?.data ? JSON.stringify(e.response.data) : e.message;
     return { success: false, error: detail };
+  }
+});
+
+// Device ID handler
+ipcMain.handle('get-device-id', async () => {
+  const state = loadAppState();
+  return { success: true, deviceId: state.deviceId || '' };
+});
+
+// Quota check handler
+ipcMain.handle('check-quota', async () => {
+  const state = loadAppState();
+  const relay = state.relay || {};
+  const deviceId = state.deviceId;
+
+  if (!relay.baseUrl || !deviceId) {
+    return { success: false, error: 'not_configured' };
+  }
+
+  try {
+    const authToken = relay.accessToken || relay.authToken;
+    const headers = {};
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const response = await axios.get(`${relay.baseUrl}/v1/devices/${deviceId}/usage`, { headers, timeout: 8000 });
+    return response.data;
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// Open login in system browser
+ipcMain.handle('open-login', async () => {
+  try {
+    const state = loadAppState();
+    const deviceId = state.deviceId || '';
+    const homepageUrl = 'https://myopenclaw.com';
+    const loginUrl = `${homepageUrl}/login.html?deviceId=${deviceId}&redirect=myopenclaw`;
+    await shell.openExternal(loginUrl);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// Save relay JWT auth tokens
+ipcMain.handle('save-relay-auth', async (event, { accessToken, refreshToken }) => {
+  try {
+    const state = loadAppState();
+    state.relay = state.relay || {};
+    state.relay.accessToken = accessToken || '';
+    state.relay.refreshToken = refreshToken || '';
+    saveAppState(state);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
   }
 });
 
@@ -1014,9 +1111,89 @@ ipcMain.handle('save-agent-channel-config', async (event, payload) => {
 });
 
 // ---------------------------------------------------------------------------
+// Deep link protocol: myopenclaw://
+// ---------------------------------------------------------------------------
+const PROTOCOL = 'myopenclaw';
+
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient(PROTOCOL);
+}
+
+function handleDeepLink(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== `${PROTOCOL}:`) return;
+
+    if (parsed.hostname === 'auth' || parsed.pathname === '//auth' || parsed.pathname === '/auth') {
+      const accessToken = parsed.searchParams.get('accessToken');
+      const refreshToken = parsed.searchParams.get('refreshToken');
+      const email = parsed.searchParams.get('email');
+
+      if (accessToken) {
+        const state = loadAppState();
+        state.relay = state.relay || {};
+        state.relay.accessToken = accessToken;
+        if (refreshToken) state.relay.refreshToken = refreshToken;
+        if (email) state.relay.userEmail = email;
+        saveAppState(state);
+        console.log('[DeepLink] Auth tokens saved from web login');
+
+        // Notify renderer to refresh UI
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.executeJavaScript(`
+            if (typeof loadRelayConfig === 'function') loadRelayConfig();
+            if (typeof loadDeviceInfo === 'function') loadDeviceInfo();
+            if (typeof refreshQuota === 'function') refreshQuota();
+          `).catch(() => {});
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[DeepLink] Failed to handle URL:', err.message);
+  }
+}
+
+// macOS: open-url event fires when app is already running or launched via URL
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  handleDeepLink(url);
+});
+
+// Windows/Linux: single instance lock + deep link via argv
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (event, argv) => {
+    // The deep link URL is the last argument
+    const deepLinkUrl = argv.find(arg => arg.startsWith(`${PROTOCOL}://`));
+    if (deepLinkUrl) handleDeepLink(deepLinkUrl);
+
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  const deviceId = ensureDeviceId();
+  registerDevice(deviceId); // fire-and-forget
+  createWindow();
+
+  // macOS: handle deep link that launched the app
+  const launchUrl = process.argv.find(arg => arg.startsWith(`${PROTOCOL}://`));
+  if (launchUrl) handleDeepLink(launchUrl);
+});
 
 app.on('window-all-closed', () => {
   if (gatewayProcess) gatewayProcess.kill();

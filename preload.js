@@ -45,6 +45,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveRelayConfig: (config) => ipcRenderer.invoke('save-relay-config', config),
   getRelayConfig: () => ipcRenderer.invoke('get-relay-config'),
   testRelayConnection: () => ipcRenderer.invoke('test-relay-connection'),
+  saveRelayAuth: (tokens) => ipcRenderer.invoke('save-relay-auth', tokens),
+
+  // Device / quota
+  getDeviceId: () => ipcRenderer.invoke('get-device-id'),
+  checkQuota: () => ipcRenderer.invoke('check-quota'),
+  openLogin: () => ipcRenderer.invoke('open-login'),
 
   // Channel config
   saveAgentChannelConfig: (payload) => ipcRenderer.invoke('save-agent-channel-config', payload)
