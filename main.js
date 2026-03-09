@@ -993,6 +993,25 @@ ipcMain.handle('save-provider-config', async (event, payload) => {
 
     saveEmbeddedConfig(cfg);
     syncAuthProfileForProvider(cleanProviderId, apiKey, autoApi);
+
+    // Auto-create gateway config and start gateway if not already running
+    if (!gatewayBaseUrl) {
+      try {
+        if (!fs.existsSync(CONFIG_FILE)) {
+          fs.mkdirSync(OPENCLAW_CONFIG_DIR, { recursive: true });
+          const gatewayConfig = {
+            models: { default: `${cleanProviderId}/${cleanModelId}` },
+            litellm: { apiKey, baseUrl: baseUrl || undefined }
+          };
+          fs.writeFileSync(CONFIG_FILE, JSON.stringify(gatewayConfig, null, 2));
+          console.log('[save-provider] Created gateway config, starting gateway...');
+        }
+        await startGateway();
+      } catch (gwErr) {
+        console.error('[save-provider] Gateway start failed:', gwErr.message);
+      }
+    }
+
     return { success: true, apiResolved: autoApi, modelResolved: `${cleanProviderId}/${cleanModelId}` };
   } catch (e) {
     return { success: false, error: e.message };

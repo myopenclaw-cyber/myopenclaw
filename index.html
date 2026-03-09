@@ -799,7 +799,12 @@ async function saveProvider() {
     api,
     modelId
   });
-  showToast(r.success ? 'Saved' : 'Failed: ' + r.error);
+  if (r.success) {
+    showToast('Saved');
+    await refreshGatewayStatus();
+  } else {
+    showToast('Failed: ' + r.error);
+  }
 }
 
 async function loadProvider() {
