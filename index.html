@@ -932,15 +932,19 @@ function initKeyboard() {
 // Init
 // ---------------------------------------------------------------------------
 (async () => {
-  initKeyboard();
-  renderChannelFields();
-  await refreshState();
-  await refreshAgents();
-  await loadProvider();
-  await loadRelayConfig();
-  await loadDeviceInfo();
-  await refreshQuota();
-  renderConversation();
+  try {
+    initKeyboard();
+    renderChannelFields();
+    await refreshState();
+    await refreshAgents();
+    await loadProvider();
+    await loadRelayConfig();
+    await loadDeviceInfo();
+    await refreshQuota();
+    renderConversation();
+  } catch (err) {
+    console.error('[init] startup error:', err);
+  }
 })();
 </script>
 </body>

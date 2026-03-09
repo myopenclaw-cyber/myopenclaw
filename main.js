@@ -564,12 +564,11 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  mainWindow.loadFile('loading.html');
-
-  // If no local gateway config, go straight to main UI (user can configure later or use relay)
   if (!fs.existsSync(CONFIG_FILE)) {
+    // No local gateway config — go straight to main UI (user can configure later or use relay)
     mainWindow.loadFile('index.html');
   } else {
+    mainWindow.loadFile('loading.html');
     startGateway()
       .then(() => mainWindow.loadFile('index.html'))
       .catch(err => {
