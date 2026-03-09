@@ -8,7 +8,7 @@
       "schemes": ["myopenclaw"]
     }
   ],
-  "artifactName": "${productName}-${version}-${env.BUILD_VARIANT}-${env.TARGET_LABEL}.${ext}",
+  "artifactName": "${productName}-${env.BUILD_VARIANT}-${env.TARGET_LABEL}.${ext}",
   "files": [
     "main.js",
     "preload.js",
