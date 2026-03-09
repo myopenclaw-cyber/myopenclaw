@@ -493,16 +493,207 @@ async function ensureEmbeddedRuntime() {
 }
 
 // ---------------------------------------------------------------------------
+// OpenClaw CLI detection
+// ---------------------------------------------------------------------------
+function verifyOpenClawCli(binPath) {
+  try {
+    execFileSync(binPath, ['--version'], { encoding: 'utf8', timeout: 10000, stdio: 'pipe' });
+    return true;
+  } catch (e) {
+    console.log(`[cli] Verification failed for ${binPath}:`, e.message);
+    return false;
+  }
+}
+
+function findOpenClawCli() {
+  const candidates = [];
+
+  // 1. Check system PATH for globally installed openclaw
+  try {
+    const cmd = process.platform === 'win32' ? 'where' : 'which';
+    const result = execFileSync(cmd, ['openclaw'], { encoding: 'utf8', timeout: 3000 }).trim();
+    if (result) candidates.push(result.split(/\r?\n/)[0]);
+  } catch { /* not in PATH */ }
+
+  // 2. Check common install locations (install script may update shell profile
+  //    but Electron's spawned processes won't see the updated PATH)
+  const home = os.homedir();
+  candidates.push(
+    path.join(home, '.local', 'bin', 'openclaw'),
+    '/usr/local/bin/openclaw',
+    path.join(home, '.openclaw', 'bin', 'openclaw'),
+  );
+
+  // Also check nvm-managed Node installations
+  const nvmDir = path.join(home, '.nvm', 'versions', 'node');
+  try {
+    if (fs.existsSync(nvmDir)) {
+      const versions = fs.readdirSync(nvmDir)
+        .filter(v => v.startsWith('v'))
+        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true })); // newest first
+      for (const ver of versions) {
+        candidates.push(path.join(nvmDir, ver, 'bin', 'openclaw'));
+      }
+    }
+  } catch { /* ignore */ }
+
+  // 3. Check embedded runtime .bin/openclaw
+  candidates.push(path.join(__dirname, 'resources', 'openclaw-deps', '.bin', 'openclaw'));
+
+  // 4. Check downloaded runtime .bin/openclaw
+  candidates.push(path.join(DOWNLOADED_RUNTIME_DIR, 'openclaw-deps', '.bin', 'openclaw'));
+
+  // Find first candidate that exists AND actually works (has node available)
+  for (const p of candidates) {
+    if (!fs.existsSync(p)) continue;
+    console.log(`[cli] Found candidate: ${p}, verifying...`);
+    if (verifyOpenClawCli(p)) {
+      console.log(`[cli] Verified openclaw CLI: ${p}`);
+      return p;
+    }
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// OpenClaw install via official script
+// ---------------------------------------------------------------------------
+const INSTALL_SCRIPT_URL = 'https://openclaw.ai/install.sh';
+const INSTALL_SCRIPT_URL_WIN = 'https://openclaw.ai/install.ps1';
+
+function runOpenClawInstallScript() {
+  return new Promise((resolve, reject) => {
+    let cmd, args;
+    if (process.platform === 'win32') {
+      cmd = 'powershell.exe';
+      args = ['-NoProfile', '-Command', `iwr -useb ${INSTALL_SCRIPT_URL_WIN} | iex`];
+    } else {
+      // Use login shell (-l) so existing PATH (Homebrew etc.) is available
+      cmd = 'bash';
+      args = ['-lc', `curl -fsSL ${INSTALL_SCRIPT_URL} | bash`];
+    }
+
+    console.log(`[install] Running: ${cmd} ${args.join(' ')}`);
+    updateLoadingStatus('Installing OpenClaw (includes Node.js & dependencies)...', 30);
+
+    const proc = spawn(cmd, args, {
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        OPENCLAW_NO_PROMPT: '1',   // openclaw install script: skip interactive prompts
+        OPENCLAW_NO_ONBOARD: '1',  // openclaw install script: skip onboard (app does it)
+        NONINTERACTIVE: '1',       // Homebrew installer: skip "Press Enter" confirmation
+        CI: '1',                   // General: signal non-interactive environment
+      },
+    });
+
+    let output = '';
+    proc.stdout.on('data', (d) => {
+      const line = d.toString();
+      output += line;
+      console.log(`[install] ${line}`);
+      // Parse progress from installer output
+      if (/install|download|node/i.test(line)) {
+        updateLoadingStatus(line.trim().slice(0, 80), 40);
+      }
+      if (/complet|success|done/i.test(line)) {
+        updateLoadingStatus('Installation completing...', 70);
+      }
+    });
+    proc.stderr.on('data', (d) => {
+      output += d.toString();
+      console.error(`[install] ${d}`);
+    });
+    proc.on('close', (code) => {
+      if (code === 0) {
+        console.log('[install] OpenClaw installed successfully');
+        updateLoadingStatus('OpenClaw installed', 75);
+        // Refresh PATH from shell profile so findOpenClawCli() can find the newly installed binary
+        try {
+          const shell = process.env.SHELL || '/bin/bash';
+          const newPath = execFileSync(shell, ['-lc', 'echo $PATH'], { encoding: 'utf8', timeout: 5000 }).trim();
+          if (newPath && newPath !== process.env.PATH) {
+            process.env.PATH = newPath;
+            console.log('[install] PATH refreshed from shell profile');
+          }
+        } catch (e) {
+          console.log('[install] Could not refresh PATH:', e.message);
+        }
+        resolve(output);
+      } else {
+        console.error(`[install] Install script exited with code ${code}`);
+        reject(new Error(`OpenClaw installation failed (exit code ${code}). Please install manually: curl -fsSL ${INSTALL_SCRIPT_URL} | bash`));
+      }
+    });
+    proc.on('error', (err) => {
+      console.error('[install] Install error:', err.message);
+      reject(new Error(`Failed to run install script: ${err.message}. Please install manually: curl -fsSL ${INSTALL_SCRIPT_URL} | bash`));
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Ensure openclaw is accessible from user's terminal (symlink + shell profile)
+// ---------------------------------------------------------------------------
+function ensureOpenClawInPath(openclawBin) {
+  if (!openclawBin || process.platform === 'win32') return;
+
+  try {
+    const resolved = fs.realpathSync(openclawBin);
+    const standardDirs = ['/usr/local/bin', '/usr/bin', path.join(os.homedir(), '.local', 'bin')];
+    const binDir = path.dirname(resolved);
+
+    // Already in a standard PATH location — nothing to do
+    if (standardDirs.includes(binDir)) {
+      console.log('[path] openclaw already in standard PATH:', resolved);
+      return;
+    }
+
+    // Create symlink at ~/.local/bin/openclaw
+    const localBinDir = path.join(os.homedir(), '.local', 'bin');
+    const symlinkTarget = path.join(localBinDir, 'openclaw');
+    fs.mkdirSync(localBinDir, { recursive: true });
+
+    // Remove existing symlink/file if present
+    try { fs.unlinkSync(symlinkTarget); } catch { /* doesn't exist */ }
+    fs.symlinkSync(resolved, symlinkTarget);
+    fs.chmodSync(symlinkTarget, 0o755);
+    console.log(`[path] Created symlink: ${symlinkTarget} -> ${resolved}`);
+
+    // Ensure ~/.local/bin is in shell profiles
+    const home = os.homedir();
+    const exportLine = 'export PATH="$HOME/.local/bin:$PATH"';
+    const profiles = ['.zshrc', '.bashrc'].map(f => path.join(home, f));
+
+    for (const profile of profiles) {
+      try {
+        const content = fs.existsSync(profile) ? fs.readFileSync(profile, 'utf8') : '';
+        if (!content.includes('.local/bin')) {
+          fs.appendFileSync(profile, `\n# Added by MyOpenClaw\n${exportLine}\n`);
+          console.log(`[path] Added ~/.local/bin to ${profile}`);
+        }
+      } catch (e) {
+        console.log(`[path] Could not update ${profile}:`, e.message);
+      }
+    }
+
+    // Also update current process PATH
+    if (!process.env.PATH.includes(localBinDir)) {
+      process.env.PATH = `${localBinDir}:${process.env.PATH}`;
+    }
+  } catch (e) {
+    console.error('[path] ensureOpenClawInPath failed:', e.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // First-time setup: openclaw onboard
 // ---------------------------------------------------------------------------
-function runOpenClawOnboard(runtimeDir) {
+function runOpenClawOnboard(openclawBin) {
   return new Promise((resolve, reject) => {
-    const entryMjs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'openclaw.mjs');
-    const entryJs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'dist', 'entry.js');
-    const entryFile = fs.existsSync(entryMjs) ? entryMjs : entryJs;
-
     const args = [
-      entryFile, 'onboard',
+      'onboard',
       '--non-interactive', '--accept-risk',
       '--skip-channels', '--skip-daemon', '--skip-health', '--skip-skills', '--skip-ui',
       '--auth-choice', 'skip',
@@ -515,8 +706,8 @@ function runOpenClawOnboard(runtimeDir) {
       OPENCLAW_CONFIG_PATH: CONFIG_FILE,
     };
 
-    console.log(`[onboard] Running: node ${args.join(' ')}`);
-    const proc = spawn('node', args, { stdio: 'pipe', env });
+    console.log(`[onboard] Running: ${openclawBin} ${args.join(' ')}`);
+    const proc = spawn(openclawBin, args, { stdio: 'pipe', env });
 
     let output = '';
     proc.stdout.on('data', (d) => { output += d; console.log(`[onboard] ${d}`); });
@@ -554,40 +745,58 @@ async function startGateway() {
     console.log(`[startGateway] Starting gateway on port ${gatewayPort}...`);
     updateLoadingStatus('Establishing secure connections...', 48);
 
-    setRuntimeDownloadNeeded(!findRuntimeDir());
-
-    await ensureEmbeddedRuntime();
     ensureAuthProfilesFromEmbeddedConfig();
 
     // Generate random gateway token on each startup
-    ensureRandomGatewayToken();
+    const gatewayToken = ensureRandomGatewayToken();
+
+    // Sync the token into openclaw.json so the gateway process reads the same token
+    try {
+      const ocCfg = fs.existsSync(CONFIG_FILE)
+        ? JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8').replace(/^\uFEFF/, ''))
+        : {};
+      ocCfg.gateway = ocCfg.gateway || {};
+      ocCfg.gateway.auth = ocCfg.gateway.auth || {};
+      ocCfg.gateway.auth.token = gatewayToken;
+      ocCfg.gateway.auth.mode = 'token';
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify(ocCfg, null, 2), 'utf8');
+      console.log('[startGateway] Synced gateway token to openclaw.json');
+    } catch (e) {
+      console.error('[startGateway] Failed to sync token to openclaw.json:', e.message);
+    }
 
     updateLoadingStatus('Launching openclaw gateway...', 90);
 
-    // Find runtime location and launch gateway
-    const runtimeDir = findRuntimeDir() || path.join(__dirname, 'resources');
-    const entryMjs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'openclaw.mjs');
-    const entryJs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'dist', 'entry.js');
-    const entryFile = fs.existsSync(entryMjs) ? entryMjs : entryJs;
-    const stateDir = path.join(runtimeDir, '.openclaw-myopenclaw');
-    fs.mkdirSync(stateDir, { recursive: true });
-
     const gatewayEnv = {
       ...process.env,
-      OPENCLAW_STATE_DIR: stateDir,
-      OPENCLAW_CONFIG_PATH: path.join(stateDir, 'openclaw.json'),
+      OPENCLAW_STATE_DIR: OPENCLAW_CONFIG_DIR,
+      OPENCLAW_CONFIG_PATH: CONFIG_FILE,
       OPENCLAW_GATEWAY_PORT: String(gatewayPort),
       OPENCLAW_SERVICE_MARKER: 'myopenclaw',
       OPENCLAW_SERVICE_KIND: 'gateway',
     };
 
-    console.log(`[startGateway] Launching: node ${entryFile} gateway run --port ${gatewayPort}`);
-    // Use system node (not Electron's bundled node) — openclaw requires Node >= 22.12
-    const nodeCmd = process.platform === 'win32' ? 'node.exe' : 'node';
-    gatewayProcess = spawn(nodeCmd, [entryFile, 'gateway', 'run', '--port', String(gatewayPort), '--allow-unconfigured'], {
-      stdio: 'pipe', cwd: runtimeDir, env: gatewayEnv,
-      ...(process.platform === 'win32' ? { windowsHide: true } : {})
-    });
+    // Prefer system openclaw CLI; fall back to embedded runtime with node
+    const openclawBin = findOpenClawCli();
+    if (openclawBin) {
+      console.log(`[startGateway] Using openclaw CLI: ${openclawBin}`);
+      gatewayProcess = spawn(openclawBin, ['gateway', 'run', '--port', String(gatewayPort), '--allow-unconfigured'], {
+        stdio: 'pipe', env: gatewayEnv,
+        ...(process.platform === 'win32' ? { windowsHide: true } : {})
+      });
+    } else {
+      // Fallback: use embedded runtime with system node
+      const runtimeDir = findRuntimeDir() || path.join(__dirname, 'resources');
+      const entryMjs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'openclaw.mjs');
+      const entryJs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'dist', 'entry.js');
+      const entryFile = fs.existsSync(entryMjs) ? entryMjs : entryJs;
+      const nodeCmd = process.platform === 'win32' ? 'node.exe' : 'node';
+      console.log(`[startGateway] Fallback: ${nodeCmd} ${entryFile} gateway run --port ${gatewayPort}`);
+      gatewayProcess = spawn(nodeCmd, [entryFile, 'gateway', 'run', '--port', String(gatewayPort), '--allow-unconfigured'], {
+        stdio: 'pipe', cwd: runtimeDir, env: gatewayEnv,
+        ...(process.platform === 'win32' ? { windowsHide: true } : {})
+      });
+    }
 
     gatewayProcess.stdout.on('data', (data) => console.log(`[Gateway stdout] ${data}`));
     gatewayProcess.stderr.on('data', (data) => console.error(`[Gateway stderr] ${data}`));
@@ -663,20 +872,53 @@ function createWindow() {
 
   (async () => {
     try {
-      // Step 1: Ensure runtime is downloaded
-      if (!findRuntimeDir()) {
-        await ensureEmbeddedRuntime();
+      console.log('[startup] Begin startup flow...');
+
+      // Step 1: Ensure openclaw is available (CLI or embedded runtime)
+      console.log('[startup] Searching for openclaw CLI...');
+      let openclawBin = findOpenClawCli();
+      console.log('[startup] findOpenClawCli =', openclawBin || '(not found)');
+      console.log('[startup] findRuntimeDir =', findRuntimeDir() || '(not found)');
+
+      if (!openclawBin && !findRuntimeDir()) {
+        // Neither system openclaw nor embedded runtime — run official installer
+        console.log('[startup] No openclaw found, running install script...');
+        updateLoadingStatus('Installing OpenClaw (first-time setup)...', 20);
+        try {
+          await runOpenClawInstallScript();
+          openclawBin = findOpenClawCli();
+        } catch (installErr) {
+          console.error('[startup] Install script failed:', installErr.message);
+          // Non-fatal: will fall back to runtime download below
+        }
+
+        if (!openclawBin && !findRuntimeDir()) {
+          // Install script failed or completed but openclaw still not found — download runtime as fallback
+          console.log('[startup] Downloading runtime as fallback...');
+          updateLoadingStatus('Downloading OpenClaw runtime...', 50);
+          await ensureEmbeddedRuntime();
+          openclawBin = findOpenClawCli();
+        }
       }
 
-      // Step 2: Run openclaw onboard if no config exists (first-time setup)
-      const runtimeDir = findRuntimeDir();
-      if (runtimeDir && !fs.existsSync(CONFIG_FILE)) {
-        updateLoadingStatus('Running first-time setup...', 90);
-        console.log('[startup] No config found, running openclaw onboard...');
-        await runOpenClawOnboard(runtimeDir);
+      // Step 2: Ensure openclaw is accessible from user's terminal
+      if (openclawBin) {
+        ensureOpenClawInPath(openclawBin);
       }
 
-      // Step 3: Start gateway if config now exists
+      // Step 3: Run openclaw onboard if no config exists (first-time setup)
+      if (!fs.existsSync(CONFIG_FILE)) {
+        const binForOnboard = openclawBin || findOpenClawCli();
+        if (binForOnboard) {
+          updateLoadingStatus('Running first-time setup...', 80);
+          console.log('[startup] No config found, running openclaw onboard...');
+          await runOpenClawOnboard(binForOnboard);
+        } else {
+          console.log('[startup] No openclaw CLI available for onboard, skipping');
+        }
+      }
+
+      // Step 4: Start gateway if config now exists
       if (fs.existsSync(CONFIG_FILE)) {
         await startGateway();
       } else {
@@ -686,7 +928,7 @@ function createWindow() {
       console.error('[startup] Error:', err.message);
       global.__MYOPENCLAW_STARTUP_ERROR__ = err?.message || String(err);
     }
-    // Step 4: Always load main UI
+    // Step 5: Always load main UI
     mainWindow.loadFile('index.html');
   })();
 }
@@ -1320,8 +1562,10 @@ if (!gotTheLock) {
 // App lifecycle
 // ---------------------------------------------------------------------------
 app.whenReady().then(() => {
+  console.log('[app] ready');
   const deviceId = ensureDeviceId();
   registerDevice(deviceId); // fire-and-forget
+  console.log('[app] creating window...');
   createWindow();
 
   // macOS: handle deep link that launched the app
