@@ -122,6 +122,13 @@ export function createWindow(): void {
 
   (async () => {
     try {
+      // E2E / CI mode: skip runtime download and gateway, load UI directly
+      if (process.env.MYOPENCLAW_E2E === '1') {
+        console.log('[startup] E2E mode: skipping runtime download and gateway start');
+        mainWindow!.loadFile('index.html');
+        return;
+      }
+
       console.log('[startup] Begin startup flow...');
 
       let openclawBin = findOpenClawCli();

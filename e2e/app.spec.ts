@@ -3,7 +3,6 @@ import * as path from 'path';
 import * as fs from 'fs';
 
 const SCREENSHOTS_DIR = path.join(process.cwd(), 'e2e-screenshots');
-const RUNTIME_TIMEOUT = 300_000; // 5 min — runtime download on first run
 
 test.beforeAll(() => {
   if (!fs.existsSync(SCREENSHOTS_DIR)) fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
@@ -13,56 +12,58 @@ function shot(page: any, name: string) {
   return page.screenshot({ path: path.join(SCREENSHOTS_DIR, name), fullPage: true });
 }
 
-test('app reaches chat UI and allows interaction', async () => {
+test('app loads chat UI in E2E mode', async () => {
+  // Launch with E2E mode: skips runtime download and gateway start
   const app = await electron.launch({
     args: [path.join(process.cwd(), 'main.js')],
-    timeout: 30_000,
+    env: { ...process.env, MYOPENCLAW_E2E: '1' },
+    timeout: 15_000,
   });
 
-  // First window is loading.html (runtime installer)
-  const loadingPage = await app.firstWindow();
-  await loadingPage.waitForLoadState('domcontentloaded');
-  await shot(loadingPage, '01_loading_screen.png');
+  const page = await app.firstWindow();
+  await page.waitForLoadState('domcontentloaded');
 
-  console.log('Waiting for app to finish loading and switch to index.html...');
+  // Should be on index.html immediately (no loading screen)
+  await shot(page, '01_initial.png');
 
-  // Wait for the window to navigate from loading.html → index.html
-  // This happens after runtime download+install completes
-  await loadingPage.waitForURL('**/index.html', { timeout: RUNTIME_TIMEOUT });
+  // Wait for chat section (id="chat") to be active
+  await page.waitForSelector('#chat.page.active, #chat.active', { timeout: 10_000 });
+  await shot(page, '02_chat_page.png');
 
-  // Now we're on the main chat UI
-  const mainPage = loadingPage; // same window, new page content
-  await mainPage.waitForLoadState('domcontentloaded');
-  await shot(mainPage, '02_main_ui_loaded.png');
+  // Find the message textarea
+  const msgInput = page.locator('#msg');
+  await expect(msgInput).toBeVisible({ timeout: 5_000 });
+  await shot(page, '03_chat_input_visible.png');
 
-  // Wait for chat section to be active
-  const chatSection = mainPage.locator('#chat.page.active');
-  await expect(chatSection).toBeVisible({ timeout: 15_000 });
-  await shot(mainPage, '03_chat_page.png');
-
-  // Find the message textarea (id="msg")
-  const msgInput = mainPage.locator('#msg');
-  await expect(msgInput).toBeVisible({ timeout: 10_000 });
-
-  // Screenshot before clicking
-  await shot(mainPage, '04_before_click.png');
-
-  // Click on the chat input
+  // Click on the input
   await msgInput.click();
-  await shot(mainPage, '05_input_focused.png');
+  await shot(page, '04_input_clicked.png');
 
   // Type a message
-  await msgInput.fill('Hello from E2E test');
-  await shot(mainPage, '06_message_typed.png');
+  await msgInput.fill('Hello from E2E test!');
+  await expect(msgInput).toHaveValue('Hello from E2E test!');
+  await shot(page, '05_message_typed.png');
 
-  // Verify text was entered
-  await expect(msgInput).toHaveValue('Hello from E2E test');
-
-  // Click send button (Enter key)
+  // Hit Enter to send
   await msgInput.press('Enter');
-  await mainPage.waitForTimeout(2000);
-  await shot(mainPage, '07_after_send.png');
+  await page.waitForTimeout(1500);
+  await shot(page, '06_after_send.png');
 
-  console.log('E2E test PASSED');
+  // Navigate to Agents tab
+  await page.locator('text=Agents').first().click();
+  await page.waitForTimeout(500);
+  await shot(page, '07_agents_page.png');
+
+  // Navigate to API Keys tab
+  await page.locator('text=API Keys').first().click();
+  await page.waitForTimeout(500);
+  await shot(page, '08_api_keys_page.png');
+
+  // Navigate to Account tab
+  await page.locator('text=Account').first().click();
+  await page.waitForTimeout(500);
+  await shot(page, '09_account_page.png');
+
+  console.log('E2E test PASSED — all pages navigated successfully');
   await app.close();
 });

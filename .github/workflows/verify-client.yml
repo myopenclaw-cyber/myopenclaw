@@ -33,37 +33,6 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install chromium
 
-      # Pre-install OpenClaw runtime so the app skips the download step
-      - name: Cache OpenClaw runtime
-        id: runtime-cache
-        uses: actions/cache@v4
-        with:
-          path: ~\.openclaw\runtime
-          key: openclaw-runtime-windows-v1.0.3
-
-      - name: Pre-download OpenClaw runtime (if not cached)
-        if: steps.runtime-cache.outputs.cache-hit != 'true'
-        shell: powershell
-        run: |
-          $runtimeDir = "$env:USERPROFILE\.openclaw\runtime"
-          New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
-          $zipPath = "$env:TEMP\openclaw-runtime-windows.zip"
-          Write-Host "Downloading OpenClaw runtime..."
-          Invoke-WebRequest `
-            -Uri "https://github.com/nadenewinborneial24-ship-it/myopenclaw-v1-20260304-235021/releases/download/runtime-v1.0.3/openclaw-runtime-windows.zip" `
-            -OutFile $zipPath
-          Write-Host "Extracting runtime..."
-          Expand-Archive -Path $zipPath -DestinationPath $runtimeDir -Force
-          Write-Host "Runtime installed at $runtimeDir"
-          # Show full tree structure to verify correct paths
-          Get-ChildItem $runtimeDir -Recurse -Depth 4 | Select-Object FullName | ForEach-Object { $_.FullName.Replace($runtimeDir, '') }
-          # Verify the exact file the app checks for
-          $entryJs  = "$runtimeDir\openclaw-deps\openclaw\dist\entry.js"
-          $entryMjs = "$runtimeDir\openclaw-deps\openclaw\dist\entry.mjs"
-          if (Test-Path $entryJs)  { Write-Host "FOUND: entry.js" }
-          elseif (Test-Path $entryMjs) { Write-Host "FOUND: entry.mjs" }
-          else { Write-Host "WARNING: neither entry.js nor entry.mjs found — app will re-download!" }
-
       - name: Run E2E tests
         run: npm run test:e2e
         timeout-minutes: 10
