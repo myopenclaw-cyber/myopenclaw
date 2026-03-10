@@ -132,8 +132,15 @@ export function findOpenClawCli(): string | null {
     }
   } catch { /* ignore */ }
 
-  candidates.push(path.join(__dirname, 'resources', 'openclaw-deps', '.bin', 'openclaw'));
-  candidates.push(path.join(DOWNLOADED_RUNTIME_DIR, 'openclaw-deps', '.bin', 'openclaw'));
+  // Add candidates with and without Windows extensions
+  const binNames = process.platform === 'win32'
+    ? ['openclaw.cmd', 'openclaw.exe', 'openclaw']
+    : ['openclaw'];
+
+  for (const bin of binNames) {
+    candidates.push(path.join(__dirname, 'resources', 'openclaw-deps', '.bin', bin));
+    candidates.push(path.join(DOWNLOADED_RUNTIME_DIR, 'openclaw-deps', '.bin', bin));
+  }
 
   for (const p of candidates) {
     if (!fs.existsSync(p)) continue;

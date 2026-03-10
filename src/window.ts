@@ -176,6 +176,9 @@ export function createWindow(): void {
     } catch (err: any) {
       console.error('[startup] Error:', err.message);
       (global as any).__MYOPENCLAW_STARTUP_ERROR__ = err?.message || String(err);
+      // Show error on loading screen before switching to main UI
+      updateLoadingStatus(`Setup error: ${err?.message || 'Unknown error'}`, 0);
+      await new Promise(r => setTimeout(r, 3000)); // let user read the error
     }
     mainWindow!.loadFile('index.html');
   })();
