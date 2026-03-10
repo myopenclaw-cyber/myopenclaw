@@ -12,7 +12,7 @@ import {
 } from './config-store';
 import { ensureAuthProfilesFromEmbeddedConfig } from './auth';
 import { findAvailablePort, isOpenClawGatewayRunning } from './network';
-import { findOpenClawCli, findRuntimeDir, findNodeBinary } from './runtime';
+import { findOpenClawCli, findRuntimeDir, findNodeBinary, buildNodeEnhancedPath } from './runtime';
 import type { GatewayHandle, LoadingStatusCallback } from './types';
 
 export async function startGateway(updateLoadingStatus: LoadingStatusCallback): Promise<GatewayHandle> {
@@ -51,6 +51,7 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
 
   const gatewayEnv = {
     ...process.env,
+    PATH: buildNodeEnhancedPath(),
     OPENCLAW_STATE_DIR: OPENCLAW_CONFIG_DIR,
     OPENCLAW_CONFIG_PATH: CONFIG_FILE,
     OPENCLAW_GATEWAY_PORT: String(gatewayPort),

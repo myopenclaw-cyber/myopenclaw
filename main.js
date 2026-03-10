@@ -350,9 +350,23 @@ async function ensureEmbeddedRuntime(updateLoadingStatus2) {
   console.log("[runtime] Runtime ready");
   updateLoadingStatus2("Runtime installed", 88);
 }
+function buildNodeEnhancedPath() {
+  const nodeExe = process.platform === "win32" ? "node.exe" : "node";
+  const nodeDirs = [
+    path3.join(__dirname, "resources", "node"),
+    path3.join(DOWNLOADED_RUNTIME_DIR, "node")
+  ];
+  const extra = nodeDirs.filter((d) => fs2.existsSync(path3.join(d, nodeExe)));
+  return extra.length > 0 ? `${extra.join(path3.delimiter)}${path3.delimiter}${process.env.PATH}` : process.env.PATH;
+}
 function verifyOpenClawCli(binPath) {
   try {
-    (0, import_child_process.execFileSync)(binPath, ["--version"], { encoding: "utf8", timeout: 1e4, stdio: "pipe" });
+    (0, import_child_process.execFileSync)(binPath, ["--version"], {
+      encoding: "utf8",
+      timeout: 1e4,
+      stdio: "pipe",
+      env: { ...process.env, PATH: buildNodeEnhancedPath() }
+    });
     return true;
   } catch (e) {
     console.log(`[cli] Verification failed for ${binPath}:`, e.message);
@@ -488,6 +502,7 @@ function runOpenClawOnboard(openclawBin) {
     ];
     const env = {
       ...process.env,
+      PATH: buildNodeEnhancedPath(),
       OPENCLAW_STATE_DIR: OPENCLAW_CONFIG_DIR,
       OPENCLAW_CONFIG_PATH: CONFIG_FILE
     };
@@ -623,6 +638,7 @@ async function startGateway(updateLoadingStatus2) {
   updateLoadingStatus2("Launching openclaw gateway...", 90);
   const gatewayEnv = {
     ...process.env,
+    PATH: buildNodeEnhancedPath(),
     OPENCLAW_STATE_DIR: OPENCLAW_CONFIG_DIR,
     OPENCLAW_CONFIG_PATH: CONFIG_FILE,
     OPENCLAW_GATEWAY_PORT: String(gatewayPort),

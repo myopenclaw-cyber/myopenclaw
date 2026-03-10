@@ -102,9 +102,24 @@ export async function ensureEmbeddedRuntime(updateLoadingStatus: LoadingStatusCa
   updateLoadingStatus('Runtime installed', 88);
 }
 
+export function buildNodeEnhancedPath(): string {
+  const nodeExe = process.platform === 'win32' ? 'node.exe' : 'node';
+  const nodeDirs = [
+    path.join(__dirname, 'resources', 'node'),
+    path.join(DOWNLOADED_RUNTIME_DIR, 'node'),
+  ];
+  const extra = nodeDirs.filter(d => fs.existsSync(path.join(d, nodeExe)));
+  return extra.length > 0 ? `${extra.join(path.delimiter)}${path.delimiter}${process.env.PATH}` : process.env.PATH!;
+}
+
 export function verifyOpenClawCli(binPath: string): boolean {
   try {
-    execFileSync(binPath, ['--version'], { encoding: 'utf8', timeout: 10000, stdio: 'pipe' });
+    execFileSync(binPath, ['--version'], {
+      encoding: 'utf8',
+      timeout: 10000,
+      stdio: 'pipe',
+      env: { ...process.env, PATH: buildNodeEnhancedPath() },
+    });
     return true;
   } catch (e: any) {
     console.log(`[cli] Verification failed for ${binPath}:`, e.message);
@@ -253,6 +268,7 @@ export function runOpenClawOnboard(openclawBin: string): Promise<string> {
 
     const env = {
       ...process.env,
+      PATH: buildNodeEnhancedPath(),
       OPENCLAW_STATE_DIR: OPENCLAW_CONFIG_DIR,
       OPENCLAW_CONFIG_PATH: CONFIG_FILE,
     };
