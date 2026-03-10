@@ -214,9 +214,14 @@ export function findNodeBinary(): string {
 }
 
 export function ensureOpenClawInPath(openclawBin: string): void {
-  if (!openclawBin || process.platform === 'win32') return;
+  if (!openclawBin) return;
 
   try {
+    if (process.platform === 'win32') {
+      ensureOpenClawInPathWindows(openclawBin);
+      return;
+    }
+
     const resolved = fs.realpathSync(openclawBin);
     const standardDirs = ['/usr/local/bin', '/usr/bin', path.join(os.homedir(), '.local', 'bin')];
     const binDir = path.dirname(resolved);
@@ -266,6 +271,54 @@ export function ensureOpenClawInPath(openclawBin: string): void {
     }
   } catch (e: any) {
     console.error('[path] ensureOpenClawInPath failed:', e.message);
+  }
+}
+
+function ensureOpenClawInPathWindows(openclawBin: string): void {
+  try {
+    const binDir = path.dirname(openclawBin);
+
+    // Add to current process PATH immediately
+    if (!process.env.PATH!.includes(binDir)) {
+      process.env.PATH = `${binDir};${process.env.PATH}`;
+      console.log(`[path] Added to process PATH: ${binDir}`);
+    }
+
+    // Check if already in user PATH (registry)
+    const currentUserPath = execFileSync('reg', [
+      'query', 'HKCU\\Environment', '/v', 'Path',
+    ], { encoding: 'utf8', timeout: 5000, windowsHide: true, stdio: 'pipe' });
+
+    if (currentUserPath.includes(binDir)) {
+      console.log('[path] openclaw already in user PATH:', binDir);
+      return;
+    }
+
+    // Extract current user PATH value
+    const match = currentUserPath.match(/Path\s+REG_(?:EXPAND_)?SZ\s+(.+)/i);
+    const existingPath = match ? match[1].trim() : '';
+    const newPath = existingPath ? `${existingPath};${binDir}` : binDir;
+
+    // Persist to user PATH via setx
+    execFileSync('setx', ['Path', newPath], {
+      encoding: 'utf8', timeout: 5000, windowsHide: true, stdio: 'pipe',
+    });
+    console.log(`[path] Added to user PATH via setx: ${binDir}`);
+  } catch (e: any) {
+    // reg query fails if Path key doesn't exist yet — create it
+    if (e.message?.includes('unable to find')) {
+      try {
+        const binDir = path.dirname(openclawBin);
+        execFileSync('setx', ['Path', binDir], {
+          encoding: 'utf8', timeout: 5000, windowsHide: true, stdio: 'pipe',
+        });
+        console.log(`[path] Created user PATH with: ${binDir}`);
+      } catch (e2: any) {
+        console.error('[path] Failed to create user PATH:', e2.message);
+      }
+    } else {
+      console.error('[path] ensureOpenClawInPathWindows failed:', e.message);
+    }
   }
 }
 
