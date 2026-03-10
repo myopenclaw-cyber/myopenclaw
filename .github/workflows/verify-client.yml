@@ -33,15 +33,29 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install chromium
 
-      # Cache OpenClaw runtime (~/.openclaw) — only download once
+      # Pre-install OpenClaw runtime so the app skips the download step
       - name: Cache OpenClaw runtime
+        id: runtime-cache
         uses: actions/cache@v4
         with:
-          path: |
-            C:\Users\runneradmin\.openclaw
-            ~\.openclaw
-          key: openclaw-runtime-windows-v1
-          restore-keys: openclaw-runtime-windows-
+          path: ~\.openclaw\runtime
+          key: openclaw-runtime-windows-v1.0.3
+
+      - name: Pre-download OpenClaw runtime (if not cached)
+        if: steps.runtime-cache.outputs.cache-hit != 'true'
+        shell: powershell
+        run: |
+          $runtimeDir = "$env:USERPROFILE\.openclaw\runtime"
+          New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
+          $zipPath = "$env:TEMP\openclaw-runtime-windows.zip"
+          Write-Host "Downloading OpenClaw runtime..."
+          Invoke-WebRequest `
+            -Uri "https://github.com/nadenewinborneial24-ship-it/myopenclaw-v1-20260304-235021/releases/download/runtime-v1.0.3/openclaw-runtime-windows.zip" `
+            -OutFile $zipPath
+          Write-Host "Extracting runtime..."
+          Expand-Archive -Path $zipPath -DestinationPath $runtimeDir -Force
+          Write-Host "Runtime installed at $runtimeDir"
+          Get-ChildItem $runtimeDir | Select-Object Name, Length
 
       - name: Run E2E tests
         run: npm run test:e2e
