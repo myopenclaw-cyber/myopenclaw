@@ -64,40 +64,40 @@ if (!gotTheLock) {
       mainWindow.focus();
     }
   });
+
+  // ---------------------------------------------------------------------------
+  // Register all IPC handlers before app ready
+  // ---------------------------------------------------------------------------
+  registerAllIpcHandlers();
+
+  // ---------------------------------------------------------------------------
+  // App lifecycle
+  // ---------------------------------------------------------------------------
+  app.whenReady().then(() => {
+    console.log('[app] ready');
+    const deviceId = ensureDeviceId();
+    registerDevice(deviceId, app.getVersion()); // fire-and-forget
+
+    // Auto-set relay baseUrl so users don't need to configure it
+    const state = loadAppState();
+    if (!state.relay.baseUrl) {
+      state.relay.baseUrl = RELAY_BASE_URL;
+      saveAppState(state);
+    }
+    console.log('[app] creating window...');
+    createWindow();
+
+    // macOS: handle deep link that launched the app
+    const launchUrl = process.argv.find(arg => arg.startsWith(`${PROTOCOL}://`));
+    if (launchUrl) handleDeepLink(launchUrl, getMainWindow);
+  });
+
+  app.on('window-all-closed', () => {
+    killGateway();
+    if (process.platform !== 'darwin') app.quit();
+  });
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
 }
-
-// ---------------------------------------------------------------------------
-// Register all IPC handlers before app ready
-// ---------------------------------------------------------------------------
-registerAllIpcHandlers();
-
-// ---------------------------------------------------------------------------
-// App lifecycle
-// ---------------------------------------------------------------------------
-app.whenReady().then(() => {
-  console.log('[app] ready');
-  const deviceId = ensureDeviceId();
-  registerDevice(deviceId, app.getVersion()); // fire-and-forget
-
-  // Auto-set relay baseUrl so users don't need to configure it
-  const state = loadAppState();
-  if (!state.relay.baseUrl) {
-    state.relay.baseUrl = RELAY_BASE_URL;
-    saveAppState(state);
-  }
-  console.log('[app] creating window...');
-  createWindow();
-
-  // macOS: handle deep link that launched the app
-  const launchUrl = process.argv.find(arg => arg.startsWith(`${PROTOCOL}://`));
-  if (launchUrl) handleDeepLink(launchUrl, getMainWindow);
-});
-
-app.on('window-all-closed', () => {
-  killGateway();
-  if (process.platform !== 'darwin') app.quit();
-});
-
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
-});

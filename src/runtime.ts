@@ -98,8 +98,28 @@ export async function ensureEmbeddedRuntime(updateLoadingStatus: LoadingStatusCa
     throw new Error('Runtime extracted but dist/entry.(m)js not found. The runtime package may be incomplete.');
   }
 
+  if (process.platform === 'win32') {
+    addWindowsFirewallRule(path.join(DOWNLOADED_RUNTIME_DIR, 'node', 'node.exe'));
+  }
+
   console.log('[runtime] Runtime ready');
   updateLoadingStatus('Runtime installed', 88);
+}
+
+function addWindowsFirewallRule(nodeExePath: string): void {
+  if (!fs.existsSync(nodeExePath)) return;
+  try {
+    execFileSync('netsh', [
+      'advfirewall', 'firewall', 'add', 'rule',
+      'name=MyOpenClaw Runtime Node',
+      'dir=in', 'action=allow',
+      `program=${nodeExePath}`,
+      'enable=yes', 'profile=any',
+    ], { stdio: 'pipe', timeout: 5000, windowsHide: true });
+    console.log('[firewall] Added firewall rule for node.exe');
+  } catch {
+    console.log('[firewall] Could not add firewall rule (needs admin privileges)');
+  }
 }
 
 export function buildNodeEnhancedPath(): string {

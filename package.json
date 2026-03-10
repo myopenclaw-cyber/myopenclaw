@@ -1,6 +1,6 @@
 {
   "name": "myopenclaw",
-  "version": "0.3.16",
+  "version": "0.3.17",
   "description": "MyOpenClaw - Desktop client for OpenClaw",
   "main": "main.js",
   "scripts": {
@@ -76,7 +76,8 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh"
     }
   }
 }
