@@ -23,7 +23,6 @@ jobs:
 
       - name: Verify DMG file
         run: |
-          echo "=== Downloaded files ==="
           ls -lh ./artifacts/
           DMG=$(ls ./artifacts/*.dmg)
           SIZE=$(stat -f%z "$DMG")
@@ -38,36 +37,51 @@ jobs:
         run: |
           DMG=$(ls ./artifacts/*.dmg)
           hdiutil attach "$DMG" -mountpoint /Volumes/MyOpenClaw -nobrowse -quiet
-          echo "=== DMG contents ==="
           ls -la /Volumes/MyOpenClaw/
           APP="/Volumes/MyOpenClaw/MyOpenClaw.app"
-          echo "=== App bundle structure ==="
           ls -la "$APP/Contents/"
-          echo "=== Version check ==="
           VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Contents/Info.plist")
           EXPECTED="${{ github.event.inputs.version }}"
-          echo "App version: $VERSION"
-          echo "Expected: ${EXPECTED#v}"
+          echo "App version: $VERSION  (expected ${EXPECTED#v})"
           if [ "$VERSION" != "${EXPECTED#v}" ]; then
             echo "ERROR: Version mismatch!"
             exit 1
           fi
-          echo "Version matches"
 
-      - name: Smoke test - launch app briefly on Mac
+      - name: Launch app and capture screenshots
         run: |
+          mkdir -p ./screenshots
           APP="/Volumes/MyOpenClaw/MyOpenClaw.app"
           echo "Launching app..."
           open "$APP"
+
+          # screenshot at 3s (loading screen)
+          sleep 3
+          screencapture -x ./screenshots/mac_01_loading.png
+
+          # screenshot at 8s (main UI or setup screen)
+          sleep 5
+          screencapture -x ./screenshots/mac_02_main.png
+
+          # screenshot at 14s (fully loaded)
           sleep 6
-          # Check if MyOpenClaw process is running
+          screencapture -x ./screenshots/mac_03_loaded.png
+
           if pgrep -x "MyOpenClaw" > /dev/null; then
-            echo "PASSED: App is running after 6 seconds"
+            echo "PASSED: App is running after 14 seconds"
             pkill -x "MyOpenClaw" || true
           else
-            echo "FAILED: App process not found after launch"
+            echo "FAILED: App process not found"
             exit 1
           fi
+
+      - name: Upload Mac screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-mac-${{ github.event.inputs.version }}
+          path: ./screenshots/
+          retention-days: 7
 
       - name: Cleanup
         if: always()
@@ -90,34 +104,22 @@ jobs:
         shell: powershell
         run: |
           $exe = Get-Item "./artifacts/*.exe"
-          Write-Host "=== File info ==="
-          Write-Host "Name: $($exe.Name)"
-          Write-Host "Size: $($exe.Length) bytes"
+          Write-Host "Name: $($exe.Name)  Size: $($exe.Length) bytes"
           if ($exe.Length -lt 10MB) {
-            Write-Host "ERROR: EXE too small, likely corrupt"
-            exit 1
+            Write-Host "ERROR: EXE too small"; exit 1
           }
           $vi = $exe.VersionInfo
-          Write-Host "Product name: $($vi.ProductName)"
-          Write-Host "Product version: $($vi.ProductVersion)"
-          Write-Host "File version: $($vi.FileVersion)"
-          $expected = "${{ github.event.inputs.version }}".TrimStart('v')
-          if (-not $vi.FileVersion.StartsWith($expected)) {
-            Write-Host "WARNING: Version $($vi.FileVersion) doesn't match expected $expected"
-          } else {
-            Write-Host "Version matches: $($vi.FileVersion)"
-          }
+          Write-Host "Version: $($vi.FileVersion)  Product: $($vi.ProductName)"
 
       - name: Silent install
         shell: powershell
         run: |
           $exe = (Get-Item "./artifacts/*.exe").FullName
           Write-Host "Installing: $exe"
-          $proc = Start-Process -FilePath $exe -ArgumentList "/S" -PassThru -Wait
-          Write-Host "Installer exit code: $($proc.ExitCode)"
+          Start-Process -FilePath $exe -ArgumentList "/S" -Wait
           Start-Sleep -Seconds 5
 
-      - name: Verify installation
+      - name: Find installed app
         shell: powershell
         run: |
           $paths = @(
@@ -125,37 +127,56 @@ jobs:
             "$env:ProgramFiles\MyOpenClaw\MyOpenClaw.exe",
             "$env:ProgramFiles(x86)\MyOpenClaw\MyOpenClaw.exe"
           )
-          $appPath = $null
-          foreach ($p in $paths) {
-            if (Test-Path $p) {
-              $appPath = $p
-              break
-            }
-          }
+          $appPath = $paths | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $appPath) {
-            Write-Host "Searching for installed app..."
-            $found = Get-ChildItem -Path "$env:LOCALAPPDATA", "$env:ProgramFiles" `
-              -Recurse -Name "MyOpenClaw.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($found) { $appPath = $found }
+            $appPath = Get-ChildItem -Path $env:LOCALAPPDATA, $env:ProgramFiles `
+              -Recurse -Filter "MyOpenClaw.exe" -ErrorAction SilentlyContinue |
+              Select-Object -First 1 -ExpandProperty FullName
           }
-          if (-not $appPath) {
-            Write-Host "ERROR: MyOpenClaw.exe not found after install"
-            exit 1
-          }
-          Write-Host "Found installed app at: $appPath"
-          echo "APP_PATH=$appPath" >> $env:GITHUB_ENV
+          if (-not $appPath) { Write-Host "ERROR: App not found"; exit 1 }
+          Write-Host "Found: $appPath"
+          "APP_PATH=$appPath" | Out-File -Append $env:GITHUB_ENV
 
-      - name: Smoke test - launch app briefly on Windows
+      - name: Launch app and capture screenshots
         shell: powershell
         run: |
-          $appPath = $env:APP_PATH
-          Write-Host "Launching: $appPath"
-          $proc = Start-Process -FilePath $appPath -PassThru
-          Start-Sleep -Seconds 8
+          New-Item -ItemType Directory -Force -Path ./screenshots | Out-Null
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
+
+          function Take-Screenshot($path) {
+            $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap($screen.Width, $screen.Height)
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
+            $bmp.Save($path)
+            $g.Dispose(); $bmp.Dispose()
+            Write-Host "Screenshot saved: $path"
+          }
+
+          $proc = Start-Process -FilePath $env:APP_PATH -PassThru
+
+          Start-Sleep -Seconds 4
+          Take-Screenshot "./screenshots/win_01_loading.png"
+
+          Start-Sleep -Seconds 5
+          Take-Screenshot "./screenshots/win_02_main.png"
+
+          Start-Sleep -Seconds 6
+          Take-Screenshot "./screenshots/win_03_loaded.png"
+
           if (-not $proc.HasExited) {
-            Write-Host "PASSED: App is running after 8 seconds (PID $($proc.Id))"
+            Write-Host "PASSED: App running after 15s (PID $($proc.Id))"
             $proc.Kill()
           } else {
             Write-Host "FAILED: App exited with code $($proc.ExitCode)"
             exit 1
           }
+
+      - name: Upload Windows screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-windows-${{ github.event.inputs.version }}
+          path: ./screenshots/
+          retention-days: 7
