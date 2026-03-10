@@ -223,6 +223,16 @@ export function ensureOpenClawInPath(openclawBin: string): void {
       return;
     }
 
+    // Skip symlinking npm .bin scripts — they use relative paths that break via symlink
+    if (binDir.includes('.bin')) {
+      console.log('[path] Skipping symlink for npm .bin script:', resolved);
+      // Just add the .bin dir to PATH for this process
+      if (!process.env.PATH!.includes(binDir)) {
+        process.env.PATH = `${binDir}:${process.env.PATH}`;
+      }
+      return;
+    }
+
     const localBinDir = path.join(os.homedir(), '.local', 'bin');
     const symlinkTarget = path.join(localBinDir, 'openclaw');
     fs.mkdirSync(localBinDir, { recursive: true });

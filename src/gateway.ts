@@ -80,9 +80,13 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
     });
   }
 
+  let gatewayExited = false;
+  let gatewayExitCode: number | null = null;
   gatewayProcess.stdout.on('data', (data: Buffer) => console.log(`[Gateway stdout] ${data}`));
   gatewayProcess.stderr.on('data', (data: Buffer) => console.error(`[Gateway stderr] ${data}`));
   gatewayProcess.on('exit', (code, signal) => {
+    gatewayExited = true;
+    gatewayExitCode = code;
     console.log(`[Gateway] Process exited with code ${code}, signal ${signal}`);
     if (code !== 0) console.error('[Gateway] Unexpected exit!');
   });
@@ -90,7 +94,11 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
 
   console.log('[startGateway] Waiting for gateway to start...');
   updateLoadingStatus('Checking gateway health...', 94);
-  await new Promise(resolve => setTimeout(resolve, 8000));
+  await new Promise(resolve => setTimeout(resolve, 5000));
+
+  if (gatewayExited) {
+    throw new Error(`Gateway process exited immediately with code ${gatewayExitCode}. Check logs above for details.`);
+  }
 
   await waitForGateway(gatewayBaseUrl);
 

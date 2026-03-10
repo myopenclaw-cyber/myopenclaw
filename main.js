@@ -450,6 +450,13 @@ function ensureOpenClawInPath(openclawBin) {
       console.log("[path] openclaw already in standard PATH:", resolved);
       return;
     }
+    if (binDir.includes(".bin")) {
+      console.log("[path] Skipping symlink for npm .bin script:", resolved);
+      if (!process.env.PATH.includes(binDir)) {
+        process.env.PATH = `${binDir}:${process.env.PATH}`;
+      }
+      return;
+    }
     const localBinDir = path3.join(os2.homedir(), ".local", "bin");
     const symlinkTarget = path3.join(localBinDir, "openclaw");
     fs2.mkdirSync(localBinDir, { recursive: true });
@@ -668,16 +675,23 @@ async function startGateway(updateLoadingStatus2) {
       ...process.platform === "win32" ? { windowsHide: true } : {}
     });
   }
+  let gatewayExited = false;
+  let gatewayExitCode = null;
   gatewayProcess.stdout.on("data", (data) => console.log(`[Gateway stdout] ${data}`));
   gatewayProcess.stderr.on("data", (data) => console.error(`[Gateway stderr] ${data}`));
   gatewayProcess.on("exit", (code, signal) => {
+    gatewayExited = true;
+    gatewayExitCode = code;
     console.log(`[Gateway] Process exited with code ${code}, signal ${signal}`);
     if (code !== 0) console.error("[Gateway] Unexpected exit!");
   });
   gatewayProcess.on("error", (err) => console.error("[Gateway] Process error:", err));
   console.log("[startGateway] Waiting for gateway to start...");
   updateLoadingStatus2("Checking gateway health...", 94);
-  await new Promise((resolve2) => setTimeout(resolve2, 8e3));
+  await new Promise((resolve2) => setTimeout(resolve2, 5e3));
+  if (gatewayExited) {
+    throw new Error(`Gateway process exited immediately with code ${gatewayExitCode}. Check logs above for details.`);
+  }
   await waitForGateway(gatewayBaseUrl);
   updateLoadingStatus2("Startup complete. Opening workspace...", 100);
   console.log(`[startGateway] Gateway started successfully on ${gatewayBaseUrl}`);
