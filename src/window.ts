@@ -125,7 +125,7 @@ export function createWindow(): void {
       // E2E / CI mode: skip runtime download and gateway, load UI directly
       if (process.env.MYOPENCLAW_E2E === '1') {
         console.log('[startup] E2E mode: skipping runtime download and gateway start');
-        mainWindow!.loadFile('index.html');
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadFile('index.html');
         return;
       }
 
@@ -169,6 +169,8 @@ export function createWindow(): void {
       updateLoadingStatus(`Setup error: ${err?.message || 'Unknown error'}`, 0);
       await new Promise(r => setTimeout(r, 3000)); // let user read the error
     }
-    mainWindow!.loadFile('index.html');
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.loadFile('index.html');
+    }
   })();
 }

@@ -1370,7 +1370,7 @@ function createWindow() {
     try {
       if (process.env.MYOPENCLAW_E2E === "1") {
         console.log("[startup] E2E mode: skipping runtime download and gateway start");
-        mainWindow.loadFile("index.html");
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadFile("index.html");
         return;
       }
       console.log("[startup] Begin startup flow...");
@@ -1407,7 +1407,9 @@ function createWindow() {
       updateLoadingStatus(`Setup error: ${err?.message || "Unknown error"}`, 0);
       await new Promise((r) => setTimeout(r, 3e3));
     }
-    mainWindow.loadFile("index.html");
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.loadFile("index.html");
+    }
   })();
 }
 
