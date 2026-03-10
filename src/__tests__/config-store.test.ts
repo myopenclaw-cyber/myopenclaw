@@ -63,19 +63,19 @@ describe('checkPremiumGate', () => {
     if (result.allow) expect(result.tier).toBe('user_api_key');
   });
 
-  it('allows free tier under quota', () => {
+  it('allows anonymous tier under quota', () => {
     const result = checkPremiumGate(makeState({
       premiumTier: 'free',
-      freeQuotaUsed: 5,
+      freeQuotaUsed: 2,
     }));
     expect(result.allow).toBe(true);
-    if (result.allow) expect(result.tier).toBe('free');
+    if (result.allow) expect(result.tier).toBe('anonymous');
   });
 
-  it('blocks free tier when quota exhausted', () => {
+  it('blocks anonymous tier when quota exhausted', () => {
     const result = checkPremiumGate(makeState({
       premiumTier: 'free',
-      freeQuotaUsed: 10,
+      freeQuotaUsed: 3,
     }));
     expect(result.allow).toBe(false);
   });
