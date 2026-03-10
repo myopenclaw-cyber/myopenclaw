@@ -18,7 +18,23 @@ if lsof -i "tcp:$OPENCLAW_GATEWAY_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
   exit 0
 fi
 
+# Find Node.js: prefer system node >= 22, fallback to bundled node
+NODE_BIN=""
+if command -v node &>/dev/null; then
+  NODE_MAJOR=$(node -v 2>/dev/null | sed 's/v//' | cut -d. -f1)
+  if [ "$NODE_MAJOR" -ge 22 ] 2>/dev/null; then
+    NODE_BIN="node"
+  fi
+fi
+if [ -z "$NODE_BIN" ] && [ -x "$SCRIPT_DIR/node/node" ]; then
+  NODE_BIN="$SCRIPT_DIR/node/node"
+fi
+if [ -z "$NODE_BIN" ]; then
+  echo "Error: No Node.js >= 22 found. Install Node.js or use the full version of MyOpenClaw."
+  exit 1
+fi
+
 # Start gateway
-exec node "$SCRIPT_DIR/openclaw-deps/openclaw/openclaw.mjs" gateway run \
+exec "$NODE_BIN" "$SCRIPT_DIR/openclaw-deps/openclaw/openclaw.mjs" gateway run \
   --port "$OPENCLAW_GATEWAY_PORT" \
   --allow-unconfigured

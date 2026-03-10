@@ -1,7 +1,5 @@
 @echo off
 rem OpenClaw Gateway (MyOpenClaw embedded)
-set "TMPDIR=C:\Users\ADMINI~1\AppData\Local\Temp"
-set "PATH=C:\Python314\Scripts\;C:\Python314\;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\dotnet\;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\nodejs\;C:\ProgramData\chocolatey\bin;C:\Program Files\Git\cmd;C:\Users\Administrator\AppData\Local\Microsoft\WindowsApps;C:\Users\Administrator\AppData\Roaming\npm"
 set "OPENCLAW_STATE_DIR=%~dp0.openclaw-myopenclaw"
 set "OPENCLAW_CONFIG_PATH=%~dp0.openclaw-myopenclaw\openclaw.json"
 set "OPENCLAW_GATEWAY_PORT=%~1"
@@ -13,9 +11,9 @@ set "OPENCLAW_SERVICE_VERSION=2026.2.21-2"
 rem Create config directory if not exists
 if not exist "%~dp0.openclaw-myopenclaw" mkdir "%~dp0.openclaw-myopenclaw"
 
-rem Create default clean config (blank workspace state) if not exists
+rem Create default config with fixed token if not exists
 if not exist "%OPENCLAW_CONFIG_PATH%" (
-    echo {"models":{"mode":"merge","providers":{}},"agents":{"defaults":{"workspace":"C:\\Users\\Administrator\\.openclaw\\workspace-myopenclaw-product-dev\\myopenclaw"}},"gateway":{"auth":{"mode":"token","token":"myopenclaw_2024_secure_token_a8f3e9d2c1b7f6e5d4c3b2a1"},"http":{"endpoints":{"chatCompletions":{"enabled":true}}}}} > "%OPENCLAW_CONFIG_PATH%"
+    echo {"models":{"mode":"merge","providers":{}},"gateway":{"auth":{"mode":"token","token":"myopenclaw_2024_secure_token_a8f3e9d2c1b7f6e5d4c3b2a1"},"http":{"endpoints":{"chatCompletions":{"enabled":true}}}}} > "%OPENCLAW_CONFIG_PATH%"
 )
 
 rem Check if already running (must be LISTENING)
@@ -25,5 +23,29 @@ if %errorlevel%==0 (
     exit /b 0
 )
 
+rem Find Node.js: prefer system node >= 22, fallback to bundled node
+set "NODE_BIN="
+where node >nul 2>&1
+if %errorlevel%==0 (
+    for /f "tokens=*" %%v in ('node -v 2^>nul') do set "NODE_VER=%%v"
+    for /f "tokens=1 delims=." %%m in ("!NODE_VER:v=!") do set "NODE_MAJOR=%%m"
+)
+setlocal enabledelayedexpansion
+if defined NODE_MAJOR (
+    if !NODE_MAJOR! GEQ 22 (
+        set "NODE_BIN=node"
+    )
+)
+endlocal & set "NODE_BIN=%NODE_BIN%"
+if "%NODE_BIN%"=="" (
+    if exist "%~dp0node\node.exe" (
+        set "NODE_BIN=%~dp0node\node.exe"
+    )
+)
+if "%NODE_BIN%"=="" (
+    echo Error: No Node.js ^>= 22 found. Install Node.js or use the full version of MyOpenClaw.
+    exit /b 1
+)
+
 rem Start gateway
-node "%~dp0openclaw-deps\openclaw\openclaw.mjs" gateway run --port %OPENCLAW_GATEWAY_PORT% --allow-unconfigured
+"%NODE_BIN%" "%~dp0openclaw-deps\openclaw\openclaw.mjs" gateway run --port %OPENCLAW_GATEWAY_PORT% --allow-unconfigured

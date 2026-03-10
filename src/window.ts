@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import { BrowserWindow, Menu, shell } from 'electron';
 import { CONFIG_FILE, RELAY_BASE_URL } from './constants';
 import { buildDashboardUrl, loadAppState, saveAppState } from './config-store';
-import { findOpenClawCli, findRuntimeDir, ensureEmbeddedRuntime, runOpenClawInstallScript, ensureOpenClawInPath, runOpenClawOnboard } from './runtime';
+import { findOpenClawCli, findRuntimeDir, ensureEmbeddedRuntime, ensureOpenClawInPath, runOpenClawOnboard } from './runtime';
 import { startGateway } from './gateway';
 import { registerGatewayHandlers } from './ipc/gateway-ipc';
 import { registerChatHandlers } from './ipc/chat-ipc';
@@ -136,21 +136,10 @@ export function createWindow(): void {
       console.log('[startup] findRuntimeDir =', findRuntimeDir() || '(not found)');
 
       if (!openclawBin && !findRuntimeDir()) {
-        console.log('[startup] No openclaw found, running install script...');
-        updateLoadingStatus('Installing OpenClaw (first-time setup)...', 20);
-        try {
-          await runOpenClawInstallScript(updateLoadingStatus);
-          openclawBin = findOpenClawCli();
-        } catch (installErr: any) {
-          console.error('[startup] Install script failed:', installErr.message);
-        }
-
-        if (!openclawBin && !findRuntimeDir()) {
-          console.log('[startup] Downloading runtime as fallback...');
-          updateLoadingStatus('Downloading OpenClaw runtime...', 50);
-          await ensureEmbeddedRuntime(updateLoadingStatus);
-          openclawBin = findOpenClawCli();
-        }
+        console.log('[startup] No openclaw or runtime found, downloading runtime...');
+        updateLoadingStatus('Downloading OpenClaw runtime...', 30);
+        await ensureEmbeddedRuntime(updateLoadingStatus);
+        openclawBin = findOpenClawCli();
       }
 
       if (openclawBin) {

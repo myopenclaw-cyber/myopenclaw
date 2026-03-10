@@ -64,6 +64,21 @@ jobs:
             exit 1
           }
 
+      - name: Bundle Node.js binary
+        run: |
+          $NODE_VERSION = (Get-Content "resources/node-version.json" | ConvertFrom-Json).version
+          Write-Host "Downloading Node.js v${NODE_VERSION} for Windows x64..."
+          $url = "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-win-x64.zip"
+          Invoke-WebRequest -Uri $url -OutFile "node-win.zip"
+          New-Item -ItemType Directory -Path "resources/node" -Force | Out-Null
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead("node-win.zip")
+          $entry = $zip.Entries | Where-Object { $_.Name -eq "node.exe" } | Select-Object -First 1
+          [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, "resources/node/node.exe", $true)
+          $zip.Dispose()
+          Remove-Item "node-win.zip"
+          Write-Host "Node.js binary bundled: $(Get-Item 'resources/node/node.exe' | ForEach-Object { [math]::Round($_.Length/1MB, 1) }) MB"
+
       - name: Create output directory
         run: |
           New-Item -ItemType Directory -Path "dist/first-launch-runtime" -Force | Out-Null
@@ -71,7 +86,7 @@ jobs:
       - name: Package Windows runtime
         run: |
           cd resources
-          tar -a -cf ../dist/first-launch-runtime/openclaw-runtime-windows.zip openclaw-deps
+          tar -a -cf ../dist/first-launch-runtime/openclaw-runtime-windows.zip openclaw-deps node
 
       - name: Verify package
         run: |
@@ -139,6 +154,17 @@ jobs:
             exit 1
           fi
 
+      - name: Bundle Node.js binary
+        run: |
+          NODE_VERSION=$(python3 -c "import json; print(json.load(open('resources/node-version.json'))['version'])")
+          echo "Downloading Node.js v${NODE_VERSION} for macOS ARM64..."
+          curl -Lo node-mac.tar.gz "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-darwin-arm64.tar.gz"
+          mkdir -p resources/node
+          tar xzf node-mac.tar.gz --strip-components=2 -C resources/node "node-v${NODE_VERSION}-darwin-arm64/bin/node"
+          chmod +x resources/node/node
+          rm node-mac.tar.gz
+          echo "Node.js binary bundled: $(du -m resources/node/node | cut -f1) MB"
+
       - name: Create output directory
         run: mkdir -p dist/first-launch-runtime
 
@@ -146,6 +172,19 @@ jobs:
         run: |
           cd resources
           ditto -c -k --sequesterRsrc --keepParent openclaw-deps ../dist/first-launch-runtime/openclaw-runtime-mac-silicon.zip
+          cd ..
+          # Add node/ directory to the existing zip
+          cd resources
+          ditto -c -k --sequesterRsrc --keepParent node /tmp/node-bundle.zip
+          cd ..
+          # Merge: re-create zip with both directories
+          rm -f dist/first-launch-runtime/openclaw-runtime-mac-silicon.zip
+          cd resources
+          ditto -c -k --sequesterRsrc openclaw-deps node ../dist/first-launch-runtime/openclaw-runtime-mac-silicon-content/
+          cd ..
+          # Use zip to include both top-level directories
+          cd resources
+          zip -r -y ../dist/first-launch-runtime/openclaw-runtime-mac-silicon.zip openclaw-deps node
 
       - name: Verify package
         run: |
@@ -213,13 +252,24 @@ jobs:
             exit 1
           fi
 
+      - name: Bundle Node.js binary
+        run: |
+          NODE_VERSION=$(python3 -c "import json; print(json.load(open('resources/node-version.json'))['version'])")
+          echo "Downloading Node.js v${NODE_VERSION} for macOS x64..."
+          curl -Lo node-mac.tar.gz "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-darwin-x64.tar.gz"
+          mkdir -p resources/node
+          tar xzf node-mac.tar.gz --strip-components=2 -C resources/node "node-v${NODE_VERSION}-darwin-x64/bin/node"
+          chmod +x resources/node/node
+          rm node-mac.tar.gz
+          echo "Node.js binary bundled: $(du -m resources/node/node | cut -f1) MB"
+
       - name: Create output directory
         run: mkdir -p dist/first-launch-runtime
 
       - name: Package macOS Intel runtime
         run: |
           cd resources
-          ditto -c -k --sequesterRsrc --keepParent openclaw-deps ../dist/first-launch-runtime/openclaw-runtime-mac-intel.zip
+          zip -r -y ../dist/first-launch-runtime/openclaw-runtime-mac-intel.zip openclaw-deps node
 
       - name: Verify package
         run: |
@@ -272,12 +322,14 @@ jobs:
           draft: false
           prerelease: false
           body: |
-            OpenClaw Runtime Packages
+            OpenClaw Runtime Packages (self-contained with Node.js)
 
             Available platforms:
             - Windows x64
             - macOS Apple Silicon (M1/M2/M3/M4)
             - macOS Intel (x86_64)
+
+            Includes bundled Node.js binary — no external dependencies required.
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -12,7 +12,7 @@ import {
 } from './config-store';
 import { ensureAuthProfilesFromEmbeddedConfig } from './auth';
 import { findAvailablePort, isOpenClawGatewayRunning } from './network';
-import { findOpenClawCli, findRuntimeDir } from './runtime';
+import { findOpenClawCli, findRuntimeDir, findNodeBinary } from './runtime';
 import type { GatewayHandle, LoadingStatusCallback } from './types';
 
 export async function startGateway(updateLoadingStatus: LoadingStatusCallback): Promise<GatewayHandle> {
@@ -71,9 +71,9 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
     const entryMjs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'openclaw.mjs');
     const entryJs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'dist', 'entry.js');
     const entryFile = fs.existsSync(entryMjs) ? entryMjs : entryJs;
-    const nodeCmd = process.platform === 'win32' ? 'node.exe' : 'node';
-    console.log(`[startGateway] Fallback: ${nodeCmd} ${entryFile} gateway run --port ${gatewayPort}`);
-    gatewayProcess = spawn(nodeCmd, [entryFile, 'gateway', 'run', '--port', String(gatewayPort), '--allow-unconfigured'], {
+    const nodeBin = findNodeBinary();
+    console.log(`[startGateway] Fallback: ${nodeBin} ${entryFile} gateway run --port ${gatewayPort}`);
+    gatewayProcess = spawn(nodeBin, [entryFile, 'gateway', 'run', '--port', String(gatewayPort), '--allow-unconfigured'], {
       stdio: 'pipe', cwd: runtimeDir, env: gatewayEnv,
       ...(process.platform === 'win32' ? { windowsHide: true } : {}),
     });

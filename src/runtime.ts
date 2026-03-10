@@ -8,8 +8,7 @@ import {
   CONFIG_FILE,
   DEFAULT_PORT,
   DOWNLOADED_RUNTIME_DIR,
-  INSTALL_SCRIPT_URL,
-  INSTALL_SCRIPT_URL_WIN,
+  MIN_NODE_MAJOR_VERSION,
 } from './constants';
 import type { LoadingStatusCallback } from './types';
 
@@ -154,72 +153,37 @@ export function findOpenClawCli(): string | null {
   return null;
 }
 
-export function runOpenClawInstallScript(updateLoadingStatus: LoadingStatusCallback): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let cmd: string, args: string[];
-    if (process.platform === 'win32') {
-      cmd = 'powershell.exe';
-      args = ['-NoProfile', '-Command', `iwr -useb ${INSTALL_SCRIPT_URL_WIN} | iex`];
-    } else {
-      cmd = 'bash';
-      args = ['-lc', `curl -fsSL ${INSTALL_SCRIPT_URL} | bash`];
+export function findNodeBinary(): string {
+  const nodeExe = process.platform === 'win32' ? 'node.exe' : 'node';
+
+  // 1. System node with sufficient version
+  try {
+    const cmd = process.platform === 'win32' ? 'where' : 'which';
+    const nodePath = execFileSync(cmd, [nodeExe], { encoding: 'utf8', timeout: 3000 }).trim().split(/\r?\n/)[0];
+    if (nodePath) {
+      const ver = execFileSync(nodePath, ['--version'], { encoding: 'utf8', timeout: 3000 }).trim();
+      const major = parseInt(ver.replace('v', '').split('.')[0], 10);
+      if (major >= MIN_NODE_MAJOR_VERSION) {
+        console.log(`[node] Using system node: ${nodePath} (${ver})`);
+        return nodePath;
+      }
+      console.log(`[node] System node too old: ${ver} (need >= ${MIN_NODE_MAJOR_VERSION})`);
     }
+  } catch { /* not in PATH */ }
 
-    console.log(`[install] Running: ${cmd} ${args.join(' ')}`);
-    updateLoadingStatus('Installing OpenClaw (includes Node.js & dependencies)...', 30);
+  // 2. Runtime bundled node
+  const candidates = [
+    path.join(__dirname, 'resources', 'node', nodeExe),
+    path.join(DOWNLOADED_RUNTIME_DIR, 'node', nodeExe),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) {
+      console.log(`[node] Using bundled node: ${p}`);
+      return p;
+    }
+  }
 
-    const proc = spawn(cmd, args, {
-      stdio: 'pipe',
-      env: {
-        ...process.env,
-        OPENCLAW_NO_PROMPT: '1',
-        OPENCLAW_NO_ONBOARD: '1',
-        NONINTERACTIVE: '1',
-        CI: '1',
-      },
-    });
-
-    let output = '';
-    proc.stdout.on('data', (d: Buffer) => {
-      const line = d.toString();
-      output += line;
-      console.log(`[install] ${line}`);
-      if (/install|download|node/i.test(line)) {
-        updateLoadingStatus(line.trim().slice(0, 80), 40);
-      }
-      if (/complet|success|done/i.test(line)) {
-        updateLoadingStatus('Installation completing...', 70);
-      }
-    });
-    proc.stderr.on('data', (d: Buffer) => {
-      output += d.toString();
-      console.error(`[install] ${d}`);
-    });
-    proc.on('close', (code) => {
-      if (code === 0) {
-        console.log('[install] OpenClaw installed successfully');
-        updateLoadingStatus('OpenClaw installed', 75);
-        try {
-          const shell = process.env.SHELL || '/bin/bash';
-          const newPath = execFileSync(shell, ['-lc', 'echo $PATH'], { encoding: 'utf8', timeout: 5000 }).trim();
-          if (newPath && newPath !== process.env.PATH) {
-            process.env.PATH = newPath;
-            console.log('[install] PATH refreshed from shell profile');
-          }
-        } catch (e: any) {
-          console.log('[install] Could not refresh PATH:', e.message);
-        }
-        resolve(output);
-      } else {
-        console.error(`[install] Install script exited with code ${code}`);
-        reject(new Error(`OpenClaw installation failed (exit code ${code}). Please install manually: curl -fsSL ${INSTALL_SCRIPT_URL} | bash`));
-      }
-    });
-    proc.on('error', (err) => {
-      console.error('[install] Install error:', err.message);
-      reject(new Error(`Failed to run install script: ${err.message}. Please install manually: curl -fsSL ${INSTALL_SCRIPT_URL} | bash`));
-    });
-  });
+  throw new Error(`No suitable Node.js found (>= ${MIN_NODE_MAJOR_VERSION}). Please install Node.js or use the full version of MyOpenClaw.`);
 }
 
 export function ensureOpenClawInPath(openclawBin: string): void {
