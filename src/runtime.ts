@@ -80,7 +80,7 @@ export async function ensureEmbeddedRuntime(updateLoadingStatus: LoadingStatusCa
   updateLoadingStatus('Extracting openclaw runtime...', 84);
   fs.mkdirSync(DOWNLOADED_RUNTIME_DIR, { recursive: true });
   if (process.platform === 'win32') {
-    execFileSync('powershell.exe', ['-NoProfile', '-Command', `Expand-Archive -Path '${zipPath}' -DestinationPath '${DOWNLOADED_RUNTIME_DIR}' -Force`], { stdio: 'inherit' });
+    execFileSync('tar', ['-xf', zipPath, '-C', DOWNLOADED_RUNTIME_DIR], { stdio: 'pipe', windowsHide: true });
   } else {
     execFileSync('unzip', ['-o', zipPath, '-d', DOWNLOADED_RUNTIME_DIR], { stdio: 'inherit' });
     // Fix permissions on extracted binaries (unzip may strip execute bits)

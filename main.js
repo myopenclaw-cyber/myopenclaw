@@ -338,7 +338,7 @@ async function ensureEmbeddedRuntime(updateLoadingStatus2) {
   updateLoadingStatus2("Extracting openclaw runtime...", 84);
   fs2.mkdirSync(DOWNLOADED_RUNTIME_DIR, { recursive: true });
   if (process.platform === "win32") {
-    (0, import_child_process.execFileSync)("powershell.exe", ["-NoProfile", "-Command", `Expand-Archive -Path '${zipPath}' -DestinationPath '${DOWNLOADED_RUNTIME_DIR}' -Force`], { stdio: "inherit" });
+    (0, import_child_process.execFileSync)("tar", ["-xf", zipPath, "-C", DOWNLOADED_RUNTIME_DIR], { stdio: "pipe", windowsHide: true });
   } else {
     (0, import_child_process.execFileSync)("unzip", ["-o", zipPath, "-d", DOWNLOADED_RUNTIME_DIR], { stdio: "inherit" });
     const binDir = path3.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", ".bin");
