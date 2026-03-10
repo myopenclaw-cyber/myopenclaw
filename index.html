@@ -203,7 +203,7 @@ hr { border: none; border-top: 1px solid #ffffff22; margin: 18px 0; }
       </div>
       <div class="card" style="opacity:.7;font-size:13px">
         <div class="row" style="margin:0;justify-content:space-between">
-          <span>MyOpenClaw Desktop &mdash; v1.0</span>
+          <span id="appVersionLabel">MyOpenClaw Desktop</span>
           <button class="alt" style="padding:6px 12px;font-size:12px" onclick="window.electronAPI.openGatewayDashboard().then(r => { if (r && !r.success) showToast(r.error); })">Open Gateway Dashboard</button>
         </div>
       </div>
@@ -266,7 +266,7 @@ hr { border: none; border-top: 1px solid #ffffff22; margin: 18px 0; }
             </tr>
             <tr>
               <td>Relay Access</td>
-              <td class="plan-col-free"><span class="cross">No</span></td>
+              <td class="plan-col-free"><span class="check">Yes (15/mo)</span></td>
               <td class="plan-col-premium"><span class="check">Yes</span></td>
               <td class="plan-col-pro"><span class="check">Yes</span></td>
             </tr>
@@ -901,7 +901,7 @@ function updateRelayUI() {
   } else {
     row.innerHTML =
       '<button onclick="openLogin()">Login to Activate</button>' +
-      '<span class="small" style="opacity:.6;margin-left:10px">Free tier: 50 messages/month</span>';
+      '<span class="small" style="opacity:.6;margin-left:10px">Free tier: 15 messages/month</span>';
   }
 }
 
@@ -1014,6 +1014,8 @@ function initKeyboard() {
     await loadDeviceInfo();
     await refreshQuota();
     renderConversation();
+    const ver = await window.electronAPI.getAppVersion();
+    if (ver) document.getElementById('appVersionLabel').textContent = 'MyOpenClaw Desktop \u2014 v' + ver;
   } catch (err) {
     console.error('[init] startup error:', err);
   }
