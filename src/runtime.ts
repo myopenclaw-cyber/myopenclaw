@@ -114,11 +114,14 @@ export function buildNodeEnhancedPath(): string {
 
 export function verifyOpenClawCli(binPath: string): boolean {
   try {
+    const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(binPath);
     execFileSync(binPath, ['--version'], {
       encoding: 'utf8',
       timeout: 10000,
       stdio: 'pipe',
       env: { ...process.env, PATH: buildNodeEnhancedPath() },
+      shell: useShell,
+      windowsHide: true,
     });
     return true;
   } catch (e: any) {

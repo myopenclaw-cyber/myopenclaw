@@ -63,9 +63,11 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
   const openclawBin = findOpenClawCli();
   if (openclawBin) {
     console.log(`[startGateway] Using openclaw CLI: ${openclawBin}`);
+    const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(openclawBin);
     gatewayProcess = spawn(openclawBin, ['gateway', 'run', '--port', String(gatewayPort), '--allow-unconfigured'], {
       stdio: 'pipe', env: gatewayEnv,
-      ...(process.platform === 'win32' ? { windowsHide: true } : {}),
+      shell: useShell,
+      windowsHide: true,
     });
   } else {
     const runtimeDir = findRuntimeDir() || path.join(__dirname, 'resources');

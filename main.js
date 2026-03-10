@@ -367,11 +367,14 @@ function buildNodeEnhancedPath() {
 }
 function verifyOpenClawCli(binPath) {
   try {
+    const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(binPath);
     (0, import_child_process.execFileSync)(binPath, ["--version"], {
       encoding: "utf8",
       timeout: 1e4,
       stdio: "pipe",
-      env: { ...process.env, PATH: buildNodeEnhancedPath() }
+      env: { ...process.env, PATH: buildNodeEnhancedPath() },
+      shell: useShell,
+      windowsHide: true
     });
     return true;
   } catch (e) {
@@ -662,10 +665,12 @@ async function startGateway(updateLoadingStatus2) {
   const openclawBin = findOpenClawCli();
   if (openclawBin) {
     console.log(`[startGateway] Using openclaw CLI: ${openclawBin}`);
+    const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(openclawBin);
     gatewayProcess = (0, import_child_process2.spawn)(openclawBin, ["gateway", "run", "--port", String(gatewayPort), "--allow-unconfigured"], {
       stdio: "pipe",
       env: gatewayEnv,
-      ...process.platform === "win32" ? { windowsHide: true } : {}
+      shell: useShell,
+      windowsHide: true
     });
   } else {
     const runtimeDir = findRuntimeDir() || path4.join(__dirname, "resources");
