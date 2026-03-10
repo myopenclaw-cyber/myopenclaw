@@ -83,7 +83,7 @@ jobs:
           rm -rf ./artifacts
 
   verify-windows:
-    runs-on: [self-hosted, windows]
+    runs-on: windows-latest
     steps:
       - name: Cleanup workspace
         shell: powershell
