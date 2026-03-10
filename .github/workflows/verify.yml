@@ -1,0 +1,54 @@
+name: Verify MyOpenClaw
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to verify'
+        required: false
+        default: 'V3'
+  push:
+    branches:
+      - V3
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: TypeScript type check
+        run: npm run typecheck
+
+      - name: Build TypeScript (esbuild)
+        run: npm run build:ts
+
+      - name: Verify build output exists
+        run: |
+          ls -lh main.js preload.js
+          echo "main.js size: $(stat -c%s main.js) bytes"
+          echo "preload.js size: $(stat -c%s preload.js) bytes"
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Check relay service health
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+            https://myopenclaw-relay-service-production.up.railway.app/health)
+          echo "Relay /health status: $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "WARNING: Relay service not healthy (status $STATUS)"
+            exit 1
+          fi
+          echo "Relay service is healthy"
