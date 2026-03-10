@@ -335,6 +335,14 @@ async function ensureEmbeddedRuntime(updateLoadingStatus2) {
     (0, import_child_process.execFileSync)("powershell.exe", ["-NoProfile", "-Command", `Expand-Archive -Path '${zipPath}' -DestinationPath '${DOWNLOADED_RUNTIME_DIR}' -Force`], { stdio: "inherit" });
   } else {
     (0, import_child_process.execFileSync)("unzip", ["-o", zipPath, "-d", DOWNLOADED_RUNTIME_DIR], { stdio: "inherit" });
+    const binDir = path3.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", ".bin");
+    const nodeDir = path3.join(DOWNLOADED_RUNTIME_DIR, "node");
+    for (const dir of [binDir, nodeDir]) {
+      if (fs2.existsSync(dir)) {
+        (0, import_child_process.execFileSync)("chmod", ["-R", "+x", dir], { stdio: "inherit" });
+        console.log(`[runtime] Fixed permissions: ${dir}`);
+      }
+    }
   }
   if (!findRuntimeDir()) {
     throw new Error("Runtime extracted but dist/entry.(m)js not found. The runtime package may be incomplete.");

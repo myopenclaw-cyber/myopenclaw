@@ -83,6 +83,15 @@ export async function ensureEmbeddedRuntime(updateLoadingStatus: LoadingStatusCa
     execFileSync('powershell.exe', ['-NoProfile', '-Command', `Expand-Archive -Path '${zipPath}' -DestinationPath '${DOWNLOADED_RUNTIME_DIR}' -Force`], { stdio: 'inherit' });
   } else {
     execFileSync('unzip', ['-o', zipPath, '-d', DOWNLOADED_RUNTIME_DIR], { stdio: 'inherit' });
+    // Fix permissions on extracted binaries (unzip may strip execute bits)
+    const binDir = path.join(DOWNLOADED_RUNTIME_DIR, 'openclaw-deps', '.bin');
+    const nodeDir = path.join(DOWNLOADED_RUNTIME_DIR, 'node');
+    for (const dir of [binDir, nodeDir]) {
+      if (fs.existsSync(dir)) {
+        execFileSync('chmod', ['-R', '+x', dir], { stdio: 'inherit' });
+        console.log(`[runtime] Fixed permissions: ${dir}`);
+      }
+    }
   }
 
   if (!findRuntimeDir()) {
