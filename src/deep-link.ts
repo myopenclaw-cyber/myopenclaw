@@ -29,7 +29,7 @@ export function handleDeepLink(
         if (deviceId) {
           axios.post(`${RELAY_BASE_URL}/v1/devices/${encodeURIComponent(deviceId)}/link`, {}, {
             headers: { 'Authorization': `Bearer ${accessToken}` },
-            timeout: 8000,
+            timeout: 20000,
           }).then(() => {
             console.log('[DeepLink] Device linked to user account');
           }).catch((err) => {

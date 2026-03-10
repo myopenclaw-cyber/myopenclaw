@@ -133,6 +133,7 @@ function saveAppState(state) {
   }
   fs.writeFileSync(APP_STATE_FILE, JSON.stringify(state, null, 2), "utf8");
 }
+var ANONYMOUS_FREE_LIMIT = 3;
 function checkPremiumGate(state) {
   if (state.premiumTier === "premium" || state.premiumTier === "pro") {
     return { allow: true, tier: state.premiumTier };
@@ -145,10 +146,15 @@ function checkPremiumGate(state) {
   if (state.userApiKey) {
     return { allow: true, tier: "user_api_key" };
   }
-  if (state.freeQuotaUsed < 10) {
-    return { allow: true, tier: "free" };
+  if (state.freeQuotaUsed < ANONYMOUS_FREE_LIMIT) {
+    return { allow: true, tier: "anonymous" };
   }
-  return { allow: false, reason: "free_exhausted", message: "Free quota reached. Login to use Cloud Relay or add your API key." };
+  return {
+    allow: false,
+    reason: "login_required",
+    message: "You've used your 3 free messages. Sign in to continue chatting.",
+    loginRequired: true
+  };
 }
 function consumeQuota(state, tier) {
   if (tier === "free") state.freeQuotaUsed += 1;
@@ -207,7 +213,7 @@ async function registerDevice(deviceId, appVersion) {
       deviceId,
       platform: process.platform,
       appVersion
-    }, { timeout: 8e3 });
+    }, { timeout: 2e4 });
     console.log("[device-registration] Device registered successfully");
   } catch (err) {
     console.log("[device-registration] Registration failed (non-fatal):", err.message);
@@ -236,7 +242,7 @@ function handleDeepLink(url, getMainWindow2) {
         if (deviceId) {
           import_axios2.default.post(`${RELAY_BASE_URL}/v1/devices/${encodeURIComponent(deviceId)}/link`, {}, {
             headers: { "Authorization": `Bearer ${accessToken}` },
-            timeout: 8e3
+            timeout: 2e4
           }).then(() => {
             console.log("[DeepLink] Device linked to user account");
           }).catch((err) => {
@@ -767,7 +773,7 @@ var import_axios6 = __toESM(require("axios"));
 async function checkRelayHealth(baseUrl, token) {
   const response = await import_axios6.default.get(`${baseUrl}/health`, {
     headers: { "Authorization": `Bearer ${token}` },
-    timeout: 8e3
+    timeout: 2e4
   });
   return response.data;
 }
@@ -819,7 +825,8 @@ function registerChatHandlers(getGatewayHandle) {
       if (!gate.allow) {
         return {
           success: false,
-          premiumRequired: true,
+          premiumRequired: gate.premiumRequired ?? false,
+          loginRequired: gate.loginRequired ?? false,
           reason: gate.reason,
           error: gate.message,
           state
@@ -1312,7 +1319,7 @@ function registerDeviceHandlers() {
       const authToken = relay.accessToken || relay.authToken;
       const headers = {};
       if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-      const response = await import_axios7.default.get(`${baseUrl}/v1/devices/${deviceId}/usage`, { headers, timeout: 8e3 });
+      const response = await import_axios7.default.get(`${baseUrl}/v1/devices/${deviceId}/usage`, { headers, timeout: 2e4 });
       return response.data;
     } catch (err) {
       return { success: false, error: err.message };

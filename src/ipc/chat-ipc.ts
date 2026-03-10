@@ -23,7 +23,8 @@ export function registerChatHandlers(
       if (!gate.allow) {
         return {
           success: false,
-          premiumRequired: true,
+          premiumRequired: gate.premiumRequired ?? false,
+          loginRequired: gate.loginRequired ?? false,
           reason: gate.reason,
           error: gate.message,
           state,

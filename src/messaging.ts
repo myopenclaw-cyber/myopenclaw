@@ -5,7 +5,7 @@ import type { ConversationMessage } from './types';
 export async function checkRelayHealth(baseUrl: string, token: string): Promise<any> {
   const response = await axios.get(`${baseUrl}/health`, {
     headers: { 'Authorization': `Bearer ${token}` },
-    timeout: 8000,
+    timeout: 20000,
   });
   return response.data;
 }

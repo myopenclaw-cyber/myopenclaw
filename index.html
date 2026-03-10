@@ -327,6 +327,18 @@ hr { border: none; border-top: 1px solid #ffffff22; margin: 18px 0; }
   </div>
 </div>
 
+<!-- Login Required Modal -->
+<div id="loginRequiredModal" class="modal" onclick="if(event.target===this) closeLoginRequired()">
+  <div class="box">
+    <h3>Sign In to Continue</h3>
+    <p id="loginRequiredMsg">You've used your 3 free messages. Sign in to continue chatting.</p>
+    <div class="row" style="justify-content:flex-end;margin-top:14px">
+      <button onclick="openLogin();closeLoginRequired()">Sign In</button>
+      <button class="alt" onclick="closeLoginRequired()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- No API Key Modal (BYOK path) -->
 <div id="apiKeyRequiredModal" class="modal" onclick="if(event.target===this) closeApiKeyRequiredModal()">
   <div class="box">
@@ -425,6 +437,18 @@ function closePremium() {
 function openPremium(msg) {
   document.getElementById('premiumMsg').textContent = msg || 'Upgrade required';
   document.getElementById('premiumModal').classList.add('show');
+}
+
+// ---------------------------------------------------------------------------
+// Login-required modal
+// ---------------------------------------------------------------------------
+function closeLoginRequired() {
+  document.getElementById('loginRequiredModal').classList.remove('show');
+}
+
+function openLoginRequired(msg) {
+  document.getElementById('loginRequiredMsg').textContent = msg || "You've used your 3 free messages. Sign in to continue chatting.";
+  document.getElementById('loginRequiredModal').classList.add('show');
 }
 
 // ---------------------------------------------------------------------------
@@ -773,6 +797,8 @@ async function sendMsg() {
     chat(r.response || 'Received', 'a');
     await refreshState();
     renderConversation();
+  } else if (r.loginRequired) {
+    openLoginRequired(r.error);
   } else if (r.premiumRequired) {
     openPremium(r.error);
   } else if (r.noApiKeyConfigured) {
@@ -895,9 +921,13 @@ function updateRelayUI() {
   const email = relay && relay.userEmail;
   const hasToken = relay && relay.accessToken;
   if (hasToken) {
+    const quotaEl = document.getElementById('accountQuotaText');
+    const quotaText = quotaEl && quotaEl.textContent && !/Loading|Checking/.test(quotaEl.textContent)
+      ? quotaEl.textContent
+      : 'Free: 15 msg/month';
     row.innerHTML =
       '<span class="small" style="color:#6ee7b7;font-weight:500">' + (email || 'Logged in') + '</span>' +
-      '<span class="small" style="opacity:.5;margin-left:8px">Relay active</span>';
+      '<span class="small" style="opacity:.5;margin-left:8px">\u2014 ' + quotaText + '</span>';
   } else {
     row.innerHTML =
       '<button onclick="openLogin()">Login to Activate</button>' +
@@ -956,13 +986,14 @@ async function refreshQuota() {
     quotaEl.textContent = 'Relay not configured';
   } else if (r && r.success === false) {
     quotaEl.textContent = 'Error: ' + (r.error || 'unknown');
-  } else if (r && (r.used !== undefined || r.limit !== undefined)) {
-    const used = r.used !== undefined ? r.used : '?';
-    const limit = r.limit !== undefined ? r.limit : '?';
-    quotaEl.textContent = used + ' / ' + limit + ' messages used';
+  } else if (r && r.usage) {
+    const used = r.usage.messageCount !== undefined ? r.usage.messageCount : '?';
+    const limit = r.usage.limit !== undefined ? r.usage.limit : '?';
+    quotaEl.textContent = used + ' / ' + limit + ' messages used this month';
   } else {
     quotaEl.textContent = 'No quota data';
   }
+  updateRelayUI();
 }
 
 async function openLogin() {

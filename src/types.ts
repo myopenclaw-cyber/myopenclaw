@@ -65,7 +65,7 @@ export interface PlanFeatures {
 
 export type PremiumGateResult =
   | { allow: true; tier: string }
-  | { allow: false; reason: string; message: string };
+  | { allow: false; reason: string; message: string; loginRequired?: boolean; premiumRequired?: boolean };
 
 // ---------------------------------------------------------------------------
 // Embedded Config (embedded-config.json)

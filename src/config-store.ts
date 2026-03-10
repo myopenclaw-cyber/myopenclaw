@@ -122,6 +122,8 @@ export function saveAppState(state: AppState): void {
 // Premium / quota helpers
 // ---------------------------------------------------------------------------
 
+const ANONYMOUS_FREE_LIMIT = 3;
+
 export function checkPremiumGate(state: AppState): PremiumGateResult {
   if (state.premiumTier === 'premium' || state.premiumTier === 'pro') {
     return { allow: true, tier: state.premiumTier };
@@ -134,10 +136,15 @@ export function checkPremiumGate(state: AppState): PremiumGateResult {
   if (state.userApiKey) {
     return { allow: true, tier: 'user_api_key' };
   }
-  if (state.freeQuotaUsed < 10) {
-    return { allow: true, tier: 'free' };
+  if (state.freeQuotaUsed < ANONYMOUS_FREE_LIMIT) {
+    return { allow: true, tier: 'anonymous' };
   }
-  return { allow: false, reason: 'free_exhausted', message: 'Free quota reached. Login to use Cloud Relay or add your API key.' };
+  return {
+    allow: false,
+    reason: 'login_required',
+    message: "You've used your 3 free messages. Sign in to continue chatting.",
+    loginRequired: true,
+  };
 }
 
 export function consumeQuota(state: AppState, tier: string): void {

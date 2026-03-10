@@ -21,7 +21,7 @@ export async function registerDevice(deviceId: string, appVersion: string): Prom
       deviceId,
       platform: process.platform,
       appVersion,
-    }, { timeout: 8000 });
+    }, { timeout: 20000 });
     console.log('[device-registration] Device registered successfully');
   } catch (err: any) {
     console.log('[device-registration] Registration failed (non-fatal):', err.message);
