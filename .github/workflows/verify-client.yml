@@ -10,7 +10,7 @@ on:
 
 jobs:
   verify-mac:
-    runs-on: [self-hosted, mac]
+    runs-on: macos-latest
     steps:
       - name: Cleanup workspace
         run: rm -rf ./artifacts ./screenshots
