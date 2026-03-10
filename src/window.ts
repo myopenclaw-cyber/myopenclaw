@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import { BrowserWindow, Menu, shell } from 'electron';
 import { CONFIG_FILE, RELAY_BASE_URL } from './constants';
 import { buildDashboardUrl, loadAppState, saveAppState } from './config-store';
-import { findOpenClawCli, findRuntimeDir, ensureEmbeddedRuntime, ensureOpenClawInPath, runOpenClawOnboard } from './runtime';
+import { findOpenClawCli, findRuntimeDir, findNodeBinary, ensureEmbeddedRuntime, ensureOpenClawInPath, runOpenClawOnboard } from './runtime';
 import { startGateway } from './gateway';
 import { registerGatewayHandlers } from './ipc/gateway-ipc';
 import { registerChatHandlers } from './ipc/chat-ipc';
@@ -152,8 +152,18 @@ export function createWindow(): void {
           updateLoadingStatus('Running first-time setup...', 80);
           console.log('[startup] No config found, running openclaw onboard...');
           await runOpenClawOnboard(binForOnboard);
+        } else if (findRuntimeDir()) {
+          // No CLI but runtime exists — run onboard via node entry point
+          updateLoadingStatus('Running first-time setup...', 80);
+          console.log('[startup] No CLI found, running onboard via node entry point...');
+          const runtimeDir = findRuntimeDir()!;
+          const nodeBin = findNodeBinary();
+          const entryMjs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'openclaw.mjs');
+          const entryJs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'dist', 'entry.js');
+          const entryFile = fs.existsSync(entryMjs) ? entryMjs : entryJs;
+          await runOpenClawOnboard(nodeBin, [entryFile], runtimeDir);
         } else {
-          console.log('[startup] No openclaw CLI available for onboard, skipping');
+          console.log('[startup] No openclaw CLI or runtime available for onboard, skipping');
         }
       }
 

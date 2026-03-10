@@ -269,9 +269,10 @@ export function ensureOpenClawInPath(openclawBin: string): void {
   }
 }
 
-export function runOpenClawOnboard(openclawBin: string): Promise<string> {
+export function runOpenClawOnboard(cmd: string, prependArgs: string[] = [], cwd?: string): Promise<string> {
   return new Promise((resolve, _reject) => {
     const args = [
+      ...prependArgs,
       'onboard',
       '--non-interactive', '--accept-risk',
       '--skip-channels', '--skip-daemon', '--skip-health', '--skip-skills', '--skip-ui',
@@ -286,8 +287,8 @@ export function runOpenClawOnboard(openclawBin: string): Promise<string> {
       OPENCLAW_CONFIG_PATH: CONFIG_FILE,
     };
 
-    console.log(`[onboard] Running: ${openclawBin} ${args.join(' ')}`);
-    const proc = spawn(openclawBin, args, { stdio: 'pipe', env });
+    console.log(`[onboard] Running: ${cmd} ${args.join(' ')}`);
+    const proc = spawn(cmd, args, { stdio: 'pipe', env, ...(cwd ? { cwd } : {}) });
 
     let output = '';
     proc.stdout.on('data', (d: Buffer) => { output += d; console.log(`[onboard] ${d}`); });
