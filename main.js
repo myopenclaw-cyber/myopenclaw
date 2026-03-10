@@ -286,7 +286,7 @@ function getRuntimeTargetLabel() {
 }
 async function downloadFile(url, outputPath, onProgress) {
   const writer = fs2.createWriteStream(outputPath);
-  const response = await (0, import_axios3.default)({ method: "get", url, responseType: "stream", timeout: 0 });
+  const response = await (0, import_axios3.default)({ method: "get", url, responseType: "stream", timeout: 0, maxRedirects: 10 });
   const total = Number(response.headers["content-length"] || 0);
   let loaded = 0;
   response.data.on("data", (chunk) => {

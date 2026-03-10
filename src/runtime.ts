@@ -20,7 +20,7 @@ export function getRuntimeTargetLabel(): string {
 
 export async function downloadFile(url: string, outputPath: string, onProgress?: (percent: number) => void): Promise<void> {
   const writer = fs.createWriteStream(outputPath);
-  const response = await axios({ method: 'get', url, responseType: 'stream', timeout: 0 });
+  const response = await axios({ method: 'get', url, responseType: 'stream', timeout: 0, maxRedirects: 10 });
   const total = Number(response.headers['content-length'] || 0);
   let loaded = 0;
   response.data.on('data', (chunk: Buffer) => {
