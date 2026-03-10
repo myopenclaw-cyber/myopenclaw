@@ -8,6 +8,7 @@ import {
   getUserProviderConfig,
 } from '../config-store';
 import { sendViaGateway, sendViaRelay } from '../messaging';
+import { RELAY_BASE_URL } from '../constants';
 import type { GatewayHandle } from '../types';
 
 export function registerChatHandlers(
@@ -49,6 +50,9 @@ export function registerChatHandlers(
         content = await sendViaGateway(gatewayBaseUrl, messages);
       } else if (hasRelay) {
         content = await sendViaRelay(relay.baseUrl, relayAuthToken, messages, deviceId);
+      } else if (deviceId && (relay.baseUrl || RELAY_BASE_URL)) {
+        // Anonymous: send via relay with device ID only (no auth token)
+        content = await sendViaRelay(relay.baseUrl || RELAY_BASE_URL, '', messages, deviceId);
       } else if (gatewayBaseUrl) {
         const userProvider = getUserProviderConfig();
         if (!userProvider) {

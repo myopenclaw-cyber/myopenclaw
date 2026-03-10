@@ -148,7 +148,7 @@ export function checkPremiumGate(state: AppState): PremiumGateResult {
 }
 
 export function consumeQuota(state: AppState, tier: string): void {
-  if (tier === 'free') state.freeQuotaUsed += 1;
+  if (tier === 'free' || tier === 'anonymous') state.freeQuotaUsed += 1;
   if (tier === 'user_api_key') state.userApiKeyQuotaUsed += 1;
 }
 

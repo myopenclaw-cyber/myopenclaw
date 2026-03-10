@@ -37,9 +37,11 @@ export async function sendViaRelay(
   deviceId: string,
 ): Promise<string> {
   const headers: Record<string, string> = {
-    'Authorization': `Bearer ${relayAuthToken}`,
     'Content-Type': 'application/json',
   };
+  if (relayAuthToken) {
+    headers['Authorization'] = `Bearer ${relayAuthToken}`;
+  }
   if (deviceId) {
     headers['X-Device-Id'] = deviceId;
   }
