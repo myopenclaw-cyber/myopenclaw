@@ -171,19 +171,6 @@ jobs:
       - name: Package macOS Apple Silicon runtime
         run: |
           cd resources
-          ditto -c -k --sequesterRsrc --keepParent openclaw-deps ../dist/first-launch-runtime/openclaw-runtime-mac-silicon.zip
-          cd ..
-          # Add node/ directory to the existing zip
-          cd resources
-          ditto -c -k --sequesterRsrc --keepParent node /tmp/node-bundle.zip
-          cd ..
-          # Merge: re-create zip with both directories
-          rm -f dist/first-launch-runtime/openclaw-runtime-mac-silicon.zip
-          cd resources
-          ditto -c -k --sequesterRsrc openclaw-deps node ../dist/first-launch-runtime/openclaw-runtime-mac-silicon-content/
-          cd ..
-          # Use zip to include both top-level directories
-          cd resources
           zip -r -y ../dist/first-launch-runtime/openclaw-runtime-mac-silicon.zip openclaw-deps node
 
       - name: Verify package
