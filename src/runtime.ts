@@ -1,0 +1,300 @@
+import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
+import axios from 'axios';
+import { spawn, execFileSync } from 'child_process';
+import {
+  OPENCLAW_CONFIG_DIR,
+  CONFIG_FILE,
+  DEFAULT_PORT,
+  DOWNLOADED_RUNTIME_DIR,
+  INSTALL_SCRIPT_URL,
+  INSTALL_SCRIPT_URL_WIN,
+} from './constants';
+import type { LoadingStatusCallback } from './types';
+
+export function getRuntimeTargetLabel(): string {
+  if (process.platform === 'win32') return 'windows';
+  if (process.platform === 'darwin') return process.arch === 'arm64' ? 'mac_silicon' : 'mac_intel';
+  return 'linux';
+}
+
+export async function downloadFile(url: string, outputPath: string, onProgress?: (percent: number) => void): Promise<void> {
+  const writer = fs.createWriteStream(outputPath);
+  const response = await axios({ method: 'get', url, responseType: 'stream', timeout: 0 });
+  const total = Number(response.headers['content-length'] || 0);
+  let loaded = 0;
+  response.data.on('data', (chunk: Buffer) => {
+    loaded += chunk.length;
+    if (total > 0 && typeof onProgress === 'function') {
+      onProgress(Math.max(0, Math.min(100, Math.round((loaded / total) * 100))));
+    }
+  });
+  response.data.pipe(writer);
+  return new Promise((resolve, reject) => {
+    writer.on('finish', resolve);
+    writer.on('error', reject);
+  });
+}
+
+export function findRuntimeDir(): string | null {
+  const embeddedDir = path.join(__dirname, 'resources', 'openclaw-deps', 'openclaw', 'dist');
+  if (fs.existsSync(path.join(embeddedDir, 'entry.js')) || fs.existsSync(path.join(embeddedDir, 'entry.mjs'))) {
+    return path.join(__dirname, 'resources');
+  }
+  const dlDir = path.join(DOWNLOADED_RUNTIME_DIR, 'openclaw-deps', 'openclaw', 'dist');
+  if (fs.existsSync(path.join(dlDir, 'entry.js')) || fs.existsSync(path.join(dlDir, 'entry.mjs'))) {
+    return DOWNLOADED_RUNTIME_DIR;
+  }
+  return null;
+}
+
+export async function ensureEmbeddedRuntime(updateLoadingStatus: LoadingStatusCallback): Promise<void> {
+  if (findRuntimeDir()) {
+    console.log('[runtime] Runtime found');
+    updateLoadingStatus('Runtime ready', 72);
+    return;
+  }
+
+  const manifestPath = path.join(__dirname, 'resources', 'runtime-manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error('Missing runtime-manifest.json. Cannot download runtime automatically.');
+  }
+
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const target = getRuntimeTargetLabel();
+  const url = manifest?.[target]?.url;
+
+  if (!url) {
+    throw new Error(`No runtime download URL configured for platform "${target}". Please download the runtime manually or use the full installer.`);
+  }
+
+  const zipPath = path.join(os.tmpdir(), `myopenclaw-runtime-${target}.zip`);
+
+  console.log(`[runtime] Downloading runtime for ${target}...`);
+  updateLoadingStatus('Downloading openclaw ...', 52);
+  await downloadFile(url, zipPath, (p) => {
+    updateLoadingStatus(`Downloading openclaw ... ${p}%`, 52 + Math.round(p * 0.28));
+  });
+
+  console.log('[runtime] Extracting runtime...');
+  updateLoadingStatus('Extracting openclaw runtime...', 84);
+  fs.mkdirSync(DOWNLOADED_RUNTIME_DIR, { recursive: true });
+  if (process.platform === 'win32') {
+    execFileSync('powershell.exe', ['-NoProfile', '-Command', `Expand-Archive -Path '${zipPath}' -DestinationPath '${DOWNLOADED_RUNTIME_DIR}' -Force`], { stdio: 'inherit' });
+  } else {
+    execFileSync('unzip', ['-o', zipPath, '-d', DOWNLOADED_RUNTIME_DIR], { stdio: 'inherit' });
+  }
+
+  if (!findRuntimeDir()) {
+    throw new Error('Runtime extracted but dist/entry.(m)js not found. The runtime package may be incomplete.');
+  }
+
+  console.log('[runtime] Runtime ready');
+  updateLoadingStatus('Runtime installed', 88);
+}
+
+export function verifyOpenClawCli(binPath: string): boolean {
+  try {
+    execFileSync(binPath, ['--version'], { encoding: 'utf8', timeout: 10000, stdio: 'pipe' });
+    return true;
+  } catch (e: any) {
+    console.log(`[cli] Verification failed for ${binPath}:`, e.message);
+    return false;
+  }
+}
+
+export function findOpenClawCli(): string | null {
+  const candidates: string[] = [];
+
+  try {
+    const cmd = process.platform === 'win32' ? 'where' : 'which';
+    const result = execFileSync(cmd, ['openclaw'], { encoding: 'utf8', timeout: 3000 }).trim();
+    if (result) candidates.push(result.split(/\r?\n/)[0]);
+  } catch { /* not in PATH */ }
+
+  const home = os.homedir();
+  candidates.push(
+    path.join(home, '.local', 'bin', 'openclaw'),
+    '/usr/local/bin/openclaw',
+    path.join(home, '.openclaw', 'bin', 'openclaw'),
+  );
+
+  const nvmDir = path.join(home, '.nvm', 'versions', 'node');
+  try {
+    if (fs.existsSync(nvmDir)) {
+      const versions = fs.readdirSync(nvmDir)
+        .filter(v => v.startsWith('v'))
+        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+      for (const ver of versions) {
+        candidates.push(path.join(nvmDir, ver, 'bin', 'openclaw'));
+      }
+    }
+  } catch { /* ignore */ }
+
+  candidates.push(path.join(__dirname, 'resources', 'openclaw-deps', '.bin', 'openclaw'));
+  candidates.push(path.join(DOWNLOADED_RUNTIME_DIR, 'openclaw-deps', '.bin', 'openclaw'));
+
+  for (const p of candidates) {
+    if (!fs.existsSync(p)) continue;
+    console.log(`[cli] Found candidate: ${p}, verifying...`);
+    if (verifyOpenClawCli(p)) {
+      console.log(`[cli] Verified openclaw CLI: ${p}`);
+      return p;
+    }
+  }
+
+  return null;
+}
+
+export function runOpenClawInstallScript(updateLoadingStatus: LoadingStatusCallback): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let cmd: string, args: string[];
+    if (process.platform === 'win32') {
+      cmd = 'powershell.exe';
+      args = ['-NoProfile', '-Command', `iwr -useb ${INSTALL_SCRIPT_URL_WIN} | iex`];
+    } else {
+      cmd = 'bash';
+      args = ['-lc', `curl -fsSL ${INSTALL_SCRIPT_URL} | bash`];
+    }
+
+    console.log(`[install] Running: ${cmd} ${args.join(' ')}`);
+    updateLoadingStatus('Installing OpenClaw (includes Node.js & dependencies)...', 30);
+
+    const proc = spawn(cmd, args, {
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        OPENCLAW_NO_PROMPT: '1',
+        OPENCLAW_NO_ONBOARD: '1',
+        NONINTERACTIVE: '1',
+        CI: '1',
+      },
+    });
+
+    let output = '';
+    proc.stdout.on('data', (d: Buffer) => {
+      const line = d.toString();
+      output += line;
+      console.log(`[install] ${line}`);
+      if (/install|download|node/i.test(line)) {
+        updateLoadingStatus(line.trim().slice(0, 80), 40);
+      }
+      if (/complet|success|done/i.test(line)) {
+        updateLoadingStatus('Installation completing...', 70);
+      }
+    });
+    proc.stderr.on('data', (d: Buffer) => {
+      output += d.toString();
+      console.error(`[install] ${d}`);
+    });
+    proc.on('close', (code) => {
+      if (code === 0) {
+        console.log('[install] OpenClaw installed successfully');
+        updateLoadingStatus('OpenClaw installed', 75);
+        try {
+          const shell = process.env.SHELL || '/bin/bash';
+          const newPath = execFileSync(shell, ['-lc', 'echo $PATH'], { encoding: 'utf8', timeout: 5000 }).trim();
+          if (newPath && newPath !== process.env.PATH) {
+            process.env.PATH = newPath;
+            console.log('[install] PATH refreshed from shell profile');
+          }
+        } catch (e: any) {
+          console.log('[install] Could not refresh PATH:', e.message);
+        }
+        resolve(output);
+      } else {
+        console.error(`[install] Install script exited with code ${code}`);
+        reject(new Error(`OpenClaw installation failed (exit code ${code}). Please install manually: curl -fsSL ${INSTALL_SCRIPT_URL} | bash`));
+      }
+    });
+    proc.on('error', (err) => {
+      console.error('[install] Install error:', err.message);
+      reject(new Error(`Failed to run install script: ${err.message}. Please install manually: curl -fsSL ${INSTALL_SCRIPT_URL} | bash`));
+    });
+  });
+}
+
+export function ensureOpenClawInPath(openclawBin: string): void {
+  if (!openclawBin || process.platform === 'win32') return;
+
+  try {
+    const resolved = fs.realpathSync(openclawBin);
+    const standardDirs = ['/usr/local/bin', '/usr/bin', path.join(os.homedir(), '.local', 'bin')];
+    const binDir = path.dirname(resolved);
+
+    if (standardDirs.includes(binDir)) {
+      console.log('[path] openclaw already in standard PATH:', resolved);
+      return;
+    }
+
+    const localBinDir = path.join(os.homedir(), '.local', 'bin');
+    const symlinkTarget = path.join(localBinDir, 'openclaw');
+    fs.mkdirSync(localBinDir, { recursive: true });
+
+    try { fs.unlinkSync(symlinkTarget); } catch { /* doesn't exist */ }
+    fs.symlinkSync(resolved, symlinkTarget);
+    fs.chmodSync(symlinkTarget, 0o755);
+    console.log(`[path] Created symlink: ${symlinkTarget} -> ${resolved}`);
+
+    const home = os.homedir();
+    const exportLine = 'export PATH="$HOME/.local/bin:$PATH"';
+    const profiles = ['.zshrc', '.bashrc'].map(f => path.join(home, f));
+
+    for (const profile of profiles) {
+      try {
+        const content = fs.existsSync(profile) ? fs.readFileSync(profile, 'utf8') : '';
+        if (!content.includes('.local/bin')) {
+          fs.appendFileSync(profile, `\n# Added by MyOpenClaw\n${exportLine}\n`);
+          console.log(`[path] Added ~/.local/bin to ${profile}`);
+        }
+      } catch (e: any) {
+        console.log(`[path] Could not update ${profile}:`, e.message);
+      }
+    }
+
+    if (!process.env.PATH!.includes(localBinDir)) {
+      process.env.PATH = `${localBinDir}:${process.env.PATH}`;
+    }
+  } catch (e: any) {
+    console.error('[path] ensureOpenClawInPath failed:', e.message);
+  }
+}
+
+export function runOpenClawOnboard(openclawBin: string): Promise<string> {
+  return new Promise((resolve, _reject) => {
+    const args = [
+      'onboard',
+      '--non-interactive', '--accept-risk',
+      '--skip-channels', '--skip-daemon', '--skip-health', '--skip-skills', '--skip-ui',
+      '--auth-choice', 'skip',
+      '--gateway-port', String(DEFAULT_PORT),
+    ];
+
+    const env = {
+      ...process.env,
+      OPENCLAW_STATE_DIR: OPENCLAW_CONFIG_DIR,
+      OPENCLAW_CONFIG_PATH: CONFIG_FILE,
+    };
+
+    console.log(`[onboard] Running: ${openclawBin} ${args.join(' ')}`);
+    const proc = spawn(openclawBin, args, { stdio: 'pipe', env });
+
+    let output = '';
+    proc.stdout.on('data', (d: Buffer) => { output += d; console.log(`[onboard] ${d}`); });
+    proc.stderr.on('data', (d: Buffer) => { output += d; console.error(`[onboard] ${d}`); });
+    proc.on('close', (code) => {
+      if (code === 0) {
+        console.log('[onboard] Setup complete');
+        resolve(output);
+      } else {
+        console.error(`[onboard] Exited with code ${code}`);
+        resolve(output);
+      }
+    });
+    proc.on('error', (err) => {
+      console.error('[onboard] Error:', err.message);
+      resolve('');
+    });
+  });
+}

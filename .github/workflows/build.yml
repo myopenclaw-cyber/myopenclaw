@@ -27,6 +27,9 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Build TypeScript
+        run: npm run build:ts
+
       - name: Build Windows Simple
         run: |
           $env:BUILD_VARIANT="simple"
@@ -38,7 +41,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MyOpenClaw-Windows-x64
-          path: dist/**/*.exe
+          path: |
+            dist/**/*-simple-windows.exe
 
   build-mac-silicon:
     runs-on: macos-latest
@@ -55,6 +59,9 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Build TypeScript
+        run: npm run build:ts
+
       - name: Build Mac Apple Silicon Simple
         run: |
           export BUILD_VARIANT="simple"
@@ -65,7 +72,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MyOpenClaw-Mac-Silicon
-          path: dist-mac-silicon/**/*
+          path: dist-mac-silicon/**/*.dmg
 
   build-mac-intel:
     runs-on: macos-latest
@@ -82,6 +89,9 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Build TypeScript
+        run: npm run build:ts
+
       - name: Build Mac Intel Simple (cross-compile on ARM)
         run: |
           export BUILD_VARIANT="simple"
@@ -92,7 +102,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MyOpenClaw-Mac-Intel
-          path: dist-mac-intel/**/*
+          path: dist-mac-intel/**/*.dmg
 
   create-release:
     needs: [build-windows, build-mac-silicon, build-mac-intel]
@@ -110,20 +120,20 @@ jobs:
         run: ls -R ./artifacts
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
-            ./artifacts/**/*.exe
-            ./artifacts/**/*.dmg
+            ./artifacts/**/*-simple-*.exe
+            ./artifacts/**/*-simple-*.dmg
           draft: false
           prerelease: false
           body: |
             ## MyOpenClaw Release
 
             ### Downloads
-            - **Windows 10/11 (64-bit)**: MyOpenClaw-*-simple-windows.exe
-            - **macOS Apple Silicon (M1/M2/M3/M4)**: MyOpenClaw-*-simple-mac_silicon.dmg
-            - **macOS Intel**: MyOpenClaw-*-simple-mac_intel.dmg
+            - **Windows 10/11 (64-bit)**: MyOpenClaw-simple-windows.exe
+            - **macOS Apple Silicon (M1/M2/M3/M4)**: MyOpenClaw-simple-mac_silicon.dmg
+            - **macOS Intel**: MyOpenClaw-simple-mac_intel.dmg
 
             ### Installation
             1. Download the appropriate file for your platform

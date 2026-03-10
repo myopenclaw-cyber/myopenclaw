@@ -2,6 +2,9 @@ node_modules/
 dist/
 dist-*/
 *.log
+.tsbuild/
+main.js
+preload.js
 resources/openclaw/
 resources/.openclaw-myopenclaw/agents/
 resources/.openclaw-myopenclaw/canvas/

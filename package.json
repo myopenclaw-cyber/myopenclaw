@@ -4,11 +4,15 @@
   "description": "MyOpenClaw - Desktop client for OpenClaw",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "build:ts": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "prebuild": "npm run build:ts",
+    "start": "npm run build:ts && electron .",
     "build": "electron-builder",
     "build:win": "electron-builder --win --x64",
     "build:release:win": "powershell -ExecutionPolicy Bypass -File ./build-release.ps1 -Platform win",
-    "build:release:mac": "bash ./build-release.sh mac"
+    "build:release:mac": "bash ./build-release.sh mac",
+    "test": "vitest run"
   },
   "keywords": [],
   "author": "",
@@ -17,8 +21,12 @@
     "axios": "^1.13.6"
   },
   "devDependencies": {
+    "@types/node": "^25.3.5",
     "electron": "^34.0.0",
-    "electron-builder": "^26.8.1"
+    "electron-builder": "^26.8.1",
+    "esbuild": "^0.27.3",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   },
   "build": {
     "appId": "com.myopenclaw.app",
@@ -26,7 +34,9 @@
     "protocols": [
       {
         "name": "MyOpenClaw",
-        "schemes": ["myopenclaw"]
+        "schemes": [
+          "myopenclaw"
+        ]
       }
     ],
     "directories": {
@@ -56,7 +66,9 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["arm64"]
+          "arch": [
+            "arm64"
+          ]
         }
       ]
     },
