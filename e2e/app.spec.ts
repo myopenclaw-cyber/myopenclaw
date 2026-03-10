@@ -3,59 +3,66 @@ import * as path from 'path';
 import * as fs from 'fs';
 
 const SCREENSHOTS_DIR = path.join(process.cwd(), 'e2e-screenshots');
+const RUNTIME_TIMEOUT = 300_000; // 5 min — runtime download on first run
 
 test.beforeAll(() => {
   if (!fs.existsSync(SCREENSHOTS_DIR)) fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
 });
 
-test('app loads to chat UI', async () => {
-  // Launch Electron app
+function shot(page: any, name: string) {
+  return page.screenshot({ path: path.join(SCREENSHOTS_DIR, name), fullPage: true });
+}
+
+test('app reaches chat UI and allows interaction', async () => {
   const app = await electron.launch({
     args: [path.join(process.cwd(), 'main.js')],
-    timeout: 30000,
+    timeout: 30_000,
   });
 
-  // Wait for first window
-  const window = await app.firstWindow();
-  await window.waitForLoadState('domcontentloaded');
+  // First window is loading.html (runtime installer)
+  const loadingPage = await app.firstWindow();
+  await loadingPage.waitForLoadState('domcontentloaded');
+  await shot(loadingPage, '01_loading_screen.png');
 
-  // Screenshot 1: initial state
-  await window.screenshot({ path: path.join(SCREENSHOTS_DIR, '01_initial.png'), fullPage: true });
+  console.log('Waiting for app to finish loading and switch to index.html...');
 
-  // Wait for loading screen to disappear (max 5 minutes for runtime download)
-  // The loading screen has id="loadingScreen", main UI has id="mainContent" or similar
-  try {
-    // Wait for loading overlay to hide
-    await window.waitForFunction(
-      () => {
-        const loading = document.getElementById('loadingScreen');
-        return !loading || loading.style.display === 'none' || loading.classList.contains('hidden');
-      },
-      { timeout: 300000 } // 5 min
-    );
-  } catch {
-    // Still take screenshot even if timeout
-    await window.screenshot({ path: path.join(SCREENSHOTS_DIR, '02_loading_timeout.png'), fullPage: true });
-    throw new Error('Loading screen did not disappear within 5 minutes');
-  }
+  // Wait for the window to navigate from loading.html → index.html
+  // This happens after runtime download+install completes
+  await loadingPage.waitForURL('**/index.html', { timeout: RUNTIME_TIMEOUT });
 
-  // Screenshot 2: main UI loaded
-  await window.screenshot({ path: path.join(SCREENSHOTS_DIR, '02_main_ui.png'), fullPage: true });
+  // Now we're on the main chat UI
+  const mainPage = loadingPage; // same window, new page content
+  await mainPage.waitForLoadState('domcontentloaded');
+  await shot(mainPage, '02_main_ui_loaded.png');
 
-  // Verify chat input exists
-  const chatInput = window.locator('textarea, input[type="text"], [contenteditable="true"]').first();
-  await expect(chatInput).toBeVisible({ timeout: 10000 });
+  // Wait for chat section to be active
+  const chatSection = mainPage.locator('#chat.page.active');
+  await expect(chatSection).toBeVisible({ timeout: 15_000 });
+  await shot(mainPage, '03_chat_page.png');
 
-  // Screenshot 3: chat input visible
-  await window.screenshot({ path: path.join(SCREENSHOTS_DIR, '03_chat_ready.png'), fullPage: true });
+  // Find the message textarea (id="msg")
+  const msgInput = mainPage.locator('#msg');
+  await expect(msgInput).toBeVisible({ timeout: 10_000 });
 
-  // Click on chat input
-  await chatInput.click();
-  await window.screenshot({ path: path.join(SCREENSHOTS_DIR, '04_after_click.png'), fullPage: true });
+  // Screenshot before clicking
+  await shot(mainPage, '04_before_click.png');
+
+  // Click on the chat input
+  await msgInput.click();
+  await shot(mainPage, '05_input_focused.png');
 
   // Type a message
-  await chatInput.type('Hello from E2E test', { delay: 50 });
-  await window.screenshot({ path: path.join(SCREENSHOTS_DIR, '05_typed_message.png'), fullPage: true });
+  await msgInput.fill('Hello from E2E test');
+  await shot(mainPage, '06_message_typed.png');
 
+  // Verify text was entered
+  await expect(msgInput).toHaveValue('Hello from E2E test');
+
+  // Click send button (Enter key)
+  await msgInput.press('Enter');
+  await mainPage.waitForTimeout(2000);
+  await shot(mainPage, '07_after_send.png');
+
+  console.log('E2E test PASSED');
   await app.close();
 });
