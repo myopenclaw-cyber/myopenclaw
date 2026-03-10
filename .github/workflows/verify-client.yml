@@ -1,0 +1,161 @@
+name: Verify Client Installers
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version to verify (e.g. v0.3.6)'
+        required: false
+        default: 'v0.3.6'
+
+jobs:
+  verify-mac:
+    runs-on: macos-latest
+    steps:
+      - name: Download Mac Silicon DMG
+        run: |
+          gh release download ${{ github.event.inputs.version }} \
+            --repo myopenclaw-cyber/myopenclaw \
+            --pattern "*mac_silicon*" \
+            --dir ./artifacts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify DMG file
+        run: |
+          echo "=== Downloaded files ==="
+          ls -lh ./artifacts/
+          DMG=$(ls ./artifacts/*.dmg)
+          SIZE=$(stat -f%z "$DMG")
+          echo "DMG size: $SIZE bytes"
+          if [ "$SIZE" -lt 10000000 ]; then
+            echo "ERROR: DMG too small, likely corrupt"
+            exit 1
+          fi
+          echo "File size OK"
+
+      - name: Mount DMG and inspect app bundle
+        run: |
+          DMG=$(ls ./artifacts/*.dmg)
+          hdiutil attach "$DMG" -mountpoint /Volumes/MyOpenClaw -nobrowse -quiet
+          echo "=== DMG contents ==="
+          ls -la /Volumes/MyOpenClaw/
+          APP="/Volumes/MyOpenClaw/MyOpenClaw.app"
+          echo "=== App bundle structure ==="
+          ls -la "$APP/Contents/"
+          echo "=== Version check ==="
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Contents/Info.plist")
+          EXPECTED="${{ github.event.inputs.version }}"
+          echo "App version: $VERSION"
+          echo "Expected: ${EXPECTED#v}"
+          if [ "$VERSION" != "${EXPECTED#v}" ]; then
+            echo "ERROR: Version mismatch!"
+            exit 1
+          fi
+          echo "Version matches"
+
+      - name: Smoke test - launch app briefly on Mac
+        run: |
+          APP="/Volumes/MyOpenClaw/MyOpenClaw.app"
+          echo "Launching app..."
+          open "$APP"
+          sleep 6
+          # Check if MyOpenClaw process is running
+          if pgrep -x "MyOpenClaw" > /dev/null; then
+            echo "PASSED: App is running after 6 seconds"
+            pkill -x "MyOpenClaw" || true
+          else
+            echo "FAILED: App process not found after launch"
+            exit 1
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: hdiutil detach /Volumes/MyOpenClaw -quiet || true
+
+  verify-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Download Windows EXE
+        run: |
+          gh release download ${{ github.event.inputs.version }} `
+            --repo myopenclaw-cyber/myopenclaw `
+            --pattern "*windows*" `
+            --dir ./artifacts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: powershell
+
+      - name: Verify EXE file
+        shell: powershell
+        run: |
+          $exe = Get-Item "./artifacts/*.exe"
+          Write-Host "=== File info ==="
+          Write-Host "Name: $($exe.Name)"
+          Write-Host "Size: $($exe.Length) bytes"
+          if ($exe.Length -lt 10MB) {
+            Write-Host "ERROR: EXE too small, likely corrupt"
+            exit 1
+          }
+          $vi = $exe.VersionInfo
+          Write-Host "Product name: $($vi.ProductName)"
+          Write-Host "Product version: $($vi.ProductVersion)"
+          Write-Host "File version: $($vi.FileVersion)"
+          $expected = "${{ github.event.inputs.version }}".TrimStart('v')
+          if (-not $vi.FileVersion.StartsWith($expected)) {
+            Write-Host "WARNING: Version $($vi.FileVersion) doesn't match expected $expected"
+          } else {
+            Write-Host "Version matches: $($vi.FileVersion)"
+          }
+
+      - name: Silent install
+        shell: powershell
+        run: |
+          $exe = (Get-Item "./artifacts/*.exe").FullName
+          Write-Host "Installing: $exe"
+          $proc = Start-Process -FilePath $exe -ArgumentList "/S" -PassThru -Wait
+          Write-Host "Installer exit code: $($proc.ExitCode)"
+          Start-Sleep -Seconds 5
+
+      - name: Verify installation
+        shell: powershell
+        run: |
+          $paths = @(
+            "$env:LOCALAPPDATA\Programs\MyOpenClaw\MyOpenClaw.exe",
+            "$env:ProgramFiles\MyOpenClaw\MyOpenClaw.exe",
+            "$env:ProgramFiles(x86)\MyOpenClaw\MyOpenClaw.exe"
+          )
+          $appPath = $null
+          foreach ($p in $paths) {
+            if (Test-Path $p) {
+              $appPath = $p
+              break
+            }
+          }
+          if (-not $appPath) {
+            Write-Host "Searching for installed app..."
+            $found = Get-ChildItem -Path "$env:LOCALAPPDATA", "$env:ProgramFiles" `
+              -Recurse -Name "MyOpenClaw.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) { $appPath = $found }
+          }
+          if (-not $appPath) {
+            Write-Host "ERROR: MyOpenClaw.exe not found after install"
+            exit 1
+          }
+          Write-Host "Found installed app at: $appPath"
+          echo "APP_PATH=$appPath" >> $env:GITHUB_ENV
+
+      - name: Smoke test - launch app briefly on Windows
+        shell: powershell
+        run: |
+          $appPath = $env:APP_PATH
+          Write-Host "Launching: $appPath"
+          $proc = Start-Process -FilePath $appPath -PassThru
+          Start-Sleep -Seconds 8
+          if (-not $proc.HasExited) {
+            Write-Host "PASSED: App is running after 8 seconds (PID $($proc.Id))"
+            $proc.Kill()
+          } else {
+            Write-Host "FAILED: App exited with code $($proc.ExitCode)"
+            exit 1
+          }
