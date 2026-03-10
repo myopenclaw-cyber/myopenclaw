@@ -10,8 +10,11 @@ on:
 
 jobs:
   verify-mac:
-    runs-on: macos-latest
+    runs-on: [self-hosted, mac]
     steps:
+      - name: Cleanup workspace
+        run: rm -rf ./artifacts ./screenshots
+
       - name: Download Mac Silicon DMG
         run: |
           gh release download ${{ github.event.inputs.version }} \
@@ -21,57 +24,47 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify DMG file
+      - name: Verify DMG and version
         run: |
-          ls -lh ./artifacts/
           DMG=$(ls ./artifacts/*.dmg)
           SIZE=$(stat -f%z "$DMG")
-          echo "DMG size: $SIZE bytes"
-          if [ "$SIZE" -lt 10000000 ]; then
-            echo "ERROR: DMG too small, likely corrupt"
-            exit 1
-          fi
-          echo "File size OK"
-
-      - name: Mount DMG and inspect app bundle
-        run: |
-          DMG=$(ls ./artifacts/*.dmg)
+          echo "DMG: $(basename $DMG)  Size: ${SIZE} bytes"
+          if [ "$SIZE" -lt 10000000 ]; then echo "ERROR: DMG too small"; exit 1; fi
           hdiutil attach "$DMG" -mountpoint /Volumes/MyOpenClaw -nobrowse -quiet
-          ls -la /Volumes/MyOpenClaw/
-          APP="/Volumes/MyOpenClaw/MyOpenClaw.app"
-          ls -la "$APP/Contents/"
-          VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Contents/Info.plist")
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" \
+            "/Volumes/MyOpenClaw/MyOpenClaw.app/Contents/Info.plist")
           EXPECTED="${{ github.event.inputs.version }}"
-          echo "App version: $VERSION  (expected ${EXPECTED#v})"
-          if [ "$VERSION" != "${EXPECTED#v}" ]; then
-            echo "ERROR: Version mismatch!"
-            exit 1
-          fi
+          echo "Version: $VERSION  (expected ${EXPECTED#v})"
+          [ "$VERSION" = "${EXPECTED#v}" ] || { echo "ERROR: Version mismatch"; exit 1; }
 
       - name: Launch app and capture screenshots
         run: |
           mkdir -p ./screenshots
           APP="/Volumes/MyOpenClaw/MyOpenClaw.app"
-          echo "Launching app..."
-          open "$APP"
 
-          # screenshot at 3s (loading screen)
-          sleep 3
-          screencapture -x ./screenshots/mac_01_loading.png
+          # Kill any previous instance
+          pkill -x "MyOpenClaw" 2>/dev/null || true
+          sleep 1
 
-          # screenshot at 8s (main UI or setup screen)
-          sleep 5
-          screencapture -x ./screenshots/mac_02_main.png
+          echo "Launching $APP ..."
+          open -n "$APP"
 
-          # screenshot at 14s (fully loaded)
-          sleep 6
-          screencapture -x ./screenshots/mac_03_loaded.png
+          take_screenshot() {
+            osascript -e 'tell application "MyOpenClaw" to activate' 2>/dev/null || true
+            sleep 1
+            screencapture -x "$1"
+            echo "Saved: $1"
+          }
+
+          sleep 5;  take_screenshot ./screenshots/mac_01_startup.png
+          sleep 15; take_screenshot ./screenshots/mac_02_downloading.png
+          sleep 20; take_screenshot ./screenshots/mac_03_ready.png
 
           if pgrep -x "MyOpenClaw" > /dev/null; then
-            echo "PASSED: App is running after 14 seconds"
+            echo "PASSED: App running"
             pkill -x "MyOpenClaw" || true
           else
-            echo "FAILED: App process not found"
+            echo "FAILED: App not running"
             exit 1
           fi
 
@@ -81,16 +74,23 @@ jobs:
         with:
           name: screenshots-mac-${{ github.event.inputs.version }}
           path: ./screenshots/
-          retention-days: 7
+          retention-days: 14
 
       - name: Cleanup
         if: always()
-        run: hdiutil detach /Volumes/MyOpenClaw -quiet || true
+        run: |
+          hdiutil detach /Volumes/MyOpenClaw -quiet 2>/dev/null || true
+          rm -rf ./artifacts
 
   verify-windows:
-    runs-on: windows-latest
+    runs-on: [self-hosted, windows]
     steps:
+      - name: Cleanup workspace
+        shell: powershell
+        run: Remove-Item -Recurse -Force ./artifacts, ./screenshots -ErrorAction SilentlyContinue
+
       - name: Download Windows EXE
+        shell: powershell
         run: |
           gh release download ${{ github.event.inputs.version }} `
             --repo myopenclaw-cyber/myopenclaw `
@@ -98,78 +98,66 @@ jobs:
             --dir ./artifacts
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: powershell
 
-      - name: Verify EXE file
+      - name: Verify and install
         shell: powershell
         run: |
           $exe = Get-Item "./artifacts/*.exe"
-          Write-Host "Name: $($exe.Name)  Size: $($exe.Length) bytes"
-          if ($exe.Length -lt 10MB) {
-            Write-Host "ERROR: EXE too small"; exit 1
-          }
-          $vi = $exe.VersionInfo
-          Write-Host "Version: $($vi.FileVersion)  Product: $($vi.ProductName)"
+          Write-Host "File: $($exe.Name)  Size: $($exe.Length) bytes"
+          if ($exe.Length -lt 10MB) { Write-Host "ERROR: too small"; exit 1 }
+          Write-Host "Version: $($exe.VersionInfo.FileVersion)"
 
-      - name: Silent install
-        shell: powershell
-        run: |
-          $exe = (Get-Item "./artifacts/*.exe").FullName
-          Write-Host "Installing: $exe"
-          Start-Process -FilePath $exe -ArgumentList "/S" -Wait
+          # Kill any previous instance
+          Get-Process MyOpenClaw -ErrorAction SilentlyContinue | Stop-Process -Force
+
+          Write-Host "Installing silently..."
+          Start-Process -FilePath $exe.FullName -ArgumentList "/S" -Wait
           Start-Sleep -Seconds 5
 
       - name: Find installed app
         shell: powershell
         run: |
-          $paths = @(
+          $candidates = @(
             "$env:LOCALAPPDATA\Programs\MyOpenClaw\MyOpenClaw.exe",
-            "$env:ProgramFiles\MyOpenClaw\MyOpenClaw.exe",
-            "$env:ProgramFiles(x86)\MyOpenClaw\MyOpenClaw.exe"
+            "$env:ProgramFiles\MyOpenClaw\MyOpenClaw.exe"
           )
-          $appPath = $paths | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $appPath = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $appPath) {
-            $appPath = Get-ChildItem -Path $env:LOCALAPPDATA, $env:ProgramFiles `
-              -Recurse -Filter "MyOpenClaw.exe" -ErrorAction SilentlyContinue |
+            $appPath = Get-ChildItem "$env:LOCALAPPDATA", "$env:ProgramFiles" `
+              -Recurse -Filter MyOpenClaw.exe -ErrorAction SilentlyContinue |
               Select-Object -First 1 -ExpandProperty FullName
           }
-          if (-not $appPath) { Write-Host "ERROR: App not found"; exit 1 }
-          Write-Host "Found: $appPath"
+          if (-not $appPath) { Write-Host "ERROR: App not found after install"; exit 1 }
+          Write-Host "App installed at: $appPath"
           "APP_PATH=$appPath" | Out-File -Append $env:GITHUB_ENV
 
       - name: Launch app and capture screenshots
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path ./screenshots | Out-Null
-          Add-Type -AssemblyName System.Windows.Forms
-          Add-Type -AssemblyName System.Drawing
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 
           function Take-Screenshot($path) {
-            $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-            $bmp = New-Object System.Drawing.Bitmap($screen.Width, $screen.Height)
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap($b.Width, $b.Height)
             $g = [System.Drawing.Graphics]::FromImage($bmp)
-            $g.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
-            $bmp.Save($path)
+            $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $bmp.Save((Resolve-Path ".").Path + "\" + $path)
             $g.Dispose(); $bmp.Dispose()
-            Write-Host "Screenshot saved: $path"
+            Write-Host "Saved: $path"
           }
 
           $proc = Start-Process -FilePath $env:APP_PATH -PassThru
 
-          Start-Sleep -Seconds 4
-          Take-Screenshot "./screenshots/win_01_loading.png"
-
-          Start-Sleep -Seconds 5
-          Take-Screenshot "./screenshots/win_02_main.png"
-
-          Start-Sleep -Seconds 6
-          Take-Screenshot "./screenshots/win_03_loaded.png"
+          Start-Sleep -Seconds 5;  Take-Screenshot "screenshots/win_01_startup.png"
+          Start-Sleep -Seconds 15; Take-Screenshot "screenshots/win_02_downloading.png"
+          Start-Sleep -Seconds 20; Take-Screenshot "screenshots/win_03_ready.png"
 
           if (-not $proc.HasExited) {
-            Write-Host "PASSED: App running after 15s (PID $($proc.Id))"
+            Write-Host "PASSED: App running (PID $($proc.Id))"
             $proc.Kill()
           } else {
-            Write-Host "FAILED: App exited with code $($proc.ExitCode)"
+            Write-Host "FAILED: App exited (code $($proc.ExitCode))"
             exit 1
           }
 
@@ -179,4 +167,9 @@ jobs:
         with:
           name: screenshots-windows-${{ github.event.inputs.version }}
           path: ./screenshots/
-          retention-days: 7
+          retention-days: 14
+
+      - name: Cleanup
+        if: always()
+        shell: powershell
+        run: Remove-Item -Recurse -Force ./artifacts -ErrorAction SilentlyContinue
