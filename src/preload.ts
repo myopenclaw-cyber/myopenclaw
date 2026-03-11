@@ -56,6 +56,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Channel config
   saveAgentChannelConfig: (payload: Record<string, unknown>) => ipcRenderer.invoke('save-agent-channel-config', payload),
 
+  // Channel pairing
+  pairingList: (payload: Record<string, unknown>) => ipcRenderer.invoke('pairing-list', payload),
+  pairingListAll: () => ipcRenderer.invoke('pairing-list-all'),
+  pairingApprove: (payload: Record<string, unknown>) => ipcRenderer.invoke('pairing-approve', payload),
+  pairingDismiss: (payload: Record<string, unknown>) => ipcRenderer.invoke('pairing-dismiss', payload),
+
   // App info
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   openLogFile: () => ipcRenderer.invoke('open-log-file'),
@@ -64,7 +70,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   skillsList: () => ipcRenderer.invoke('skills-list'),
   skillsToggle: (payload: Record<string, unknown>) => ipcRenderer.invoke('skills-toggle', payload),
   skillsInstall: (payload: Record<string, unknown>) => ipcRenderer.invoke('skills-install', payload),
+  skillsInstallDeps: (payload: Record<string, unknown>) => ipcRenderer.invoke('skills-install-deps', payload),
   skillsConfigure: (payload: Record<string, unknown>) => ipcRenderer.invoke('skills-configure', payload),
+
+  // Marketplace
+  marketplaceList: (payload: Record<string, unknown>) => ipcRenderer.invoke('marketplace-list', payload),
+  marketplaceSearch: (payload: Record<string, unknown>) => ipcRenderer.invoke('marketplace-search', payload),
+  marketplaceDetail: (payload: Record<string, unknown>) => ipcRenderer.invoke('marketplace-detail', payload),
+  marketplaceInstall: (payload: Record<string, unknown>) => ipcRenderer.invoke('marketplace-install', payload),
+  marketplaceUninstall: (payload: Record<string, unknown>) => ipcRenderer.invoke('marketplace-uninstall', payload),
 
   // Cron jobs
   cronList: () => ipcRenderer.invoke('cron-list'),
@@ -73,6 +87,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   cronRemove: (params: Record<string, unknown>) => ipcRenderer.invoke('cron-remove', params),
   cronRun: (params: Record<string, unknown>) => ipcRenderer.invoke('cron-run', params),
   cronRuns: (params: Record<string, unknown>) => ipcRenderer.invoke('cron-runs', params),
+  cronGenerate: (params: { description: string }) => ipcRenderer.invoke('cron-generate', params),
 
   // Chat streaming
   onChatStream: (callback: (...args: unknown[]) => void) => ipcRenderer.on('chat-stream', (_event, ...args) => callback(...args)),

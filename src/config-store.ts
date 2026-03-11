@@ -81,6 +81,7 @@ export function getDefaultAppState(): AppState {
     conversations: {},
     relay: { baseUrl: '', authToken: '', accessToken: '', refreshToken: '', userEmail: '' },
     deviceId: '',
+    deviceToken: '',
   };
 }
 

@@ -1,8 +1,11 @@
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import { execFile } from 'child_process';
 import { ipcMain } from 'electron';
-import axios from 'axios';
 import { readGatewayTokenFromConfig } from '../config-store';
+import { CONFIG_FILE } from '../constants';
 import type { GatewayHandle } from '../types';
+import { buildConnectParams, handleConnectResponse } from '../device-identity';
 
 async function gatewayRpc(
   gw: GatewayHandle,
@@ -24,7 +27,9 @@ async function gatewayRpc(
     }
 
     const socket = new WS(wsUrl, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
     } as any);
 
     const timer = setTimeout(() => {
@@ -33,43 +38,36 @@ async function gatewayRpc(
     }, 15000);
 
     let connected = false;
+    let challengeNonce: string | null = null;
     const connectId = crypto.randomUUID();
     const reqMsg = JSON.stringify({ type: 'req', id, method, params });
 
-    socket.onopen = () => {
-      // Gateway requires a connect request frame as the first message
-      socket.send(JSON.stringify({
-        type: 'req',
-        id: connectId,
-        method: 'connect',
-        params: {
-          minProtocol: 3,
-          maxProtocol: 3,
-          client: {
-            id: 'gateway-client',
-            version: '1.0.0',
-            platform: process.platform,
-            mode: 'backend',
-          },
-          caps: [],
-          role: 'operator',
-          scopes: ['operator.admin'],
-          auth: { token },
-        },
-      }));
-    };
+    // Gateway sends connect.challenge as the first frame; we wait for it.
 
     socket.onmessage = (event: MessageEvent) => {
       try {
         const msg = JSON.parse(typeof event.data === 'string' ? event.data : String(event.data));
 
-        // Ignore server-pushed events (e.g. connect.challenge)
+        // Handle connect.challenge — extract nonce and send signed connect
+        if (msg.type === 'event' && msg.event === 'connect.challenge') {
+          challengeNonce = msg.payload?.nonce;
+          socket.send(JSON.stringify({
+            type: 'req',
+            id: connectId,
+            method: 'connect',
+            params: buildConnectParams(token, challengeNonce!),
+          }));
+          return;
+        }
+
+        // Ignore other server events during handshake
         if (msg.type === 'event') return;
 
         // Wait for connect acknowledgment before sending RPC
         if (!connected) {
           if (msg.type === 'res' && msg.id === connectId && msg.ok) {
             connected = true;
+            handleConnectResponse(msg.payload);
             socket.send(reqMsg);
             return;
           }
@@ -110,6 +108,22 @@ export function registerSkillsHandlers(
       const skills = Array.isArray(payload?.skills) ? payload.skills
         : Array.isArray(payload) ? payload
         : [];
+
+      // Read openclaw.json to get user-enabled skills from skills.entries
+      let enabledKeys: Set<string> = new Set();
+      try {
+        const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+        const entries = cfg?.skills?.entries || {};
+        for (const [key, val] of Object.entries(entries)) {
+          if (val && (val as any).enabled) enabledKeys.add(key);
+        }
+      } catch { /* config may not exist yet */ }
+
+      // Annotate each skill with 'enabled' based on config entries
+      for (const s of skills) {
+        (s as any).enabled = enabledKeys.has(s.skillKey);
+      }
+
       return { success: true, skills };
     } catch (e: any) {
       return { success: false, error: e.message, skills: [] };
@@ -141,6 +155,115 @@ export function registerSkillsHandlers(
 
       await gatewayRpc(gw, 'skills.install', { name, installId, timeoutMs: 60000 });
       return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('skills-install-deps', async (_event, payload) => {
+    const { bins } = payload || {};
+    if (!Array.isArray(bins) || bins.length === 0) {
+      return { success: true, installed: [] };
+    }
+
+    // Only allow simple alphanumeric package names to prevent injection
+    const safeBins = bins.filter((b: string) => /^[a-zA-Z0-9_-]+$/.test(b));
+    if (safeBins.length === 0) {
+      return { success: false, error: 'No valid package names' };
+    }
+
+    const results: { bin: string; ok: boolean; error?: string }[] = [];
+    for (const bin of safeBins) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          execFile('brew', ['install', bin], { timeout: 120000 }, (err, _stdout, stderr) => {
+            if (err) reject(new Error(stderr || err.message));
+            else resolve();
+          });
+        });
+        results.push({ bin, ok: true });
+      } catch (e: any) {
+        results.push({ bin, ok: false, error: e.message });
+      }
+    }
+
+    const allOk = results.every(r => r.ok);
+    return { success: allOk, results };
+  });
+
+  // -----------------------------------------------------------------------
+  // ClawHub Marketplace
+  // -----------------------------------------------------------------------
+  const CLAWHUB_API = 'https://clawhub.ai/api/v1';
+
+  ipcMain.handle('marketplace-list', async (_event, payload) => {
+    try {
+      const { sort, cursor, limit } = payload || {};
+      const params = new URLSearchParams();
+      params.set('limit', String(limit || 25));
+      if (sort) params.set('sort', sort);
+      if (cursor) params.set('cursor', cursor);
+      const resp = await fetch(`${CLAWHUB_API}/skills?${params}`);
+      if (!resp.ok) return { success: false, error: `HTTP ${resp.status}` };
+      const data = await resp.json();
+      return { success: true, items: data.items || [], nextCursor: data.nextCursor || null };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('marketplace-search', async (_event, payload) => {
+    try {
+      const { query, limit } = payload || {};
+      if (!query) return { success: false, error: 'query is required' };
+      const params = new URLSearchParams({ q: query, limit: String(limit || 15) });
+      const resp = await fetch(`${CLAWHUB_API}/search?${params}`);
+      if (!resp.ok) return { success: false, error: `HTTP ${resp.status}` };
+      const data = await resp.json();
+      return { success: true, results: data.results || [] };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('marketplace-detail', async (_event, payload) => {
+    try {
+      const { slug } = payload || {};
+      if (!slug) return { success: false, error: 'slug is required' };
+      const resp = await fetch(`${CLAWHUB_API}/skills/${encodeURIComponent(slug)}`);
+      if (!resp.ok) return { success: false, error: `HTTP ${resp.status}` };
+      const data = await resp.json();
+      return { success: true, ...data };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('marketplace-install', async (_event, payload) => {
+    try {
+      const { slug } = payload || {};
+      if (!slug || !/^[a-zA-Z0-9_-]+$/.test(slug)) return { success: false, error: 'Invalid slug' };
+      return new Promise((resolve) => {
+        execFile('clawhub', ['install', slug, '--no-input'], { timeout: 120000 }, (err, stdout, stderr) => {
+          if (err) resolve({ success: false, error: stderr || err.message });
+          else resolve({ success: true, output: stdout });
+        });
+      });
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('marketplace-uninstall', async (_event, payload) => {
+    try {
+      const { slug } = payload || {};
+      if (!slug || !/^[a-zA-Z0-9_-]+$/.test(slug)) return { success: false, error: 'Invalid slug' };
+      return new Promise((resolve) => {
+        execFile('clawhub', ['uninstall', slug, '--yes'], { timeout: 30000 }, (err, stdout, stderr) => {
+          if (err) resolve({ success: false, error: stderr || err.message });
+          else resolve({ success: true, output: stdout });
+        });
+      });
     } catch (e: any) {
       return { success: false, error: e.message };
     }

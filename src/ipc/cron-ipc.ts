@@ -1,7 +1,8 @@
 import * as crypto from 'crypto';
-import * as http from 'http';
+import axios from 'axios';
 import { ipcMain } from 'electron';
 import type { GatewayHandle } from '../types';
+import { buildConnectParams, handleConnectResponse } from '../device-identity';
 
 // ---------------------------------------------------------------------------
 // WebSocket JSON-RPC helper (native ws via dynamic require)
@@ -23,7 +24,9 @@ function wsRpc(
       // dependency concerns. Fall back to the bundled ws if available.
       const WebSocket = require('ws'); // eslint-disable-line @typescript-eslint/no-var-requires
       ws = new WebSocket(`ws://127.0.0.1:${port}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       });
     } catch {
       reject(new Error('WebSocket (ws) module not available'));
@@ -36,42 +39,36 @@ function wsRpc(
     }, 10000);
 
     let connected = false;
+    let challengeNonce: string | null = null;
     const connectId = crypto.randomUUID();
 
-    ws.on('open', () => {
-      // Gateway requires a connect request frame as the first message
-      ws.send(JSON.stringify({
-        type: 'req',
-        id: connectId,
-        method: 'connect',
-        params: {
-          minProtocol: 3,
-          maxProtocol: 3,
-          client: {
-            id: 'gateway-client',
-            version: '1.0.0',
-            platform: process.platform,
-            mode: 'backend',
-          },
-          caps: [],
-          role: 'operator',
-          scopes: ['operator.admin'],
-          auth: { token },
-        },
-      }));
-    });
+    // Gateway sends connect.challenge as the first frame; we wait for it
+    // before sending our signed connect request.
 
     ws.on('message', (data: Buffer | string) => {
       try {
         const msg = JSON.parse(typeof data === 'string' ? data : data.toString('utf8'));
 
-        // Ignore server-pushed events (e.g. connect.challenge)
+        // Handle connect.challenge — extract nonce and send signed connect
+        if (msg.type === 'event' && msg.event === 'connect.challenge') {
+          challengeNonce = msg.payload?.nonce;
+          ws.send(JSON.stringify({
+            type: 'req',
+            id: connectId,
+            method: 'connect',
+            params: buildConnectParams(token, challengeNonce!),
+          }));
+          return;
+        }
+
+        // Ignore other server events during handshake
         if (msg.type === 'event') return;
 
         // Wait for connect acknowledgment before sending RPC
         if (!connected) {
           if (msg.type === 'res' && msg.id === connectId && msg.ok) {
             connected = true;
+            handleConnectResponse(msg.payload);
             ws.send(reqMsg);
             return;
           }
@@ -168,6 +165,56 @@ export function registerCronHandlers(
       const { port, token } = requireGateway();
       const payload = await wsRpc(port, token, 'cron.runs', params);
       return { success: true, ...(payload as object) };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('cron-generate', async (_event, params: { description: string }) => {
+    try {
+      const { port, token } = requireGateway();
+      const systemPrompt = [
+        'You are a cron job configuration assistant.',
+        'Parse the user\'s natural language description into a structured cron job config.',
+        'Return ONLY valid JSON (no markdown fences, no explanation) with this structure:',
+        '{',
+        '  "name": "short-kebab-case-name",',
+        '  "schedule": {',
+        '    "kind": "cron" | "every" | "at",',
+        '    "expr": "cron expression (only when kind=cron, e.g. 0 9 * * *)",',
+        '    "tz": "optional timezone like Asia/Shanghai (only when kind=cron)",',
+        '    "everyMs": 60000 (only when kind=every, milliseconds)',
+        '    "at": "2026-03-15T09:00:00Z (only when kind=at, ISO timestamp)"',
+        '  },',
+        '  "message": "the prompt message to send to the agent when the job runs"',
+        '}',
+      ].join('\n');
+
+      const response = await axios.post(`http://127.0.0.1:${port}/v1/chat/completions`, {
+        model: 'openclaw:main',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: params.description },
+        ],
+        stream: false,
+      }, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 30000,
+      });
+
+      const content = response?.data?.choices?.[0]?.message?.content || '';
+      if (!content) {
+        return { success: false, error: 'AI returned empty response' };
+      }
+      const cleaned = content.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+      if (!cleaned.startsWith('{')) {
+        return { success: false, error: content };
+      }
+      const config = JSON.parse(cleaned);
+      return { success: true, config };
     } catch (err: any) {
       return { success: false, error: err.message };
     }

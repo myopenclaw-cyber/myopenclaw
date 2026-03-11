@@ -47,6 +47,11 @@ import_electron.contextBridge.exposeInMainWorld("electronAPI", {
   logout: () => import_electron.ipcRenderer.invoke("logout"),
   // Channel config
   saveAgentChannelConfig: (payload) => import_electron.ipcRenderer.invoke("save-agent-channel-config", payload),
+  // Channel pairing
+  pairingList: (payload) => import_electron.ipcRenderer.invoke("pairing-list", payload),
+  pairingListAll: () => import_electron.ipcRenderer.invoke("pairing-list-all"),
+  pairingApprove: (payload) => import_electron.ipcRenderer.invoke("pairing-approve", payload),
+  pairingDismiss: (payload) => import_electron.ipcRenderer.invoke("pairing-dismiss", payload),
   // App info
   getAppVersion: () => import_electron.ipcRenderer.invoke("get-app-version"),
   openLogFile: () => import_electron.ipcRenderer.invoke("open-log-file"),
@@ -54,7 +59,14 @@ import_electron.contextBridge.exposeInMainWorld("electronAPI", {
   skillsList: () => import_electron.ipcRenderer.invoke("skills-list"),
   skillsToggle: (payload) => import_electron.ipcRenderer.invoke("skills-toggle", payload),
   skillsInstall: (payload) => import_electron.ipcRenderer.invoke("skills-install", payload),
+  skillsInstallDeps: (payload) => import_electron.ipcRenderer.invoke("skills-install-deps", payload),
   skillsConfigure: (payload) => import_electron.ipcRenderer.invoke("skills-configure", payload),
+  // Marketplace
+  marketplaceList: (payload) => import_electron.ipcRenderer.invoke("marketplace-list", payload),
+  marketplaceSearch: (payload) => import_electron.ipcRenderer.invoke("marketplace-search", payload),
+  marketplaceDetail: (payload) => import_electron.ipcRenderer.invoke("marketplace-detail", payload),
+  marketplaceInstall: (payload) => import_electron.ipcRenderer.invoke("marketplace-install", payload),
+  marketplaceUninstall: (payload) => import_electron.ipcRenderer.invoke("marketplace-uninstall", payload),
   // Cron jobs
   cronList: () => import_electron.ipcRenderer.invoke("cron-list"),
   cronAdd: (params) => import_electron.ipcRenderer.invoke("cron-add", params),
@@ -62,6 +74,7 @@ import_electron.contextBridge.exposeInMainWorld("electronAPI", {
   cronRemove: (params) => import_electron.ipcRenderer.invoke("cron-remove", params),
   cronRun: (params) => import_electron.ipcRenderer.invoke("cron-run", params),
   cronRuns: (params) => import_electron.ipcRenderer.invoke("cron-runs", params),
+  cronGenerate: (params) => import_electron.ipcRenderer.invoke("cron-generate", params),
   // Chat streaming
   onChatStream: (callback) => import_electron.ipcRenderer.on("chat-stream", (_event, ...args) => callback(...args)),
   removeChatStreamListeners: () => import_electron.ipcRenderer.removeAllListeners("chat-stream")

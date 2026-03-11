@@ -16,6 +16,7 @@ import { registerDeviceHandlers } from './ipc/device-ipc';
 import { registerChannelHandlers } from './ipc/channel-ipc';
 import { registerSkillsHandlers } from './ipc/skills-ipc';
 import { registerCronHandlers } from './ipc/cron-ipc';
+import { registerPairingHandlers } from './ipc/pairing-ipc';
 import type { GatewayHandle, LoadingStatusCallback } from './types';
 
 // ---------------------------------------------------------------------------
@@ -87,6 +88,7 @@ export function registerAllIpcHandlers(): void {
   registerChannelHandlers();
   registerSkillsHandlers(getGW);
   registerCronHandlers(getGW);
+  registerPairingHandlers();
 }
 
 // ---------------------------------------------------------------------------

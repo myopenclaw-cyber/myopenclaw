@@ -1,6 +1,6 @@
 import * as fs from 'fs';
-import { AUTH_PROFILES_DIR, AUTH_PROFILES_FILE } from './constants';
-import { loadEmbeddedConfig } from './config-store';
+import { AUTH_PROFILES_DIR, AUTH_PROFILES_FILE, CONFIG_FILE, RELAY_BASE_URL } from './constants';
+import { loadEmbeddedConfig, loadAppState, getUserProviderConfig } from './config-store';
 
 export function syncAuthProfileForProvider(providerId: string, apiKey: string, api: string = ''): void {
   try {
@@ -40,5 +40,52 @@ export function ensureAuthProfilesFromEmbeddedConfig(): void {
     }
   } catch (e: any) {
     console.error('[auth-profile-sync-bootstrap] failed:', e.message);
+  }
+}
+
+/**
+ * Ensure the gateway has at least one AI provider configured.
+ * If no direct API key is set, configure the relay as a fallback provider
+ * using `device:<deviceId>` as the auth token.
+ */
+export function ensureGatewayProviderOrRelay(): void {
+  try {
+    // If user already has a provider key, nothing to do
+    const userProvider = getUserProviderConfig();
+    if (userProvider) return;
+
+    // Check relay + deviceToken (signed) or deviceId (fallback)
+    const state = loadAppState();
+    const rawRelayUrl = state.relay?.baseUrl || RELAY_BASE_URL;
+    const relayUrl = rawRelayUrl.replace(/\/+$/, '') + '/v1';
+    const deviceToken = state.deviceToken || '';
+    const deviceId = state.deviceId || '';
+    if (!relayUrl || (!deviceToken && !deviceId)) return;
+
+    // Prefer signed token; fall back to unsigned for initial registration
+    const relayApiKey = deviceToken || `device:${deviceId}`;
+
+    // Write auth-profiles.json with relay key for anthropic
+    syncAuthProfileForProvider('anthropic', relayApiKey);
+
+    // Ensure openclaw.json has the relay as the anthropic provider base URL
+    const ocCfg: any = fs.existsSync(CONFIG_FILE)
+      ? JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8').replace(/^\uFEFF/, ''))
+      : {};
+    ocCfg.models = ocCfg.models || {};
+    ocCfg.models.mode = ocCfg.models.mode || 'merge';
+    ocCfg.models.providers = ocCfg.models.providers || {};
+    ocCfg.models.providers['anthropic'] = {
+      ...(ocCfg.models.providers['anthropic'] || {}),
+      baseUrl: relayUrl,
+      api: 'openai-completions',
+      models: (ocCfg.models.providers['anthropic']?.models?.length)
+        ? ocCfg.models.providers['anthropic'].models
+        : [{ id: 'claude-sonnet-4-20250514', name: 'claude-sonnet-4-20250514' }],
+    };
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(ocCfg, null, 2), 'utf8');
+    console.log('[auth] Configured relay as anthropic provider fallback:', relayUrl);
+  } catch (e: any) {
+    console.error('[auth] ensureGatewayProviderOrRelay failed:', e.message);
   }
 }

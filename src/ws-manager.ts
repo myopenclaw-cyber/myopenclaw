@@ -1,6 +1,7 @@
 import { WebSocket } from 'ws';
 import { randomUUID } from 'crypto';
 import type { BrowserWindow } from 'electron';
+import { buildConnectParams, handleConnectResponse } from './device-identity';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -57,6 +58,8 @@ export class WsManager {
   private mainWindow: BrowserWindow | null = null;
   private streamCallbacks: Set<StreamCallback> = new Set();
   private activeStreamId: string | null = null;
+  /** Stable session IDs per agent so conversation context persists across messages. */
+  private sessionIds: Map<string, string> = new Map();
 
   setWindow(win: BrowserWindow): void {
     this.mainWindow = win;
@@ -80,33 +83,16 @@ export class WsManager {
 
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(wsUrl, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       });
 
       const connectId = randomUUID();
       let connected = false;
 
       ws.once('open', () => {
-        console.log('[WsManager] WebSocket open, sending connect request...');
-        ws.send(JSON.stringify({
-          type: 'req',
-          id: connectId,
-          method: 'connect',
-          params: {
-            minProtocol: 3,
-            maxProtocol: 3,
-            client: {
-              id: 'gateway-client',
-              version: '1.0.0',
-              platform: process.platform,
-              mode: 'backend',
-            },
-            caps: [],
-            role: 'operator',
-            scopes: ['operator.admin'],
-            auth: { token },
-          },
-        }));
+        console.log('[WsManager] WebSocket open, waiting for connect.challenge...');
       });
 
       ws.once('error', (err) => {
@@ -117,14 +103,30 @@ export class WsManager {
       ws.on('message', (data: Buffer | string) => {
         const raw = String(data);
 
-        // During handshake, intercept connect response
+        // During handshake, handle challenge-response and connect
         if (!connected) {
           try {
             const msg = JSON.parse(raw);
-            // Ignore server events (e.g. connect.challenge)
+
+            // Handle connect.challenge — extract nonce and send signed connect
+            if (msg.type === 'event' && msg.event === 'connect.challenge') {
+              const challengeNonce = msg.payload?.nonce;
+              console.log('[WsManager] Received connect.challenge, sending signed connect...');
+              ws.send(JSON.stringify({
+                type: 'req',
+                id: connectId,
+                method: 'connect',
+                params: buildConnectParams(token, challengeNonce),
+              }));
+              return;
+            }
+
+            // Ignore other server events during handshake
             if (msg.type === 'event') return;
+
             if (msg.type === 'res' && msg.id === connectId && msg.ok) {
               console.log('[WsManager] Connected to gateway WebSocket');
+              handleConnectResponse(msg.payload);
               connected = true;
               this.ws = ws;
               resolve();
@@ -207,9 +209,10 @@ export class WsManager {
       id,
       method: 'chat.send',
       params: {
-        sessionKey: `agent:${agentId}`,
+        sessionKey: `agent:${agentId}:myopenclaw:${this._getSessionId(agentId)}`,
         message,
         deliver: false,
+        idempotencyKey: id,
       },
     };
 
@@ -286,6 +289,15 @@ export class WsManager {
         }
       }
     }
+  }
+
+  private _getSessionId(agentId: string): string {
+    let sid = this.sessionIds.get(agentId);
+    if (!sid) {
+      sid = randomUUID();
+      this.sessionIds.set(agentId, sid);
+    }
+    return sid;
   }
 
   private _forwardChatEvent(payload: ChatPayload): void {

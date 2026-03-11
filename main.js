@@ -23,10 +23,10 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 
 // src/main.ts
-var path8 = __toESM(require("path"));
+var path10 = __toESM(require("path"));
 var os3 = __toESM(require("os"));
-var import_electron13 = require("electron");
-var import_child_process3 = require("child_process");
+var import_electron14 = require("electron");
+var import_child_process4 = require("child_process");
 
 // src/constants.ts
 var path = __toESM(require("path"));
@@ -100,7 +100,8 @@ function getDefaultAppState() {
     ],
     conversations: {},
     relay: { baseUrl: "", authToken: "", accessToken: "", refreshToken: "", userEmail: "" },
-    deviceId: ""
+    deviceId: "",
+    deviceToken: ""
   };
 }
 function getPlanFeatures(plan) {
@@ -210,12 +211,19 @@ function ensureDeviceId() {
 }
 async function registerDevice(deviceId, appVersion) {
   try {
-    await import_axios.default.post(`${RELAY_BASE_URL}/v1/devices`, {
+    const response = await import_axios.default.post(`${RELAY_BASE_URL}/v1/devices`, {
       deviceId,
       platform: process.platform,
       appVersion
     }, { timeout: 2e4 });
     console.log("[device-registration] Device registered successfully");
+    const deviceToken = response.data?.deviceToken;
+    if (deviceToken) {
+      const state = loadAppState();
+      state.deviceToken = deviceToken;
+      saveAppState(state);
+      console.log("[device-registration] Saved signed device token");
+    }
   } catch (err) {
     console.log("[device-registration] Registration failed (non-fatal):", err.message);
   }
@@ -270,9 +278,9 @@ function handleDeepLink(url, getMainWindow2) {
 }
 
 // src/window.ts
-var path7 = __toESM(require("path"));
-var fs8 = __toESM(require("fs"));
-var import_electron12 = require("electron");
+var path9 = __toESM(require("path"));
+var fs12 = __toESM(require("fs"));
+var import_electron13 = require("electron");
 
 // src/runtime.ts
 var path3 = __toESM(require("path"));
@@ -699,6 +707,34 @@ function ensureAuthProfilesFromEmbeddedConfig() {
     console.error("[auth-profile-sync-bootstrap] failed:", e.message);
   }
 }
+function ensureGatewayProviderOrRelay() {
+  try {
+    const userProvider = getUserProviderConfig();
+    if (userProvider) return;
+    const state = loadAppState();
+    const rawRelayUrl = state.relay?.baseUrl || RELAY_BASE_URL;
+    const relayUrl = rawRelayUrl.replace(/\/+$/, "") + "/v1";
+    const deviceToken = state.deviceToken || "";
+    const deviceId = state.deviceId || "";
+    if (!relayUrl || !deviceToken && !deviceId) return;
+    const relayApiKey = deviceToken || `device:${deviceId}`;
+    syncAuthProfileForProvider("anthropic", relayApiKey);
+    const ocCfg = fs3.existsSync(CONFIG_FILE) ? JSON.parse(fs3.readFileSync(CONFIG_FILE, "utf8").replace(/^\uFEFF/, "")) : {};
+    ocCfg.models = ocCfg.models || {};
+    ocCfg.models.mode = ocCfg.models.mode || "merge";
+    ocCfg.models.providers = ocCfg.models.providers || {};
+    ocCfg.models.providers["anthropic"] = {
+      ...ocCfg.models.providers["anthropic"] || {},
+      baseUrl: relayUrl,
+      api: "openai-completions",
+      models: ocCfg.models.providers["anthropic"]?.models?.length ? ocCfg.models.providers["anthropic"].models : [{ id: "claude-sonnet-4-20250514", name: "claude-sonnet-4-20250514" }]
+    };
+    fs3.writeFileSync(CONFIG_FILE, JSON.stringify(ocCfg, null, 2), "utf8");
+    console.log("[auth] Configured relay as anthropic provider fallback:", relayUrl);
+  } catch (e) {
+    console.error("[auth] ensureGatewayProviderOrRelay failed:", e.message);
+  }
+}
 
 // src/network.ts
 var net = __toESM(require("net"));
@@ -720,28 +756,23 @@ function isPortAvailable(port) {
     server.listen(port, "127.0.0.1");
   });
 }
-async function isOpenClawGatewayRunning(port) {
-  try {
-    const resp = await import_axios4.default.get(`http://127.0.0.1:${port}/health`, { timeout: 1200 });
-    const body = typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data || "");
-    return body.includes("OpenClaw Control") || body.includes("openclaw-app");
-  } catch {
-    return false;
-  }
-}
 
 // src/gateway.ts
 async function startGateway(updateLoadingStatus2) {
-  let gatewayPort;
-  if (await isOpenClawGatewayRunning(DEFAULT_PORT)) {
-    gatewayPort = DEFAULT_PORT;
-  } else {
-    gatewayPort = await findAvailablePort(DEFAULT_PORT);
+  try {
+    if (process.platform === "win32") {
+      (0, import_child_process2.execSync)(`wmic process where "CommandLine like '%OPENCLAW_SERVICE_MARKER=myopenclaw%' and name like '%node%'" call terminate`, { timeout: 5e3, stdio: "pipe" });
+    } else {
+      (0, import_child_process2.execSync)("ps -eo pid,command | grep 'OPENCLAW_SERVICE_MARKER=myopenclaw' | grep -v grep | awk '{print $1}' | xargs kill -9 2>/dev/null", { timeout: 5e3, stdio: "pipe", shell: true });
+    }
+  } catch {
   }
+  const gatewayPort = await findAvailablePort(DEFAULT_PORT);
   const gatewayBaseUrl = `http://127.0.0.1:${gatewayPort}`;
   console.log(`[startGateway] Starting gateway on port ${gatewayPort}...`);
   updateLoadingStatus2("Establishing secure connections...", 48);
   ensureAuthProfilesFromEmbeddedConfig();
+  ensureGatewayProviderOrRelay();
   const gatewayToken = ensureRandomGatewayToken();
   try {
     const ocCfg = fs4.existsSync(CONFIG_FILE) ? JSON.parse(fs4.readFileSync(CONFIG_FILE, "utf8").replace(/^\uFEFF/, "")) : {};
@@ -749,6 +780,11 @@ async function startGateway(updateLoadingStatus2) {
     ocCfg.gateway.auth = ocCfg.gateway.auth || {};
     ocCfg.gateway.auth.token = gatewayToken;
     ocCfg.gateway.auth.mode = "token";
+    const embeddedCfg = loadEmbeddedConfig();
+    if (embeddedCfg.channels && Object.keys(embeddedCfg.channels).length > 0) {
+      ocCfg.channels = { ...ocCfg.channels || {}, ...embeddedCfg.channels };
+      console.log("[startGateway] Synced channels to openclaw.json:", Object.keys(embeddedCfg.channels).join(", "));
+    }
     fs4.writeFileSync(CONFIG_FILE, JSON.stringify(ocCfg, null, 2), "utf8");
     console.log("[startGateway] Synced gateway token to openclaw.json");
   } catch (e) {
@@ -927,25 +963,6 @@ async function checkRelayHealth(baseUrl, token) {
   });
   return response.data;
 }
-async function sendViaGateway(gatewayBaseUrl, messages) {
-  if (!gatewayBaseUrl) {
-    throw new Error("Gateway not started");
-  }
-  const token = readGatewayTokenFromConfig();
-  const response = await import_axios6.default.post(`${gatewayBaseUrl}/v1/chat/completions`, {
-    model: "openclaw:main",
-    messages,
-    stream: false
-  }, {
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json",
-      "x-openclaw-agent-id": "main"
-    },
-    timeout: 6e4
-  });
-  return response?.data?.choices?.[0]?.message?.content || "No response from OpenClaw.";
-}
 async function sendViaRelay(relayBaseUrl, relayAuthToken, messages, deviceId) {
   const headers = {
     "Content-Type": "application/json"
@@ -969,6 +986,128 @@ async function sendViaRelay(relayBaseUrl, relayAuthToken, messages, deviceId) {
 // src/ws-manager.ts
 var import_ws = require("ws");
 var import_crypto = require("crypto");
+
+// src/device-identity.ts
+var crypto3 = __toESM(require("crypto"));
+var fs5 = __toESM(require("fs"));
+var path5 = __toESM(require("path"));
+var IDENTITY_DIR = path5.join(OPENCLAW_CONFIG_DIR, "identity");
+var KEYPAIR_FILE = path5.join(IDENTITY_DIR, "device.json");
+var DEVICE_AUTH_FILE = path5.join(IDENTITY_DIR, "device-auth.json");
+function ensureIdentityDir() {
+  fs5.mkdirSync(IDENTITY_DIR, { recursive: true });
+}
+function loadKeypair() {
+  try {
+    if (fs5.existsSync(KEYPAIR_FILE)) {
+      const data = JSON.parse(fs5.readFileSync(KEYPAIR_FILE, "utf8"));
+      if (data.publicKey && data.privateKey) return data;
+    }
+  } catch (e) {
+    console.warn("[device-identity] Failed to load keypair:", e.message);
+  }
+  return null;
+}
+function ensureKeypair() {
+  const existing = loadKeypair();
+  if (existing) return existing;
+  ensureIdentityDir();
+  const { publicKey, privateKey } = crypto3.generateKeyPairSync("ed25519");
+  const stored = {
+    publicKey: publicKey.export({ type: "spki", format: "pem" }),
+    privateKey: privateKey.export({ type: "pkcs8", format: "pem" })
+  };
+  fs5.writeFileSync(KEYPAIR_FILE, JSON.stringify(stored, null, 2), "utf8");
+  fs5.chmodSync(KEYPAIR_FILE, 384);
+  console.log("[device-identity] Generated new Ed25519 keypair");
+  return stored;
+}
+function getRawPublicKey(pem) {
+  const keyObj = crypto3.createPublicKey(pem);
+  const spki = keyObj.export({ type: "spki", format: "der" });
+  return Buffer.from(spki).subarray(12);
+}
+function deriveDeviceId(rawPubKey) {
+  return crypto3.createHash("sha256").update(rawPubKey).digest("hex");
+}
+function loadDeviceAuthToken() {
+  try {
+    if (fs5.existsSync(DEVICE_AUTH_FILE)) {
+      const data = JSON.parse(fs5.readFileSync(DEVICE_AUTH_FILE, "utf8"));
+      return data.deviceToken || null;
+    }
+  } catch {
+  }
+  return null;
+}
+function saveDeviceAuthToken(token) {
+  ensureIdentityDir();
+  fs5.writeFileSync(
+    DEVICE_AUTH_FILE,
+    JSON.stringify({ deviceToken: token }, null, 2),
+    "utf8"
+  );
+  fs5.chmodSync(DEVICE_AUTH_FILE, 384);
+  console.log("[device-identity] Saved device auth token");
+}
+var CLIENT_ID = "cli";
+var CLIENT_MODE = "cli";
+var ROLE = "operator";
+var SCOPES = [
+  "operator.admin",
+  "operator.approvals",
+  "operator.pairing",
+  "operator.read",
+  "operator.write"
+];
+function buildConnectParams(gatewayToken, challengeNonce) {
+  const kp = ensureKeypair();
+  const rawPub = getRawPublicKey(kp.publicKey);
+  const deviceId = deriveDeviceId(rawPub);
+  const signedAt = Date.now();
+  const scopesCsv = [...SCOPES].sort().join(",");
+  const tokenStr = gatewayToken || "";
+  const payload = `v2|${deviceId}|${CLIENT_ID}|${CLIENT_MODE}|${ROLE}|${scopesCsv}|${signedAt}|${tokenStr}|${challengeNonce}`;
+  const privateKey = crypto3.createPrivateKey(kp.privateKey);
+  const signature = crypto3.sign(null, Buffer.from(payload, "utf8"), privateKey);
+  const deviceToken = loadDeviceAuthToken();
+  return {
+    minProtocol: 3,
+    maxProtocol: 3,
+    client: {
+      id: CLIENT_ID,
+      version: "1.0.0",
+      platform: process.platform,
+      mode: CLIENT_MODE
+    },
+    caps: [],
+    role: ROLE,
+    scopes: SCOPES,
+    device: {
+      id: deviceId,
+      publicKey: rawPub.toString("base64url"),
+      signature: signature.toString("base64url"),
+      signedAt,
+      nonce: challengeNonce
+    },
+    auth: {
+      token: gatewayToken,
+      ...deviceToken ? { deviceToken } : {}
+    }
+  };
+}
+function handleConnectResponse(payload) {
+  try {
+    const p = payload;
+    const auth = p?.auth;
+    if (auth?.deviceToken && typeof auth.deviceToken === "string") {
+      saveDeviceAuthToken(auth.deviceToken);
+    }
+  } catch {
+  }
+}
+
+// src/ws-manager.ts
 var WsManager = class {
   constructor() {
     this.ws = null;
@@ -978,6 +1117,8 @@ var WsManager = class {
     this.mainWindow = null;
     this.streamCallbacks = /* @__PURE__ */ new Set();
     this.activeStreamId = null;
+    /** Stable session IDs per agent so conversation context persists across messages. */
+    this.sessionIds = /* @__PURE__ */ new Map();
   }
   setWindow(win) {
     this.mainWindow = win;
@@ -994,31 +1135,14 @@ var WsManager = class {
     const wsUrl = baseUrl.replace(/^http/, "ws") + "/ws";
     return new Promise((resolve2, reject) => {
       const ws = new import_ws.WebSocket(wsUrl, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
       });
       const connectId = (0, import_crypto.randomUUID)();
       let connected = false;
       ws.once("open", () => {
-        console.log("[WsManager] WebSocket open, sending connect request...");
-        ws.send(JSON.stringify({
-          type: "req",
-          id: connectId,
-          method: "connect",
-          params: {
-            minProtocol: 3,
-            maxProtocol: 3,
-            client: {
-              id: "gateway-client",
-              version: "1.0.0",
-              platform: process.platform,
-              mode: "backend"
-            },
-            caps: [],
-            role: "operator",
-            scopes: ["operator.admin"],
-            auth: { token }
-          }
-        }));
+        console.log("[WsManager] WebSocket open, waiting for connect.challenge...");
       });
       ws.once("error", (err) => {
         console.error("[WsManager] WebSocket connection error:", err.message);
@@ -1029,9 +1153,21 @@ var WsManager = class {
         if (!connected) {
           try {
             const msg = JSON.parse(raw);
+            if (msg.type === "event" && msg.event === "connect.challenge") {
+              const challengeNonce = msg.payload?.nonce;
+              console.log("[WsManager] Received connect.challenge, sending signed connect...");
+              ws.send(JSON.stringify({
+                type: "req",
+                id: connectId,
+                method: "connect",
+                params: buildConnectParams(token, challengeNonce)
+              }));
+              return;
+            }
             if (msg.type === "event") return;
             if (msg.type === "res" && msg.id === connectId && msg.ok) {
               console.log("[WsManager] Connected to gateway WebSocket");
+              handleConnectResponse(msg.payload);
               connected = true;
               this.ws = ws;
               resolve2();
@@ -1097,9 +1233,10 @@ var WsManager = class {
       id,
       method: "chat.send",
       params: {
-        sessionKey: `agent:${agentId}`,
+        sessionKey: `agent:${agentId}:myopenclaw:${this._getSessionId(agentId)}`,
         message,
-        deliver: false
+        deliver: false,
+        idempotencyKey: id
       }
     };
     return new Promise((resolve2, reject) => {
@@ -1162,6 +1299,14 @@ var WsManager = class {
       }
     }
   }
+  _getSessionId(agentId) {
+    let sid = this.sessionIds.get(agentId);
+    if (!sid) {
+      sid = (0, import_crypto.randomUUID)();
+      this.sessionIds.set(agentId, sid);
+    }
+    return sid;
+  }
   _forwardChatEvent(payload) {
     if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
     this.mainWindow.webContents.send("chat-stream", payload);
@@ -1190,8 +1335,6 @@ function registerChatHandlers(getGatewayHandle, getMainWindow2) {
       state.conversations = state.conversations || {};
       const conv = state.conversations[agentId] || [];
       const messages = [...conv, { role: "user", content: message }].slice(-20);
-      const embeddedCfg = loadEmbeddedConfig();
-      const hasLocalProvider = !!(embeddedCfg?.models?.providers && Object.keys(embeddedCfg.models.providers).length > 0);
       const relay = state.relay;
       const relayAuthToken = relay.accessToken || relay.authToken;
       const hasRelay = !!(relay.baseUrl && relayAuthToken);
@@ -1199,10 +1342,8 @@ function registerChatHandlers(getGatewayHandle, getMainWindow2) {
       const gw = getGatewayHandle();
       const gatewayBaseUrl = gw?.baseUrl || null;
       const gatewayToken = gw?.token || "";
-      const hasUserProvider = !!getUserProviderConfig();
-      const canUseGateway = !!gatewayBaseUrl && (hasLocalProvider || hasUserProvider);
       let content;
-      if (canUseGateway) {
+      if (gatewayBaseUrl) {
         const win = getMainWindow2();
         if (win) wsManager.setWindow(win);
         content = await wsManager.sendChatMessageStreaming(gatewayBaseUrl, gatewayToken, agentId, message);
@@ -1210,17 +1351,8 @@ function registerChatHandlers(getGatewayHandle, getMainWindow2) {
         content = await sendViaRelay(relay.baseUrl, relayAuthToken, messages, deviceId);
       } else if (deviceId && (relay.baseUrl || RELAY_BASE_URL)) {
         content = await sendViaRelay(relay.baseUrl || RELAY_BASE_URL, "", messages, deviceId);
-      } else if (gatewayBaseUrl) {
-        if (!hasUserProvider) {
-          return {
-            success: false,
-            noApiKeyConfigured: true,
-            error: "OpenClaw depends on an LLM model to provide intelligence. Please configure your API key or a relay service."
-          };
-        }
-        content = await sendViaGateway(gatewayBaseUrl, messages);
       } else {
-        throw new Error("No AI provider configured. Add an API key or configure a relay service.");
+        throw new Error("No AI provider configured. Please login to use Cloud Relay.");
       }
       state.conversations[agentId] = [...messages, { role: "assistant", content }].slice(-20);
       consumeQuota(state, gate.tier);
@@ -1242,8 +1374,8 @@ function registerChatHandlers(getGatewayHandle, getMainWindow2) {
 var import_electron3 = require("electron");
 
 // src/conversation.ts
-var path5 = __toESM(require("path"));
-var fs5 = __toESM(require("fs"));
+var path6 = __toESM(require("path"));
+var fs6 = __toESM(require("fs"));
 function extractTextFromMessageContent(content) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
@@ -1270,22 +1402,22 @@ function normalizeConversationText(role, text) {
 }
 function loadAgentConversationFromOpenClaw(agentId = "main", limit = 80) {
   try {
-    const sessionsDir = path5.join(__dirname, "resources", ".openclaw-myopenclaw", "agents", agentId, "sessions");
-    if (!fs5.existsSync(sessionsDir)) return [];
+    const sessionsDir = path6.join(__dirname, "resources", ".openclaw-myopenclaw", "agents", agentId, "sessions");
+    if (!fs6.existsSync(sessionsDir)) return [];
     let sessionFiles = [];
-    const sessionsIndex = path5.join(sessionsDir, "sessions.json");
-    if (fs5.existsSync(sessionsIndex)) {
-      const idx = JSON.parse(fs5.readFileSync(sessionsIndex, "utf8").replace(/^\uFEFF/, ""));
+    const sessionsIndex = path6.join(sessionsDir, "sessions.json");
+    if (fs6.existsSync(sessionsIndex)) {
+      const idx = JSON.parse(fs6.readFileSync(sessionsIndex, "utf8").replace(/^\uFEFF/, ""));
       const rows = Object.values(idx || {}).filter((v) => v && v.sessionFile);
       rows.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
-      sessionFiles = rows.map((r) => r.sessionFile).filter((f) => f && fs5.existsSync(f));
+      sessionFiles = rows.map((r) => r.sessionFile).filter((f) => f && fs6.existsSync(f));
     }
     if (!sessionFiles.length) {
-      sessionFiles = fs5.readdirSync(sessionsDir).filter((f) => f.endsWith(".jsonl")).map((f) => ({ full: path5.join(sessionsDir, f), mtime: fs5.statSync(path5.join(sessionsDir, f)).mtimeMs })).sort((a, b) => b.mtime - a.mtime).map((x) => x.full);
+      sessionFiles = fs6.readdirSync(sessionsDir).filter((f) => f.endsWith(".jsonl")).map((f) => ({ full: path6.join(sessionsDir, f), mtime: fs6.statSync(path6.join(sessionsDir, f)).mtimeMs })).sort((a, b) => b.mtime - a.mtime).map((x) => x.full);
     }
     const conv = [];
     for (const file of sessionFiles) {
-      const lines = fs5.readFileSync(file, "utf8").split(/\r?\n/).filter(Boolean);
+      const lines = fs6.readFileSync(file, "utf8").split(/\r?\n/).filter(Boolean);
       for (const line of lines) {
         let row;
         try {
@@ -1315,27 +1447,27 @@ function loadAgentConversationFromOpenClaw(agentId = "main", limit = 80) {
 }
 
 // src/logger.ts
-var fs6 = __toESM(require("fs"));
-var path6 = __toESM(require("path"));
-var LOG_FILE = path6.join(MYOPENCLAW_DATA_DIR, "myopenclaw.log");
+var fs7 = __toESM(require("fs"));
+var path7 = __toESM(require("path"));
+var LOG_FILE = path7.join(MYOPENCLAW_DATA_DIR, "myopenclaw.log");
 var MAX_LOG_SIZE = 2 * 1024 * 1024;
 var logStream = null;
 function ensureLogStream() {
   if (logStream) return logStream;
-  fs6.mkdirSync(MYOPENCLAW_DATA_DIR, { recursive: true });
+  fs7.mkdirSync(MYOPENCLAW_DATA_DIR, { recursive: true });
   try {
-    const stats = fs6.statSync(LOG_FILE);
+    const stats = fs7.statSync(LOG_FILE);
     if (stats.size > MAX_LOG_SIZE) {
       const prev = LOG_FILE + ".prev";
       try {
-        fs6.unlinkSync(prev);
+        fs7.unlinkSync(prev);
       } catch {
       }
-      fs6.renameSync(LOG_FILE, prev);
+      fs7.renameSync(LOG_FILE, prev);
     }
   } catch {
   }
-  logStream = fs6.createWriteStream(LOG_FILE, { flags: "a" });
+  logStream = fs7.createWriteStream(LOG_FILE, { flags: "a" });
   return logStream;
 }
 function formatLine(level, msg) {
@@ -1453,7 +1585,7 @@ function registerSubscriptionHandlers() {
 }
 
 // src/ipc/agent-ipc.ts
-var crypto3 = __toESM(require("crypto"));
+var crypto4 = __toESM(require("crypto"));
 var import_electron5 = require("electron");
 function registerAgentHandlers() {
   import_electron5.ipcMain.handle("list-agents", async () => {
@@ -1469,7 +1601,7 @@ function registerAgentHandlers() {
       return { error: "upgrade_required", message: "Upgrade to add more agents" };
     }
     const name = (typeof data === "string" ? data : data?.name) || `Agent ${state.agents.length + 1}`;
-    const newAgent = { id: crypto3.randomUUID(), name, channels: [] };
+    const newAgent = { id: crypto4.randomUUID(), name, channels: [] };
     state.agents.push(newAgent);
     saveAppState(state);
     return newAgent;
@@ -1513,7 +1645,7 @@ function registerAgentHandlers() {
 }
 
 // src/ipc/provider-ipc.ts
-var fs7 = __toESM(require("fs"));
+var fs8 = __toESM(require("fs"));
 var import_electron6 = require("electron");
 function registerProviderHandlers(getGatewayHandle, onStartGateway) {
   import_electron6.ipcMain.handle("save-provider-config", async (_event, payload) => {
@@ -1546,8 +1678,8 @@ function registerProviderHandlers(getGatewayHandle, onStartGateway) {
       const gw = getGatewayHandle();
       if (!gw?.baseUrl) {
         try {
-          if (!fs7.existsSync(CONFIG_FILE)) {
-            fs7.mkdirSync(OPENCLAW_CONFIG_DIR, { recursive: true });
+          if (!fs8.existsSync(CONFIG_FILE)) {
+            fs8.mkdirSync(OPENCLAW_CONFIG_DIR, { recursive: true });
             const gatewayConfig = {
               gateway: { auth: { mode: "token" }, http: { endpoints: { chatCompletions: { enabled: true } } } },
               models: {
@@ -1562,7 +1694,7 @@ function registerProviderHandlers(getGatewayHandle, onStartGateway) {
                 }
               }
             };
-            fs7.writeFileSync(CONFIG_FILE, JSON.stringify(gatewayConfig, null, 2));
+            fs8.writeFileSync(CONFIG_FILE, JSON.stringify(gatewayConfig, null, 2));
             console.log("[save-provider] Created gateway config, starting gateway...");
           }
           await onStartGateway();
@@ -1623,8 +1755,8 @@ function registerProviderHandlers(getGatewayHandle, onStartGateway) {
       cfg.agents.defaults = cfg.agents.defaults || {};
       if (cfg.agents.defaults.model !== void 0) delete cfg.agents.defaults.model;
       saveEmbeddedConfig(cfg);
-      fs7.mkdirSync(AUTH_PROFILES_DIR, { recursive: true });
-      fs7.writeFileSync(AUTH_PROFILES_FILE, JSON.stringify({ version: 1, profiles: {}, lastGood: {}, usageStats: {} }, null, 2), "utf8");
+      fs8.mkdirSync(AUTH_PROFILES_DIR, { recursive: true });
+      fs8.writeFileSync(AUTH_PROFILES_FILE, JSON.stringify({ version: 1, profiles: {}, lastGood: {}, usageStats: {} }, null, 2), "utf8");
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
@@ -1632,8 +1764,8 @@ function registerProviderHandlers(getGatewayHandle, onStartGateway) {
   });
   import_electron6.ipcMain.handle("save-config", async (_event, config) => {
     try {
-      if (!fs7.existsSync(OPENCLAW_CONFIG_DIR)) {
-        fs7.mkdirSync(OPENCLAW_CONFIG_DIR, { recursive: true });
+      if (!fs8.existsSync(OPENCLAW_CONFIG_DIR)) {
+        fs8.mkdirSync(OPENCLAW_CONFIG_DIR, { recursive: true });
       }
       const providerId = config.provider === "openai" ? "openai" : "anthropic";
       const modelId = config.provider === "openai" ? "gpt-4" : "claude-3-5-sonnet-20241022";
@@ -1651,7 +1783,7 @@ function registerProviderHandlers(getGatewayHandle, onStartGateway) {
           }
         }
       };
-      fs7.writeFileSync(CONFIG_FILE, JSON.stringify(openclawConfig, null, 2));
+      fs8.writeFileSync(CONFIG_FILE, JSON.stringify(openclawConfig, null, 2));
       await onStartGateway();
       return { success: true };
     } catch (error) {
@@ -1765,7 +1897,18 @@ function registerDeviceHandlers() {
 }
 
 // src/ipc/channel-ipc.ts
+var fs9 = __toESM(require("fs"));
 var import_electron9 = require("electron");
+function syncChannelsToGatewayConfig(channels) {
+  try {
+    const ocCfg = fs9.existsSync(CONFIG_FILE) ? JSON.parse(fs9.readFileSync(CONFIG_FILE, "utf8").replace(/^\uFEFF/, "")) : {};
+    ocCfg.channels = { ...ocCfg.channels || {}, ...channels };
+    fs9.writeFileSync(CONFIG_FILE, JSON.stringify(ocCfg, null, 2), "utf8");
+    console.log("[channel-ipc] Synced channels to openclaw.json");
+  } catch (e) {
+    console.error("[channel-ipc] Failed to sync channels:", e.message);
+  }
+}
 function registerChannelHandlers() {
   import_electron9.ipcMain.handle("save-agent-channel-config", async (_event, payload) => {
     try {
@@ -1778,6 +1921,8 @@ function registerChannelHandlers() {
       cfg.channels[channelType].accounts = cfg.channels[channelType].accounts || {};
       cfg.channels[channelType].accounts[agentId || "default"] = parsed;
       saveEmbeddedConfig(cfg);
+      syncChannelsToGatewayConfig(cfg.channels);
+      ensureGatewayProviderOrRelay();
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
@@ -1786,10 +1931,12 @@ function registerChannelHandlers() {
 }
 
 // src/ipc/skills-ipc.ts
-var crypto4 = __toESM(require("crypto"));
+var crypto5 = __toESM(require("crypto"));
+var fs10 = __toESM(require("fs"));
+var import_child_process3 = require("child_process");
 var import_electron10 = require("electron");
 async function gatewayRpc(gw, method, params = {}) {
-  const id = crypto4.randomUUID();
+  const id = crypto5.randomUUID();
   const token = readGatewayTokenFromConfig();
   const wsUrl = gw.baseUrl.replace(/^http/, "ws") + "/ws";
   return new Promise((resolve2, reject) => {
@@ -1800,7 +1947,9 @@ async function gatewayRpc(gw, method, params = {}) {
       WS = require("ws");
     }
     const socket = new WS(wsUrl, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {}
+      headers: {
+        ...token ? { Authorization: `Bearer ${token}` } : {}
+      }
     });
     const timer = setTimeout(() => {
       try {
@@ -1810,36 +1959,27 @@ async function gatewayRpc(gw, method, params = {}) {
       reject(new Error(`Gateway RPC timeout for method "${method}"`));
     }, 15e3);
     let connected = false;
-    const connectId = crypto4.randomUUID();
+    let challengeNonce = null;
+    const connectId = crypto5.randomUUID();
     const reqMsg = JSON.stringify({ type: "req", id, method, params });
-    socket.onopen = () => {
-      socket.send(JSON.stringify({
-        type: "req",
-        id: connectId,
-        method: "connect",
-        params: {
-          minProtocol: 3,
-          maxProtocol: 3,
-          client: {
-            id: "gateway-client",
-            version: "1.0.0",
-            platform: process.platform,
-            mode: "backend"
-          },
-          caps: [],
-          role: "operator",
-          scopes: ["operator.admin"],
-          auth: { token }
-        }
-      }));
-    };
     socket.onmessage = (event) => {
       try {
         const msg = JSON.parse(typeof event.data === "string" ? event.data : String(event.data));
+        if (msg.type === "event" && msg.event === "connect.challenge") {
+          challengeNonce = msg.payload?.nonce;
+          socket.send(JSON.stringify({
+            type: "req",
+            id: connectId,
+            method: "connect",
+            params: buildConnectParams(token, challengeNonce)
+          }));
+          return;
+        }
         if (msg.type === "event") return;
         if (!connected) {
           if (msg.type === "res" && msg.id === connectId && msg.ok) {
             connected = true;
+            handleConnectResponse(msg.payload);
             socket.send(reqMsg);
             return;
           }
@@ -1872,6 +2012,18 @@ function registerSkillsHandlers(getGatewayHandle) {
       if (!gw?.baseUrl) return { success: false, error: "Gateway not running", skills: [] };
       const payload = await gatewayRpc(gw, "skills.status", {});
       const skills = Array.isArray(payload?.skills) ? payload.skills : Array.isArray(payload) ? payload : [];
+      let enabledKeys = /* @__PURE__ */ new Set();
+      try {
+        const cfg = JSON.parse(fs10.readFileSync(CONFIG_FILE, "utf8"));
+        const entries = cfg?.skills?.entries || {};
+        for (const [key, val] of Object.entries(entries)) {
+          if (val && val.enabled) enabledKeys.add(key);
+        }
+      } catch {
+      }
+      for (const s of skills) {
+        s.enabled = enabledKeys.has(s.skillKey);
+      }
       return { success: true, skills };
     } catch (e) {
       return { success: false, error: e.message, skills: [] };
@@ -1901,6 +2053,101 @@ function registerSkillsHandlers(getGatewayHandle) {
       return { success: false, error: e.message };
     }
   });
+  import_electron10.ipcMain.handle("skills-install-deps", async (_event, payload) => {
+    const { bins } = payload || {};
+    if (!Array.isArray(bins) || bins.length === 0) {
+      return { success: true, installed: [] };
+    }
+    const safeBins = bins.filter((b) => /^[a-zA-Z0-9_-]+$/.test(b));
+    if (safeBins.length === 0) {
+      return { success: false, error: "No valid package names" };
+    }
+    const results = [];
+    for (const bin of safeBins) {
+      try {
+        await new Promise((resolve2, reject) => {
+          (0, import_child_process3.execFile)("brew", ["install", bin], { timeout: 12e4 }, (err, _stdout, stderr) => {
+            if (err) reject(new Error(stderr || err.message));
+            else resolve2();
+          });
+        });
+        results.push({ bin, ok: true });
+      } catch (e) {
+        results.push({ bin, ok: false, error: e.message });
+      }
+    }
+    const allOk = results.every((r) => r.ok);
+    return { success: allOk, results };
+  });
+  const CLAWHUB_API = "https://clawhub.ai/api/v1";
+  import_electron10.ipcMain.handle("marketplace-list", async (_event, payload) => {
+    try {
+      const { sort, cursor, limit } = payload || {};
+      const params = new URLSearchParams();
+      params.set("limit", String(limit || 25));
+      if (sort) params.set("sort", sort);
+      if (cursor) params.set("cursor", cursor);
+      const resp = await fetch(`${CLAWHUB_API}/skills?${params}`);
+      if (!resp.ok) return { success: false, error: `HTTP ${resp.status}` };
+      const data = await resp.json();
+      return { success: true, items: data.items || [], nextCursor: data.nextCursor || null };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  import_electron10.ipcMain.handle("marketplace-search", async (_event, payload) => {
+    try {
+      const { query, limit } = payload || {};
+      if (!query) return { success: false, error: "query is required" };
+      const params = new URLSearchParams({ q: query, limit: String(limit || 15) });
+      const resp = await fetch(`${CLAWHUB_API}/search?${params}`);
+      if (!resp.ok) return { success: false, error: `HTTP ${resp.status}` };
+      const data = await resp.json();
+      return { success: true, results: data.results || [] };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  import_electron10.ipcMain.handle("marketplace-detail", async (_event, payload) => {
+    try {
+      const { slug } = payload || {};
+      if (!slug) return { success: false, error: "slug is required" };
+      const resp = await fetch(`${CLAWHUB_API}/skills/${encodeURIComponent(slug)}`);
+      if (!resp.ok) return { success: false, error: `HTTP ${resp.status}` };
+      const data = await resp.json();
+      return { success: true, ...data };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  import_electron10.ipcMain.handle("marketplace-install", async (_event, payload) => {
+    try {
+      const { slug } = payload || {};
+      if (!slug || !/^[a-zA-Z0-9_-]+$/.test(slug)) return { success: false, error: "Invalid slug" };
+      return new Promise((resolve2) => {
+        (0, import_child_process3.execFile)("clawhub", ["install", slug, "--no-input"], { timeout: 12e4 }, (err, stdout, stderr) => {
+          if (err) resolve2({ success: false, error: stderr || err.message });
+          else resolve2({ success: true, output: stdout });
+        });
+      });
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  import_electron10.ipcMain.handle("marketplace-uninstall", async (_event, payload) => {
+    try {
+      const { slug } = payload || {};
+      if (!slug || !/^[a-zA-Z0-9_-]+$/.test(slug)) return { success: false, error: "Invalid slug" };
+      return new Promise((resolve2) => {
+        (0, import_child_process3.execFile)("clawhub", ["uninstall", slug, "--yes"], { timeout: 3e4 }, (err, stdout, stderr) => {
+          if (err) resolve2({ success: false, error: stderr || err.message });
+          else resolve2({ success: true, output: stdout });
+        });
+      });
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
   import_electron10.ipcMain.handle("skills-configure", async (_event, payload) => {
     try {
       const gw = getGatewayHandle();
@@ -1919,17 +2166,20 @@ function registerSkillsHandlers(getGatewayHandle) {
 }
 
 // src/ipc/cron-ipc.ts
-var crypto5 = __toESM(require("crypto"));
+var crypto6 = __toESM(require("crypto"));
+var import_axios8 = __toESM(require("axios"));
 var import_electron11 = require("electron");
 function wsRpc(port, token, method, params = {}) {
   return new Promise((resolve2, reject) => {
-    const id = crypto5.randomUUID();
+    const id = crypto6.randomUUID();
     const reqMsg = JSON.stringify({ type: "req", id, method, params });
     let ws;
     try {
       const WebSocket2 = require("ws");
       ws = new WebSocket2(`ws://127.0.0.1:${port}`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
       });
     } catch {
       reject(new Error("WebSocket (ws) module not available"));
@@ -1943,35 +2193,26 @@ function wsRpc(port, token, method, params = {}) {
       reject(new Error(`cron RPC timeout: ${method}`));
     }, 1e4);
     let connected = false;
-    const connectId = crypto5.randomUUID();
-    ws.on("open", () => {
-      ws.send(JSON.stringify({
-        type: "req",
-        id: connectId,
-        method: "connect",
-        params: {
-          minProtocol: 3,
-          maxProtocol: 3,
-          client: {
-            id: "gateway-client",
-            version: "1.0.0",
-            platform: process.platform,
-            mode: "backend"
-          },
-          caps: [],
-          role: "operator",
-          scopes: ["operator.admin"],
-          auth: { token }
-        }
-      }));
-    });
+    let challengeNonce = null;
+    const connectId = crypto6.randomUUID();
     ws.on("message", (data) => {
       try {
         const msg = JSON.parse(typeof data === "string" ? data : data.toString("utf8"));
+        if (msg.type === "event" && msg.event === "connect.challenge") {
+          challengeNonce = msg.payload?.nonce;
+          ws.send(JSON.stringify({
+            type: "req",
+            id: connectId,
+            method: "connect",
+            params: buildConnectParams(token, challengeNonce)
+          }));
+          return;
+        }
         if (msg.type === "event") return;
         if (!connected) {
           if (msg.type === "res" && msg.id === connectId && msg.ok) {
             connected = true;
+            handleConnectResponse(msg.payload);
             ws.send(reqMsg);
             return;
           }
@@ -2057,6 +2298,175 @@ function registerCronHandlers(getGatewayHandle) {
       return { success: false, error: err.message };
     }
   });
+  import_electron11.ipcMain.handle("cron-generate", async (_event, params) => {
+    try {
+      const { port, token } = requireGateway();
+      const systemPrompt = [
+        "You are a cron job configuration assistant.",
+        "Parse the user's natural language description into a structured cron job config.",
+        "Return ONLY valid JSON (no markdown fences, no explanation) with this structure:",
+        "{",
+        '  "name": "short-kebab-case-name",',
+        '  "schedule": {',
+        '    "kind": "cron" | "every" | "at",',
+        '    "expr": "cron expression (only when kind=cron, e.g. 0 9 * * *)",',
+        '    "tz": "optional timezone like Asia/Shanghai (only when kind=cron)",',
+        '    "everyMs": 60000 (only when kind=every, milliseconds)',
+        '    "at": "2026-03-15T09:00:00Z (only when kind=at, ISO timestamp)"',
+        "  },",
+        '  "message": "the prompt message to send to the agent when the job runs"',
+        "}"
+      ].join("\n");
+      const response = await import_axios8.default.post(`http://127.0.0.1:${port}/v1/chat/completions`, {
+        model: "openclaw:main",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: params.description }
+        ],
+        stream: false
+      }, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        timeout: 3e4
+      });
+      const content = response?.data?.choices?.[0]?.message?.content || "";
+      if (!content) {
+        return { success: false, error: "AI returned empty response" };
+      }
+      const cleaned = content.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
+      if (!cleaned.startsWith("{")) {
+        return { success: false, error: content };
+      }
+      const config = JSON.parse(cleaned);
+      return { success: true, config };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+}
+
+// src/ipc/pairing-ipc.ts
+var fs11 = __toESM(require("fs"));
+var path8 = __toESM(require("path"));
+var import_electron12 = require("electron");
+var CREDENTIALS_DIR = path8.join(OPENCLAW_CONFIG_DIR, "credentials");
+function getPairingFilePath(channel) {
+  return path8.join(CREDENTIALS_DIR, `${channel}-pairing.json`);
+}
+function getAllowFromFilePath(channel, accountId) {
+  return path8.join(CREDENTIALS_DIR, `${channel}-${accountId}-allowFrom.json`);
+}
+function readPairingFile(channel) {
+  const filePath = getPairingFilePath(channel);
+  try {
+    if (fs11.existsSync(filePath)) {
+      return JSON.parse(fs11.readFileSync(filePath, "utf8"));
+    }
+  } catch (e) {
+    console.error(`[pairing-ipc] Failed to read ${filePath}:`, e.message);
+  }
+  return { version: 1, requests: [] };
+}
+function writePairingFile(channel, data) {
+  const filePath = getPairingFilePath(channel);
+  fs11.mkdirSync(path8.dirname(filePath), { recursive: true });
+  fs11.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
+}
+function readAllowFromFile(channel, accountId) {
+  const filePath = getAllowFromFilePath(channel, accountId);
+  try {
+    if (fs11.existsSync(filePath)) {
+      return JSON.parse(fs11.readFileSync(filePath, "utf8"));
+    }
+  } catch (e) {
+    console.error(`[pairing-ipc] Failed to read ${filePath}:`, e.message);
+  }
+  return { version: 1, allowFrom: [] };
+}
+function writeAllowFromFile(channel, accountId, data) {
+  const filePath = getAllowFromFilePath(channel, accountId);
+  fs11.mkdirSync(path8.dirname(filePath), { recursive: true });
+  fs11.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
+}
+function registerPairingHandlers() {
+  import_electron12.ipcMain.handle("pairing-list", async (_event, payload) => {
+    try {
+      const { channel } = payload || {};
+      if (!channel) return { success: false, error: "Missing channel" };
+      const data = readPairingFile(channel);
+      return { success: true, requests: data.requests };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  import_electron12.ipcMain.handle("pairing-list-all", async () => {
+    try {
+      if (!fs11.existsSync(CREDENTIALS_DIR)) {
+        return { success: true, channels: {} };
+      }
+      const files = fs11.readdirSync(CREDENTIALS_DIR);
+      const channels = {};
+      for (const file of files) {
+        const match = file.match(/^(.+)-pairing\.json$/);
+        if (!match) continue;
+        const channel = match[1];
+        const data = readPairingFile(channel);
+        if (data.requests.length > 0) {
+          channels[channel] = data.requests;
+        }
+      }
+      return { success: true, channels };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  import_electron12.ipcMain.handle("pairing-approve", async (_event, payload) => {
+    try {
+      const { channel, code } = payload || {};
+      if (!channel || !code) return { success: false, error: "Missing channel or code" };
+      const pairingData = readPairingFile(channel);
+      const reqIndex = pairingData.requests.findIndex(
+        (r) => r.code.toUpperCase() === code.toUpperCase()
+      );
+      if (reqIndex === -1) {
+        return { success: false, error: "No matching pairing request found" };
+      }
+      const req = pairingData.requests[reqIndex];
+      const accountId = req.meta?.accountId || "default";
+      const allowData = readAllowFromFile(channel, accountId);
+      if (!allowData.allowFrom.includes(req.id)) {
+        allowData.allowFrom.push(req.id);
+      }
+      writeAllowFromFile(channel, accountId, allowData);
+      pairingData.requests.splice(reqIndex, 1);
+      writePairingFile(channel, pairingData);
+      console.log(`[pairing-ipc] Approved ${channel} pairing for user ${req.id} (${req.meta?.username || "unknown"})`);
+      return { success: true, userId: req.id, username: req.meta?.username };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  import_electron12.ipcMain.handle("pairing-dismiss", async (_event, payload) => {
+    try {
+      const { channel, code } = payload || {};
+      if (!channel || !code) return { success: false, error: "Missing channel or code" };
+      const pairingData = readPairingFile(channel);
+      const reqIndex = pairingData.requests.findIndex(
+        (r) => r.code.toUpperCase() === code.toUpperCase()
+      );
+      if (reqIndex === -1) {
+        return { success: false, error: "No matching pairing request found" };
+      }
+      pairingData.requests.splice(reqIndex, 1);
+      writePairingFile(channel, pairingData);
+      console.log(`[pairing-ipc] Dismissed ${channel} pairing request`);
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
 }
 
 // src/window.ts
@@ -2099,22 +2509,23 @@ function registerAllIpcHandlers() {
   registerChannelHandlers();
   registerSkillsHandlers(getGW);
   registerCronHandlers(getGW);
+  registerPairingHandlers();
 }
 function createWindow() {
-  import_electron12.Menu.setApplicationMenu(null);
-  mainWindow = new import_electron12.BrowserWindow({
+  import_electron13.Menu.setApplicationMenu(null);
+  mainWindow = new import_electron13.BrowserWindow({
     width: 1200,
     height: 800,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path7.join(__dirname, "preload.js")
+      preload: path9.join(__dirname, "preload.js")
     }
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     const gw = gatewayHandle;
     const target = /^https?:\/\/127\.0\.0\.1:\d+\/?$/i.test(String(url || "")) ? buildDashboardUrl(url, gw?.baseUrl) : url;
-    import_electron12.shell.openExternal(target);
+    import_electron13.shell.openExternal(target);
     return { action: "deny" };
   });
   mainWindow.webContents.on("render-process-gone", (_e, details) => {
@@ -2144,7 +2555,7 @@ function createWindow() {
       if (openclawBin) {
         ensureOpenClawInPath(openclawBin);
       }
-      if (!fs8.existsSync(CONFIG_FILE)) {
+      if (!fs12.existsSync(CONFIG_FILE)) {
         const binForOnboard = openclawBin || findOpenClawCli();
         if (binForOnboard) {
           updateLoadingStatus("Running first-time setup...", 80);
@@ -2156,9 +2567,9 @@ function createWindow() {
             console.log("[startup] No CLI found, running onboard via node entry point...");
             const runtimeDir = findRuntimeDir();
             const nodeBin = findNodeBinary();
-            const entryMjs = path7.join(runtimeDir, "openclaw-deps", "openclaw", "openclaw.mjs");
-            const entryJs = path7.join(runtimeDir, "openclaw-deps", "openclaw", "dist", "entry.js");
-            const entryFile = fs8.existsSync(entryMjs) ? entryMjs : entryJs;
+            const entryMjs = path9.join(runtimeDir, "openclaw-deps", "openclaw", "openclaw.mjs");
+            const entryJs = path9.join(runtimeDir, "openclaw-deps", "openclaw", "dist", "entry.js");
+            const entryFile = fs12.existsSync(entryMjs) ? entryMjs : entryJs;
             await runOpenClawOnboard(nodeBin, [entryFile], runtimeDir);
           } catch (onboardErr) {
             console.error("[startup] Onboard via node failed:", onboardErr.message);
@@ -2167,7 +2578,7 @@ function createWindow() {
           console.log("[startup] No openclaw CLI or runtime available for onboard, skipping");
         }
       }
-      if (fs8.existsSync(CONFIG_FILE)) {
+      if (fs12.existsSync(CONFIG_FILE)) {
         gatewayHandle = await startGateway(updateLoadingStatus);
       } else {
         console.log("[startup] No gateway config after onboard, relay-only mode");
@@ -2189,7 +2600,7 @@ initFileLogger();
 var isVM = (() => {
   try {
     if (process.platform === "darwin") {
-      const model = (0, import_child_process3.execFileSync)("sysctl", ["-n", "machdep.cpu.brand_string"], { encoding: "utf8", timeout: 2e3 }).trim();
+      const model = (0, import_child_process4.execFileSync)("sysctl", ["-n", "machdep.cpu.brand_string"], { encoding: "utf8", timeout: 2e3 }).trim();
       return /virtual|Apple Virtual/i.test(model);
     }
     const cpuModel = os3.cpus()?.[0]?.model || "";
@@ -2199,7 +2610,7 @@ var isVM = (() => {
   }
 })();
 if (isVM) {
-  import_electron13.app.commandLine.appendSwitch("disable-gpu");
+  import_electron14.app.commandLine.appendSwitch("disable-gpu");
   console.log("[gpu] Disabled GPU acceleration (VM detected)");
 }
 process.stdout?.on("error", () => {
@@ -2208,20 +2619,20 @@ process.stderr?.on("error", () => {
 });
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
-    import_electron13.app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path8.resolve(process.argv[1])]);
+    import_electron14.app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path10.resolve(process.argv[1])]);
   }
 } else {
-  import_electron13.app.setAsDefaultProtocolClient(PROTOCOL);
+  import_electron14.app.setAsDefaultProtocolClient(PROTOCOL);
 }
-import_electron13.app.on("open-url", (event, url) => {
+import_electron14.app.on("open-url", (event, url) => {
   event.preventDefault();
   handleDeepLink(url, getMainWindow);
 });
-var gotTheLock = import_electron13.app.requestSingleInstanceLock();
+var gotTheLock = import_electron14.app.requestSingleInstanceLock();
 if (!gotTheLock) {
-  import_electron13.app.quit();
+  import_electron14.app.quit();
 } else {
-  import_electron13.app.on("second-instance", (_event, argv) => {
+  import_electron14.app.on("second-instance", (_event, argv) => {
     const deepLinkUrl = argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
     if (deepLinkUrl) handleDeepLink(deepLinkUrl, getMainWindow);
     const mainWindow2 = getMainWindow();
@@ -2231,10 +2642,10 @@ if (!gotTheLock) {
     }
   });
   registerAllIpcHandlers();
-  import_electron13.app.whenReady().then(() => {
+  import_electron14.app.whenReady().then(() => {
     console.log("[app] ready");
     const deviceId = ensureDeviceId();
-    registerDevice(deviceId, import_electron13.app.getVersion());
+    registerDevice(deviceId, import_electron14.app.getVersion());
     const state = loadAppState();
     if (!state.relay.baseUrl) {
       state.relay.baseUrl = RELAY_BASE_URL;
@@ -2245,11 +2656,11 @@ if (!gotTheLock) {
     const launchUrl = process.argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
     if (launchUrl) handleDeepLink(launchUrl, getMainWindow);
   });
-  import_electron13.app.on("window-all-closed", () => {
+  import_electron14.app.on("window-all-closed", () => {
     killGateway();
-    if (process.platform !== "darwin") import_electron13.app.quit();
+    if (process.platform !== "darwin") import_electron14.app.quit();
   });
-  import_electron13.app.on("activate", () => {
-    if (import_electron13.BrowserWindow.getAllWindows().length === 0) createWindow();
+  import_electron14.app.on("activate", () => {
+    if (import_electron14.BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 }

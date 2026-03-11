@@ -5,10 +5,8 @@ import {
   saveAppState,
   checkPremiumGate,
   consumeQuota,
-  loadEmbeddedConfig,
-  getUserProviderConfig,
 } from '../config-store';
-import { sendViaGateway, sendViaRelay } from '../messaging';
+import { sendViaRelay } from '../messaging';
 import { RELAY_BASE_URL } from '../constants';
 import { wsManager } from '../ws-manager';
 import type { GatewayHandle } from '../types';
@@ -39,8 +37,6 @@ export function registerChatHandlers(
       const conv = state.conversations[agentId] || [];
       const messages = [...conv, { role: 'user' as const, content: message }].slice(-20);
 
-      const embeddedCfg = loadEmbeddedConfig();
-      const hasLocalProvider = !!(embeddedCfg?.models?.providers && Object.keys(embeddedCfg.models.providers).length > 0);
       const relay = state.relay;
       const relayAuthToken = relay.accessToken || relay.authToken;
       const hasRelay = !!(relay.baseUrl && relayAuthToken);
@@ -49,32 +45,19 @@ export function registerChatHandlers(
       const gatewayBaseUrl = gw?.baseUrl || null;
       const gatewayToken = gw?.token || '';
 
-      // Use WebSocket streaming when gateway is available (local provider or user provider key)
-      const hasUserProvider = !!(getUserProviderConfig());
-      const canUseGateway = !!gatewayBaseUrl && (hasLocalProvider || hasUserProvider);
-
       let content: string;
 
-      if (canUseGateway) {
+      // Always prefer gateway when running — it has the full agent pipeline (skills, tools)
+      if (gatewayBaseUrl) {
         const win = getMainWindow();
         if (win) wsManager.setWindow(win);
-        content = await wsManager.sendChatMessageStreaming(gatewayBaseUrl!, gatewayToken, agentId, message);
+        content = await wsManager.sendChatMessageStreaming(gatewayBaseUrl, gatewayToken, agentId, message);
       } else if (hasRelay) {
         content = await sendViaRelay(relay.baseUrl, relayAuthToken, messages, deviceId);
       } else if (deviceId && (relay.baseUrl || RELAY_BASE_URL)) {
-        // Anonymous: send via relay with device ID only (no auth token)
         content = await sendViaRelay(relay.baseUrl || RELAY_BASE_URL, '', messages, deviceId);
-      } else if (gatewayBaseUrl) {
-        if (!hasUserProvider) {
-          return {
-            success: false,
-            noApiKeyConfigured: true,
-            error: 'OpenClaw depends on an LLM model to provide intelligence. Please configure your API key or a relay service.',
-          };
-        }
-        content = await sendViaGateway(gatewayBaseUrl, messages);
       } else {
-        throw new Error('No AI provider configured. Add an API key or configure a relay service.');
+        throw new Error('No AI provider configured. Please login to use Cloud Relay.');
       }
 
       state.conversations[agentId] = [...messages, { role: 'assistant' as const, content }].slice(-20);

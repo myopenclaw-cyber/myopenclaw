@@ -47,6 +47,7 @@ export interface AppState {
   conversations: Record<string, ConversationMessage[]>;
   relay: RelayConfig;
   deviceId: string;
+  deviceToken: string;
 }
 
 // ---------------------------------------------------------------------------

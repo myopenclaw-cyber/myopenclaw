@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { spawn, execFileSync } from 'child_process';
+import { spawn, execSync, execFileSync } from 'child_process';
 import axios from 'axios';
 import {
   OPENCLAW_CONFIG_DIR,
@@ -10,26 +10,32 @@ import {
 import {
   ensureRandomGatewayToken,
   readGatewayTokenFromConfig,
+  loadEmbeddedConfig,
 } from './config-store';
-import { ensureAuthProfilesFromEmbeddedConfig } from './auth';
+import { ensureAuthProfilesFromEmbeddedConfig, ensureGatewayProviderOrRelay } from './auth';
 import { findAvailablePort, isOpenClawGatewayRunning } from './network';
 import { findOpenClawCli, findRuntimeDir, findNodeBinary, buildNodeEnhancedPath } from './runtime';
 import type { GatewayHandle, LoadingStatusCallback } from './types';
 
 export async function startGateway(updateLoadingStatus: LoadingStatusCallback): Promise<GatewayHandle> {
-  let gatewayPort: number;
+  // Kill only our own leftover gateway (identified by OPENCLAW_SERVICE_MARKER=myopenclaw)
+  // Never touch system-installed openclaw gateways
+  try {
+    if (process.platform === 'win32') {
+      execSync('wmic process where "CommandLine like \'%OPENCLAW_SERVICE_MARKER=myopenclaw%\' and name like \'%node%\'" call terminate', { timeout: 5000, stdio: 'pipe' });
+    } else {
+      execSync("ps -eo pid,command | grep 'OPENCLAW_SERVICE_MARKER=myopenclaw' | grep -v grep | awk '{print $1}' | xargs kill -9 2>/dev/null", { timeout: 5000, stdio: 'pipe', shell: true });
+    }
+  } catch { /* no leftover process — fine */ }
 
-  if (await isOpenClawGatewayRunning(DEFAULT_PORT)) {
-    gatewayPort = DEFAULT_PORT;
-  } else {
-    gatewayPort = await findAvailablePort(DEFAULT_PORT);
-  }
+  const gatewayPort = await findAvailablePort(DEFAULT_PORT);
   const gatewayBaseUrl = `http://127.0.0.1:${gatewayPort}`;
 
   console.log(`[startGateway] Starting gateway on port ${gatewayPort}...`);
   updateLoadingStatus('Establishing secure connections...', 48);
 
   ensureAuthProfilesFromEmbeddedConfig();
+  ensureGatewayProviderOrRelay();
 
   const gatewayToken = ensureRandomGatewayToken();
 
@@ -42,6 +48,14 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
     ocCfg.gateway.auth = ocCfg.gateway.auth || {};
     ocCfg.gateway.auth.token = gatewayToken;
     ocCfg.gateway.auth.mode = 'token';
+
+    // Sync channels from embedded-config.json into openclaw.json
+    const embeddedCfg = loadEmbeddedConfig();
+    if (embeddedCfg.channels && Object.keys(embeddedCfg.channels).length > 0) {
+      ocCfg.channels = { ...(ocCfg.channels || {}), ...embeddedCfg.channels };
+      console.log('[startGateway] Synced channels to openclaw.json:', Object.keys(embeddedCfg.channels).join(', '));
+    }
+
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(ocCfg, null, 2), 'utf8');
     console.log('[startGateway] Synced gateway token to openclaw.json');
   } catch (e: any) {

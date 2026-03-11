@@ -17,12 +17,21 @@ export function ensureDeviceId(): string {
 
 export async function registerDevice(deviceId: string, appVersion: string): Promise<void> {
   try {
-    await axios.post(`${RELAY_BASE_URL}/v1/devices`, {
+    const response = await axios.post(`${RELAY_BASE_URL}/v1/devices`, {
       deviceId,
       platform: process.platform,
       appVersion,
     }, { timeout: 20000 });
     console.log('[device-registration] Device registered successfully');
+
+    // Save signed device token for gateway relay auth
+    const deviceToken = response.data?.deviceToken;
+    if (deviceToken) {
+      const state = loadAppState();
+      state.deviceToken = deviceToken;
+      saveAppState(state);
+      console.log('[device-registration] Saved signed device token');
+    }
   } catch (err: any) {
     console.log('[device-registration] Registration failed (non-fatal):', err.message);
   }
