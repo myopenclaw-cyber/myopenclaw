@@ -62,10 +62,29 @@ jobs:
       - name: Build TypeScript
         run: npm run build:ts
 
-      - name: Build Mac Apple Silicon Simple
+      - name: Import signing certificate
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: |
-          export BUILD_VARIANT="simple"
-          export TARGET_LABEL="mac_silicon"
+          echo "$CSC_LINK" | base64 --decode > /tmp/signing.p12
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import /tmp/signing.p12 -k build.keychain -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
+          rm /tmp/signing.p12
+
+      - name: Build Mac Apple Silicon Simple
+        env:
+          BUILD_VARIANT: simple
+          TARGET_LABEL: mac_silicon
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
           npx electron-builder --mac --arm64 --publish never -c build/simple.json --config.compression=maximum --config.directories.output=dist-mac-silicon
 
       - name: Upload Mac Silicon artifact
@@ -92,10 +111,29 @@ jobs:
       - name: Build TypeScript
         run: npm run build:ts
 
-      - name: Build Mac Intel Simple (cross-compile on ARM)
+      - name: Import signing certificate
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: |
-          export BUILD_VARIANT="simple"
-          export TARGET_LABEL="mac_intel"
+          echo "$CSC_LINK" | base64 --decode > /tmp/signing.p12
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import /tmp/signing.p12 -k build.keychain -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
+          rm /tmp/signing.p12
+
+      - name: Build Mac Intel Simple (cross-compile on ARM)
+        env:
+          BUILD_VARIANT: simple
+          TARGET_LABEL: mac_intel
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
           npx electron-builder --mac --x64 --publish never -c build/simple.json --config.compression=maximum --config.directories.output=dist-mac-intel
 
       - name: Upload Mac Intel artifact
