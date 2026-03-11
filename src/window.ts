@@ -14,6 +14,8 @@ import { registerProviderHandlers } from './ipc/provider-ipc';
 import { registerRelayHandlers } from './ipc/relay-ipc';
 import { registerDeviceHandlers } from './ipc/device-ipc';
 import { registerChannelHandlers } from './ipc/channel-ipc';
+import { registerSkillsHandlers } from './ipc/skills-ipc';
+import { registerCronHandlers } from './ipc/cron-ipc';
 import type { GatewayHandle, LoadingStatusCallback } from './types';
 
 // ---------------------------------------------------------------------------
@@ -75,7 +77,7 @@ export function registerAllIpcHandlers(): void {
   };
 
   registerGatewayHandlers(getGW);
-  registerChatHandlers(getGW);
+  registerChatHandlers(getGW, () => mainWindow);
   registerAppStateHandlers();
   registerSubscriptionHandlers();
   registerAgentHandlers();
@@ -83,6 +85,8 @@ export function registerAllIpcHandlers(): void {
   registerRelayHandlers();
   registerDeviceHandlers();
   registerChannelHandlers();
+  registerSkillsHandlers(getGW);
+  registerCronHandlers(getGW);
 }
 
 // ---------------------------------------------------------------------------
