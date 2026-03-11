@@ -58,4 +58,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // App info
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  openLogFile: () => ipcRenderer.invoke('open-log-file'),
 });

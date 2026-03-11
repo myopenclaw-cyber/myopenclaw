@@ -7,6 +7,12 @@ import { loadAppState, saveAppState } from './config-store';
 import { ensureDeviceId, registerDevice } from './device';
 import { handleDeepLink } from './deep-link';
 import { createWindow, getMainWindow, killGateway, registerAllIpcHandlers } from './window';
+import { initFileLogger } from './logger';
+
+// ---------------------------------------------------------------------------
+// File logger — write all console output to ~/.openclaw/myopenclaw.log
+// ---------------------------------------------------------------------------
+initFileLogger();
 
 // ---------------------------------------------------------------------------
 // VM detection — disable GPU to prevent white screen in virtual machines

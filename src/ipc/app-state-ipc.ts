@@ -1,6 +1,7 @@
-import { app, ipcMain } from 'electron';
+import { app, ipcMain, shell } from 'electron';
 import { loadAppState, checkPremiumGate } from '../config-store';
 import { loadAgentConversationFromOpenClaw } from '../conversation';
+import { getLogFilePath } from '../logger';
 
 export function registerAppStateHandlers(): void {
   ipcMain.handle('get-app-state', async () => {
@@ -16,5 +17,11 @@ export function registerAppStateHandlers(): void {
 
   ipcMain.handle('get-app-version', () => {
     return app.getVersion();
+  });
+
+  ipcMain.handle('open-log-file', async () => {
+    const logPath = getLogFilePath();
+    await shell.openPath(logPath);
+    return { success: true, path: logPath };
   });
 }
