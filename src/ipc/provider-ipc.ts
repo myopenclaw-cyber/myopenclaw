@@ -45,8 +45,18 @@ export function registerProviderHandlers(
           if (!fs.existsSync(CONFIG_FILE)) {
             fs.mkdirSync(OPENCLAW_CONFIG_DIR, { recursive: true });
             const gatewayConfig = {
-              models: { default: `${cleanProviderId}/${cleanModelId}` },
-              litellm: { apiKey, baseUrl: baseUrl || undefined },
+              gateway: { auth: { mode: 'token' }, http: { endpoints: { chatCompletions: { enabled: true } } } },
+              models: {
+                mode: 'merge',
+                providers: {
+                  [cleanProviderId]: {
+                    baseUrl: baseUrl || undefined,
+                    apiKey,
+                    api: autoApi,
+                    models: [{ id: cleanModelId, name: cleanModelId }],
+                  },
+                },
+              },
             };
             fs.writeFileSync(CONFIG_FILE, JSON.stringify(gatewayConfig, null, 2));
             console.log('[save-provider] Created gateway config, starting gateway...');
@@ -129,13 +139,20 @@ export function registerProviderHandlers(
       if (!fs.existsSync(OPENCLAW_CONFIG_DIR)) {
         fs.mkdirSync(OPENCLAW_CONFIG_DIR, { recursive: true });
       }
+      const providerId = config.provider === 'openai' ? 'openai' : 'anthropic';
+      const modelId = config.provider === 'openai' ? 'gpt-4' : 'claude-3-5-sonnet-20241022';
       const openclawConfig = {
+        gateway: { auth: { mode: 'token' }, http: { endpoints: { chatCompletions: { enabled: true } } } },
         models: {
-          default: config.provider === 'openai' ? 'openai/gpt-4' : 'anthropic/claude-3-5-sonnet-20241022',
-        },
-        litellm: {
-          apiKey: config.apiKey,
-          baseUrl: config.baseUrl || undefined,
+          mode: 'merge',
+          providers: {
+            [providerId]: {
+              apiKey: config.apiKey,
+              baseUrl: config.baseUrl || undefined,
+              api: 'openai-completions',
+              models: [{ id: modelId, name: modelId }],
+            },
+          },
         },
       };
       fs.writeFileSync(CONFIG_FILE, JSON.stringify(openclawConfig, null, 2));
