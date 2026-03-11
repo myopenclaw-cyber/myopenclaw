@@ -2519,7 +2519,8 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path9.join(__dirname, "preload.js")
+      preload: path9.join(__dirname, "preload.js"),
+      webviewTag: true
     }
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

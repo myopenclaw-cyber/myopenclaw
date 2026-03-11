@@ -244,9 +244,10 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
     <!-- Chat Page -->
     <section id="chat" class="page active">
       <div class="card">
-        <div class="row">
+        <div class="row" style="margin-bottom:6px">
           <label style="width:90px;flex-shrink:0">Agent</label>
           <select id="agentSelect"></select>
+          <button class="alt" onclick="openDashboardChat()" title="Open full chat in Dashboard" style="white-space:nowrap;font-size:12px;padding:8px 12px">Dashboard Chat</button>
         </div>
         <div id="chatBox" class="chat"></div>
         <div class="row">
@@ -815,13 +816,12 @@ function startPairingPolling() {
 function chat(t, c) {
   const d = document.createElement('div');
   d.className = 'm ' + c;
-  d.textContent = t;
+  d.innerHTML = renderMarkdown(t);
   const b = document.getElementById('chatBox');
   b.appendChild(d);
   b.scrollTop = b.scrollHeight;
 }
 
-/** Create a "Thinking..." bubble with animated dots. Returns the bubble element. */
 function createThinkingBubble() {
   const b = document.getElementById('chatBox');
   const d = document.createElement('div');
@@ -835,7 +835,6 @@ function createThinkingBubble() {
   return d;
 }
 
-/** Update the streaming bubble with a partial text chunk. */
 function updateStreamingBubble(bubble, textSoFar, thinkingText, toolSteps) {
   let html = '';
   if (thinkingText) {
@@ -862,20 +861,18 @@ function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/** Minimal markdown → HTML for chat bubbles (images, bold, code, links, newlines). */
 function renderMarkdown(str) {
   let s = escapeHtml(str);
-  // images: ![alt](url)
   s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%;border-radius:8px;margin:4px 0">');
-  // links: [text](url)
   s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:#6b46ff">$1</a>');
-  // inline code
   s = s.replace(/`([^`]+)`/g, '<code style="background:rgba(107,70,255,0.08);padding:1px 4px;border-radius:3px;font-size:12px">$1</code>');
-  // bold
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  // newlines
   s = s.replace(/\n/g, '<br>');
   return s;
+}
+
+async function openDashboardChat() {
+  await window.electronAPI.openGatewayDashboard();
 }
 
 // ---------------------------------------------------------------------------
@@ -1121,21 +1118,18 @@ async function sendMsg() {
   const text = document.getElementById('msg').value.trim();
   if (!text) return;
 
-  // Prevent double-send while streaming
   const sendBtn = document.querySelector('#chat button[onclick="sendMsg()"]');
   if (sendBtn) sendBtn.disabled = true;
 
   chat(text, 'u');
   document.getElementById('msg').value = '';
 
-  // Set up streaming state
   let streamingBubble = null;
   let streamingText = '';
   let thinkingText = '';
   const toolSteps = [];
   let streamReceived = false;
 
-  // Listen for stream events from main process
   if (window.electronAPI.onChatStream) {
     window.electronAPI.removeChatStreamListeners();
     window.electronAPI.onChatStream(function(payload) {
@@ -1143,7 +1137,6 @@ async function sendMsg() {
         streamingBubble = createThinkingBubble();
       }
       streamReceived = true;
-
       if (payload.state === 'delta' && payload.message && payload.message.content) {
         for (const item of payload.message.content) {
           if (item.type === 'text' && item.text) {
@@ -1157,14 +1150,11 @@ async function sendMsg() {
         updateStreamingBubble(streamingBubble, streamingText, thinkingText, toolSteps);
       }
     });
-
-    // Show thinking bubble immediately for perceived responsiveness
     streamingBubble = createThinkingBubble();
   }
 
   const r = await window.electronAPI.sendMessage({ message: text, agentId: currentAgent });
 
-  // Clean up stream listener
   if (window.electronAPI.removeChatStreamListeners) {
     window.electronAPI.removeChatStreamListeners();
   }
@@ -1173,20 +1163,16 @@ async function sendMsg() {
 
   if (r.success) {
     if (streamReceived && streamingBubble) {
-      // Keep the streaming bubble as the final message — it already has thinking + tool steps + text
       const finalText = streamingText || r.response || 'Received';
       updateStreamingBubble(streamingBubble, finalText, thinkingText, toolSteps);
-      streamingBubble.id = ''; // Remove the streaming ID so it's just a normal bubble
+      streamingBubble.id = '';
     } else {
-      // No streaming happened — remove the placeholder bubble and show plain text
       if (streamingBubble) { streamingBubble.remove(); streamingBubble = null; }
       const finalText = r.response || 'Received';
       chat(finalText, 'a');
     }
     await refreshState();
-    renderConversation();
   } else {
-    // Error paths — remove streaming bubble
     if (streamingBubble) { streamingBubble.remove(); streamingBubble = null; }
     if (r.loginRequired) {
       openLoginRequired(r.error);
