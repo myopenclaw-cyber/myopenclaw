@@ -863,10 +863,19 @@ function escapeHtml(str) {
 
 function renderMarkdown(str) {
   let s = escapeHtml(str);
+  // Local file images: [Image: source: /path/to/file.png]
+  s = s.replace(/\[Image:\s*source:\s*(\/[^\]]+)\]/g, '<br><img src="file://$1" alt="image" style="max-width:100%;border-radius:8px;margin:4px 0"><br>');
+  // Bare local file paths ending in image extensions
+  s = s.replace(/(\/[\w.\/\-]+\.(?:png|jpg|jpeg|gif|webp|svg))/gi, '<br><img src="file://$1" alt="image" style="max-width:100%;border-radius:8px;margin:4px 0"><br>');
+  // Markdown images: ![alt](url)
   s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%;border-radius:8px;margin:4px 0">');
+  // Links: [text](url)
   s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:#6b46ff">$1</a>');
+  // Inline code
   s = s.replace(/`([^`]+)`/g, '<code style="background:rgba(107,70,255,0.08);padding:1px 4px;border-radius:3px;font-size:12px">$1</code>');
+  // Bold
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // Newlines
   s = s.replace(/\n/g, '<br>');
   return s;
 }
@@ -1138,15 +1147,21 @@ async function sendMsg() {
       }
       streamReceived = true;
       if (payload.state === 'delta' && payload.message && payload.message.content) {
+        // Gateway sends full accumulated text per delta, not incremental chunks
+        var fullText = '', fullThinking = '';
         for (const item of payload.message.content) {
           if (item.type === 'text' && item.text) {
-            streamingText += item.text;
+            fullText += item.text;
           } else if (item.type === 'thinking' && item.thinking) {
-            thinkingText += item.thinking;
+            fullThinking += item.thinking;
           } else if (item.type === 'tool_use' && item.name) {
-            toolSteps.push('Running: ' + item.name);
+            if (toolSteps.indexOf('Running: ' + item.name) === -1) {
+              toolSteps.push('Running: ' + item.name);
+            }
           }
         }
+        if (fullText) streamingText = fullText;
+        if (fullThinking) thinkingText = fullThinking;
         updateStreamingBubble(streamingBubble, streamingText, thinkingText, toolSteps);
       }
     });

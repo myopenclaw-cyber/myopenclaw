@@ -1218,12 +1218,16 @@ var WsManager = class {
     this.activeStreamId = id;
     let assembledText = "";
     const onPayload = (payload) => {
-      if (payload.state === "delta") {
+      if (payload.state === "delta" || payload.state === "final") {
         const items = payload.message?.content || [];
+        let fullText = "";
         for (const item of items) {
           if (item.type === "text" && item.text) {
-            assembledText += item.text;
+            fullText += item.text;
           }
+        }
+        if (fullText) {
+          assembledText = fullText;
         }
       }
     };

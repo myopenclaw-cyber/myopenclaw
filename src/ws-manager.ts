@@ -193,12 +193,18 @@ export class WsManager {
     let assembledText = '';
 
     const onPayload: StreamCallback = (payload) => {
-      if (payload.state === 'delta') {
+      if (payload.state === 'delta' || payload.state === 'final') {
+        // Gateway sends full accumulated text in each delta, not incremental chunks.
+        // Replace assembledText with the latest full text.
         const items = payload.message?.content || [];
+        let fullText = '';
         for (const item of items) {
           if (item.type === 'text' && item.text) {
-            assembledText += item.text;
+            fullText += item.text;
           }
+        }
+        if (fullText) {
+          assembledText = fullText;
         }
       }
     };
