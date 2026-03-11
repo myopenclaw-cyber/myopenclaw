@@ -57,9 +57,13 @@ async function downloadWithFallback(urls: string[], outputPath: string, onProgre
 }
 
 export function findRuntimeDir(): string | null {
-  const embeddedDir = path.join(__dirname, 'resources', 'openclaw-deps', 'openclaw', 'dist');
-  if (fs.existsSync(path.join(embeddedDir, 'entry.js')) || fs.existsSync(path.join(embeddedDir, 'entry.mjs'))) {
-    return path.join(__dirname, 'resources');
+  // Skip asar-packed resources — files inside .asar cannot be spawned
+  const embeddedBase = path.join(__dirname, 'resources');
+  if (!embeddedBase.includes('.asar')) {
+    const embeddedDir = path.join(embeddedBase, 'openclaw-deps', 'openclaw', 'dist');
+    if (fs.existsSync(path.join(embeddedDir, 'entry.js')) || fs.existsSync(path.join(embeddedDir, 'entry.mjs'))) {
+      return embeddedBase;
+    }
   }
   const dlDir = path.join(DOWNLOADED_RUNTIME_DIR, 'openclaw-deps', 'openclaw', 'dist');
   if (fs.existsSync(path.join(dlDir, 'entry.js')) || fs.existsSync(path.join(dlDir, 'entry.mjs'))) {
@@ -204,7 +208,11 @@ export function findOpenClawCli(): string | null {
     : ['openclaw'];
 
   for (const bin of binNames) {
-    candidates.push(path.join(__dirname, 'resources', 'openclaw-deps', '.bin', bin));
+    // Skip asar-packed paths — files inside .asar cannot be executed
+    const embeddedBin = path.join(__dirname, 'resources', 'openclaw-deps', '.bin', bin);
+    if (!embeddedBin.includes('.asar')) {
+      candidates.push(embeddedBin);
+    }
     candidates.push(path.join(DOWNLOADED_RUNTIME_DIR, 'openclaw-deps', '.bin', bin));
   }
 

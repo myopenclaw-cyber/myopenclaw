@@ -48,7 +48,7 @@ export function registerRelayHandlers(): void {
       const state = loadAppState();
       const deviceId = state.deviceId || '';
       const homepageUrl = 'https://myopenclaws.app';
-      const loginUrl = `${homepageUrl}/login.html?deviceId=${deviceId}&redirect=myopenclaw`;
+      const loginUrl = `${homepageUrl}/login?deviceId=${deviceId}&redirect=myopenclaw`;
       await shell.openExternal(loginUrl);
       return { success: true };
     } catch (err: any) {

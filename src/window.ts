@@ -14,6 +14,8 @@ import { registerProviderHandlers } from './ipc/provider-ipc';
 import { registerRelayHandlers } from './ipc/relay-ipc';
 import { registerDeviceHandlers } from './ipc/device-ipc';
 import { registerChannelHandlers } from './ipc/channel-ipc';
+import { registerSkillsHandlers } from './ipc/skills-ipc';
+import { registerCronHandlers } from './ipc/cron-ipc';
 import type { GatewayHandle, LoadingStatusCallback } from './types';
 
 // ---------------------------------------------------------------------------
@@ -75,7 +77,7 @@ export function registerAllIpcHandlers(): void {
   };
 
   registerGatewayHandlers(getGW);
-  registerChatHandlers(getGW);
+  registerChatHandlers(getGW, () => mainWindow);
   registerAppStateHandlers();
   registerSubscriptionHandlers();
   registerAgentHandlers();
@@ -83,6 +85,8 @@ export function registerAllIpcHandlers(): void {
   registerRelayHandlers();
   registerDeviceHandlers();
   registerChannelHandlers();
+  registerSkillsHandlers(getGW);
+  registerCronHandlers(getGW);
 }
 
 // ---------------------------------------------------------------------------
@@ -154,14 +158,18 @@ export function createWindow(): void {
           await runOpenClawOnboard(binForOnboard);
         } else if (findRuntimeDir()) {
           // No CLI but runtime exists — run onboard via node entry point
-          updateLoadingStatus('Running first-time setup...', 80);
-          console.log('[startup] No CLI found, running onboard via node entry point...');
-          const runtimeDir = findRuntimeDir()!;
-          const nodeBin = findNodeBinary();
-          const entryMjs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'openclaw.mjs');
-          const entryJs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'dist', 'entry.js');
-          const entryFile = fs.existsSync(entryMjs) ? entryMjs : entryJs;
-          await runOpenClawOnboard(nodeBin, [entryFile], runtimeDir);
+          try {
+            updateLoadingStatus('Running first-time setup...', 80);
+            console.log('[startup] No CLI found, running onboard via node entry point...');
+            const runtimeDir = findRuntimeDir()!;
+            const nodeBin = findNodeBinary();
+            const entryMjs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'openclaw.mjs');
+            const entryJs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'dist', 'entry.js');
+            const entryFile = fs.existsSync(entryMjs) ? entryMjs : entryJs;
+            await runOpenClawOnboard(nodeBin, [entryFile], runtimeDir);
+          } catch (onboardErr: any) {
+            console.error('[startup] Onboard via node failed:', onboardErr.message);
+          }
         } else {
           console.log('[startup] No openclaw CLI or runtime available for onboard, skipping');
         }

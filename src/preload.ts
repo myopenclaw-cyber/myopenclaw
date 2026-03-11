@@ -59,4 +59,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // App info
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   openLogFile: () => ipcRenderer.invoke('open-log-file'),
+
+  // Skills
+  skillsList: () => ipcRenderer.invoke('skills-list'),
+  skillsToggle: (payload: Record<string, unknown>) => ipcRenderer.invoke('skills-toggle', payload),
+  skillsInstall: (payload: Record<string, unknown>) => ipcRenderer.invoke('skills-install', payload),
+  skillsConfigure: (payload: Record<string, unknown>) => ipcRenderer.invoke('skills-configure', payload),
+
+  // Cron jobs
+  cronList: () => ipcRenderer.invoke('cron-list'),
+  cronAdd: (params: Record<string, unknown>) => ipcRenderer.invoke('cron-add', params),
+  cronUpdate: (params: Record<string, unknown>) => ipcRenderer.invoke('cron-update', params),
+  cronRemove: (params: Record<string, unknown>) => ipcRenderer.invoke('cron-remove', params),
+  cronRun: (params: Record<string, unknown>) => ipcRenderer.invoke('cron-run', params),
+  cronRuns: (params: Record<string, unknown>) => ipcRenderer.invoke('cron-runs', params),
+
+  // Chat streaming
+  onChatStream: (callback: (...args: unknown[]) => void) => ipcRenderer.on('chat-stream', (_event, ...args) => callback(...args)),
+  removeChatStreamListeners: () => ipcRenderer.removeAllListeners('chat-stream'),
 });

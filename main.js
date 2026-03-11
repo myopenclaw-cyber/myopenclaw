@@ -25,20 +25,21 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 // src/main.ts
 var path8 = __toESM(require("path"));
 var os3 = __toESM(require("os"));
-var import_electron11 = require("electron");
+var import_electron13 = require("electron");
 var import_child_process3 = require("child_process");
 
 // src/constants.ts
 var path = __toESM(require("path"));
 var os = __toESM(require("os"));
-var OPENCLAW_CONFIG_DIR = path.join(os.homedir(), ".openclaw");
+var MYOPENCLAW_DATA_DIR = path.join(os.homedir(), ".myopenclaw");
+var OPENCLAW_CONFIG_DIR = path.join(MYOPENCLAW_DATA_DIR, "openclaw");
 var CONFIG_FILE = path.join(OPENCLAW_CONFIG_DIR, "openclaw.json");
 var DEFAULT_PORT = 18800;
-var EMBEDDED_CONFIG_FILE = path.join(OPENCLAW_CONFIG_DIR, "embedded-config.json");
-var APP_STATE_FILE = path.join(OPENCLAW_CONFIG_DIR, "app-state.json");
+var EMBEDDED_CONFIG_FILE = path.join(MYOPENCLAW_DATA_DIR, "embedded-config.json");
+var APP_STATE_FILE = path.join(MYOPENCLAW_DATA_DIR, "app-state.json");
 var AUTH_PROFILES_DIR = path.join(OPENCLAW_CONFIG_DIR, "agents", "main", "agent");
 var AUTH_PROFILES_FILE = path.join(AUTH_PROFILES_DIR, "auth-profiles.json");
-var DOWNLOADED_RUNTIME_DIR = path.join(OPENCLAW_CONFIG_DIR, "runtime");
+var DOWNLOADED_RUNTIME_DIR = path.join(MYOPENCLAW_DATA_DIR, "runtime");
 var RELAY_BASE_URL = "https://myopenclaw-relay-service-production.up.railway.app";
 var PROTOCOL = "myopenclaw";
 var MIN_NODE_MAJOR_VERSION = 22;
@@ -271,7 +272,7 @@ function handleDeepLink(url, getMainWindow2) {
 // src/window.ts
 var path7 = __toESM(require("path"));
 var fs8 = __toESM(require("fs"));
-var import_electron10 = require("electron");
+var import_electron12 = require("electron");
 
 // src/runtime.ts
 var path3 = __toESM(require("path"));
@@ -301,10 +302,35 @@ async function downloadFile(url, outputPath, onProgress) {
     writer.on("error", reject);
   });
 }
+async function downloadWithFallback(urls, outputPath, onProgress) {
+  for (let i = 0; i < urls.length; i++) {
+    const url = urls[i];
+    const label = i === 0 ? "CDN" : `mirror ${i}`;
+    try {
+      console.log(`[runtime] Trying ${label}: ${url}`);
+      await downloadFile(url, outputPath, onProgress);
+      console.log(`[runtime] Download succeeded from ${label}`);
+      return;
+    } catch (err) {
+      console.error(`[runtime] Download failed from ${label}: ${err.message}`);
+      try {
+        fs2.unlinkSync(outputPath);
+      } catch {
+      }
+      if (i === urls.length - 1) {
+        throw new Error(`All download sources failed. Last error: ${err.message}`);
+      }
+      console.log(`[runtime] Falling back to next source...`);
+    }
+  }
+}
 function findRuntimeDir() {
-  const embeddedDir = path3.join(__dirname, "resources", "openclaw-deps", "openclaw", "dist");
-  if (fs2.existsSync(path3.join(embeddedDir, "entry.js")) || fs2.existsSync(path3.join(embeddedDir, "entry.mjs"))) {
-    return path3.join(__dirname, "resources");
+  const embeddedBase = path3.join(__dirname, "resources");
+  if (!embeddedBase.includes(".asar")) {
+    const embeddedDir = path3.join(embeddedBase, "openclaw-deps", "openclaw", "dist");
+    if (fs2.existsSync(path3.join(embeddedDir, "entry.js")) || fs2.existsSync(path3.join(embeddedDir, "entry.mjs"))) {
+      return embeddedBase;
+    }
   }
   const dlDir = path3.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", "openclaw", "dist");
   if (fs2.existsSync(path3.join(dlDir, "entry.js")) || fs2.existsSync(path3.join(dlDir, "entry.mjs"))) {
@@ -324,14 +350,14 @@ async function ensureEmbeddedRuntime(updateLoadingStatus2) {
   }
   const manifest = JSON.parse(fs2.readFileSync(manifestPath, "utf8"));
   const target = getRuntimeTargetLabel();
-  const url = manifest?.[target]?.url;
-  if (!url) {
+  const urls = manifest?.[target]?.urls || (manifest?.[target]?.url ? [manifest[target].url] : []);
+  if (!urls.length) {
     throw new Error(`No runtime download URL configured for platform "${target}". Please download the runtime manually or use the full installer.`);
   }
   const zipPath = path3.join(os2.tmpdir(), `myopenclaw-runtime-${target}.zip`);
   console.log(`[runtime] Downloading runtime for ${target}...`);
   updateLoadingStatus2("Downloading openclaw ...", 52);
-  await downloadFile(url, zipPath, (p) => {
+  await downloadWithFallback(urls, zipPath, (p) => {
     updateLoadingStatus2(`Downloading openclaw ... ${p}%`, 52 + Math.round(p * 0.28));
   });
   console.log("[runtime] Extracting runtime...");
@@ -431,7 +457,10 @@ function findOpenClawCli() {
   }
   const binNames = process.platform === "win32" ? ["openclaw.cmd", "openclaw.exe", "openclaw"] : ["openclaw"];
   for (const bin of binNames) {
-    candidates.push(path3.join(__dirname, "resources", "openclaw-deps", ".bin", bin));
+    const embeddedBin = path3.join(__dirname, "resources", "openclaw-deps", ".bin", bin);
+    if (!embeddedBin.includes(".asar")) {
+      candidates.push(embeddedBin);
+    }
     candidates.push(path3.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", ".bin", bin));
   }
   for (const p of candidates) {
@@ -704,10 +733,10 @@ async function isOpenClawGatewayRunning(port) {
 // src/gateway.ts
 async function startGateway(updateLoadingStatus2) {
   let gatewayPort;
-  if (await isOpenClawGatewayRunning(18800)) {
-    gatewayPort = 18800;
+  if (await isOpenClawGatewayRunning(DEFAULT_PORT)) {
+    gatewayPort = DEFAULT_PORT;
   } else {
-    gatewayPort = await findAvailablePort(18800);
+    gatewayPort = await findAvailablePort(DEFAULT_PORT);
   }
   const gatewayBaseUrl = `http://127.0.0.1:${gatewayPort}`;
   console.log(`[startGateway] Starting gateway on port ${gatewayPort}...`);
@@ -725,6 +754,7 @@ async function startGateway(updateLoadingStatus2) {
   } catch (e) {
     console.error("[startGateway] Failed to sync token to openclaw.json:", e.message);
   }
+  tryDoctorFix();
   updateLoadingStatus2("Launching openclaw gateway...", 90);
   const gatewayEnv = {
     ...process.env,
@@ -802,6 +832,47 @@ async function waitForGateway(gatewayBaseUrl, maxRetries = 30) {
   }
   console.error("[waitForGateway] Max retries reached, gateway failed to start");
   throw new Error("Gateway failed to start after 30 attempts. Please check your configuration and try again.");
+}
+function tryDoctorFix() {
+  try {
+    const cli = findOpenClawCli();
+    if (!cli) return;
+    const env = { ...process.env, PATH: buildNodeEnhancedPath(), OPENCLAW_CONFIG_PATH: CONFIG_FILE };
+    const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(cli);
+    const output = (0, import_child_process2.execFileSync)(cli, ["doctor", "--fix"], {
+      encoding: "utf8",
+      timeout: 15e3,
+      stdio: "pipe",
+      env,
+      shell: useShell,
+      ...process.platform === "win32" ? { windowsHide: true } : {}
+    });
+    if (output.includes("fix") || output.includes("removed") || output.includes("Unrecognized")) {
+      console.log("[doctor] Auto-fixed config:", output.trim());
+    }
+  } catch (err) {
+    try {
+      const runtimeDir = findRuntimeDir();
+      if (!runtimeDir) return;
+      const entryMjs = path4.join(runtimeDir, "openclaw-deps", "openclaw", "openclaw.mjs");
+      const entryJs = path4.join(runtimeDir, "openclaw-deps", "openclaw", "dist", "entry.js");
+      const entryFile = fs4.existsSync(entryMjs) ? entryMjs : entryJs;
+      const nodeBin = findNodeBinary();
+      const env = { ...process.env, PATH: buildNodeEnhancedPath(), OPENCLAW_CONFIG_PATH: CONFIG_FILE };
+      const output = (0, import_child_process2.execFileSync)(nodeBin, [entryFile, "doctor", "--fix"], {
+        encoding: "utf8",
+        timeout: 15e3,
+        stdio: "pipe",
+        env,
+        cwd: runtimeDir
+      });
+      if (output.includes("fix") || output.includes("removed") || output.includes("Unrecognized")) {
+        console.log("[doctor] Auto-fixed config via node fallback:", output.trim());
+      }
+    } catch {
+      console.log("[doctor] Could not run doctor --fix:", err.message);
+    }
+  }
 }
 
 // src/ipc/gateway-ipc.ts
@@ -895,8 +966,211 @@ async function sendViaRelay(relayBaseUrl, relayAuthToken, messages, deviceId) {
   return response?.data?.choices?.[0]?.message?.content || "No response from relay.";
 }
 
+// src/ws-manager.ts
+var import_ws = require("ws");
+var import_crypto = require("crypto");
+var WsManager = class {
+  constructor() {
+    this.ws = null;
+    this.baseUrl = "";
+    this.token = "";
+    this.pending = /* @__PURE__ */ new Map();
+    this.mainWindow = null;
+    this.streamCallbacks = /* @__PURE__ */ new Set();
+    this.activeStreamId = null;
+  }
+  setWindow(win) {
+    this.mainWindow = win;
+  }
+  connect(baseUrl, token) {
+    if (this.baseUrl && this.baseUrl !== baseUrl) {
+      this.disconnect();
+    }
+    this.baseUrl = baseUrl;
+    this.token = token;
+    if (this.ws && this.ws.readyState === import_ws.WebSocket.OPEN) {
+      return Promise.resolve();
+    }
+    const wsUrl = baseUrl.replace(/^http/, "ws") + "/ws";
+    return new Promise((resolve2, reject) => {
+      const ws = new import_ws.WebSocket(wsUrl, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const connectId = (0, import_crypto.randomUUID)();
+      let connected = false;
+      ws.once("open", () => {
+        console.log("[WsManager] WebSocket open, sending connect request...");
+        ws.send(JSON.stringify({
+          type: "req",
+          id: connectId,
+          method: "connect",
+          params: {
+            minProtocol: 3,
+            maxProtocol: 3,
+            client: {
+              id: "gateway-client",
+              version: "1.0.0",
+              platform: process.platform,
+              mode: "backend"
+            },
+            caps: [],
+            role: "operator",
+            scopes: ["operator.admin"],
+            auth: { token }
+          }
+        }));
+      });
+      ws.once("error", (err) => {
+        console.error("[WsManager] WebSocket connection error:", err.message);
+        reject(err);
+      });
+      ws.on("message", (data) => {
+        const raw = String(data);
+        if (!connected) {
+          try {
+            const msg = JSON.parse(raw);
+            if (msg.type === "event") return;
+            if (msg.type === "res" && msg.id === connectId && msg.ok) {
+              console.log("[WsManager] Connected to gateway WebSocket");
+              connected = true;
+              this.ws = ws;
+              resolve2();
+              return;
+            }
+            if (msg.type === "res" && msg.id === connectId && !msg.ok) {
+              const errMsg = typeof msg.error === "object" ? msg.error?.message : String(msg.error);
+              reject(new Error(`Connect failed: ${errMsg}`));
+              ws.close();
+              return;
+            }
+          } catch {
+          }
+          return;
+        }
+        this._handleMessage(raw);
+      });
+      ws.on("close", () => {
+        console.log("[WsManager] WebSocket closed");
+        this.ws = null;
+        this.pending.forEach((cb) => cb(new Error("WebSocket closed")));
+        this.pending.clear();
+      });
+      ws.on("error", (err) => {
+        console.error("[WsManager] WebSocket error:", err.message);
+      });
+    });
+  }
+  disconnect() {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+  }
+  isConnected() {
+    return this.ws !== null && this.ws.readyState === import_ws.WebSocket.OPEN;
+  }
+  /**
+   * Send a chat message via WebSocket JSON-RPC.
+   * Streams delta events to the renderer window.
+   * Returns the fully assembled text content when streaming completes.
+   */
+  async sendChatMessageStreaming(baseUrl, token, agentId, message) {
+    if (!this.isConnected()) {
+      await this.connect(baseUrl, token);
+    }
+    const id = (0, import_crypto.randomUUID)();
+    this.activeStreamId = id;
+    let assembledText = "";
+    const onPayload = (payload) => {
+      if (payload.state === "delta") {
+        const items = payload.message?.content || [];
+        for (const item of items) {
+          if (item.type === "text" && item.text) {
+            assembledText += item.text;
+          }
+        }
+      }
+    };
+    this.streamCallbacks.add(onPayload);
+    const req = {
+      type: "req",
+      id,
+      method: "chat.send",
+      params: {
+        sessionKey: `agent:${agentId}`,
+        message,
+        deliver: false
+      }
+    };
+    return new Promise((resolve2, reject) => {
+      this.pending.set(id, (err) => {
+        this.streamCallbacks.delete(onPayload);
+        if (err) {
+          reject(err);
+        } else {
+          resolve2(assembledText || "Response received.");
+        }
+      });
+      if (!this.ws || this.ws.readyState !== import_ws.WebSocket.OPEN) {
+        this.pending.delete(id);
+        this.streamCallbacks.delete(onPayload);
+        reject(new Error("WebSocket not connected"));
+        return;
+      }
+      this.ws.send(JSON.stringify(req), (sendErr) => {
+        if (sendErr) {
+          this.pending.delete(id);
+          this.streamCallbacks.delete(onPayload);
+          reject(sendErr);
+        }
+      });
+    });
+  }
+  _handleMessage(raw) {
+    let msg;
+    try {
+      msg = JSON.parse(raw);
+    } catch {
+      console.warn("[WsManager] Non-JSON message:", raw.slice(0, 100));
+      return;
+    }
+    if (msg.type === "res") {
+      const resp = msg;
+      if (!resp.ok && resp.error) {
+        const cb = this.pending.get(resp.id);
+        if (cb) {
+          this.pending.delete(resp.id);
+          cb(new Error(resp.error.message));
+        }
+      }
+      return;
+    }
+    if (msg.type === "event" && msg.event === "chat") {
+      const payload = msg.payload;
+      this.streamCallbacks.forEach((cb) => cb(payload));
+      this._forwardChatEvent(payload);
+      if (payload.state === "final" || payload.state === "aborted" || payload.state === "error") {
+        if (this.activeStreamId) {
+          const cb = this.pending.get(this.activeStreamId);
+          if (cb) {
+            this.pending.delete(this.activeStreamId);
+            const err = payload.state === "error" ? new Error(payload.error || "Stream error") : null;
+            cb(err);
+          }
+          this.activeStreamId = null;
+        }
+      }
+    }
+  }
+  _forwardChatEvent(payload) {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+    this.mainWindow.webContents.send("chat-stream", payload);
+  }
+};
+var wsManager = new WsManager();
+
 // src/ipc/chat-ipc.ts
-function registerChatHandlers(getGatewayHandle) {
+function registerChatHandlers(getGatewayHandle, getMainWindow2) {
   import_electron2.ipcMain.handle("send-message", async (_event, payload) => {
     try {
       const message = typeof payload === "string" ? payload : payload?.message;
@@ -924,16 +1198,20 @@ function registerChatHandlers(getGatewayHandle) {
       const deviceId = state.deviceId || "";
       const gw = getGatewayHandle();
       const gatewayBaseUrl = gw?.baseUrl || null;
+      const gatewayToken = gw?.token || "";
+      const hasUserProvider = !!getUserProviderConfig();
+      const canUseGateway = !!gatewayBaseUrl && (hasLocalProvider || hasUserProvider);
       let content;
-      if (hasLocalProvider && gatewayBaseUrl) {
-        content = await sendViaGateway(gatewayBaseUrl, messages);
+      if (canUseGateway) {
+        const win = getMainWindow2();
+        if (win) wsManager.setWindow(win);
+        content = await wsManager.sendChatMessageStreaming(gatewayBaseUrl, gatewayToken, agentId, message);
       } else if (hasRelay) {
         content = await sendViaRelay(relay.baseUrl, relayAuthToken, messages, deviceId);
       } else if (deviceId && (relay.baseUrl || RELAY_BASE_URL)) {
         content = await sendViaRelay(relay.baseUrl || RELAY_BASE_URL, "", messages, deviceId);
       } else if (gatewayBaseUrl) {
-        const userProvider = getUserProviderConfig();
-        if (!userProvider) {
+        if (!hasUserProvider) {
           return {
             success: false,
             noApiKeyConfigured: true,
@@ -1039,12 +1317,12 @@ function loadAgentConversationFromOpenClaw(agentId = "main", limit = 80) {
 // src/logger.ts
 var fs6 = __toESM(require("fs"));
 var path6 = __toESM(require("path"));
-var LOG_FILE = path6.join(OPENCLAW_CONFIG_DIR, "myopenclaw.log");
+var LOG_FILE = path6.join(MYOPENCLAW_DATA_DIR, "myopenclaw.log");
 var MAX_LOG_SIZE = 2 * 1024 * 1024;
 var logStream = null;
 function ensureLogStream() {
   if (logStream) return logStream;
-  fs6.mkdirSync(OPENCLAW_CONFIG_DIR, { recursive: true });
+  fs6.mkdirSync(MYOPENCLAW_DATA_DIR, { recursive: true });
   try {
     const stats = fs6.statSync(LOG_FILE);
     if (stats.size > MAX_LOG_SIZE) {
@@ -1271,8 +1549,18 @@ function registerProviderHandlers(getGatewayHandle, onStartGateway) {
           if (!fs7.existsSync(CONFIG_FILE)) {
             fs7.mkdirSync(OPENCLAW_CONFIG_DIR, { recursive: true });
             const gatewayConfig = {
-              models: { default: `${cleanProviderId}/${cleanModelId}` },
-              litellm: { apiKey, baseUrl: baseUrl || void 0 }
+              gateway: { auth: { mode: "token" }, http: { endpoints: { chatCompletions: { enabled: true } } } },
+              models: {
+                mode: "merge",
+                providers: {
+                  [cleanProviderId]: {
+                    baseUrl: baseUrl || void 0,
+                    apiKey,
+                    api: autoApi,
+                    models: [{ id: cleanModelId, name: cleanModelId }]
+                  }
+                }
+              }
             };
             fs7.writeFileSync(CONFIG_FILE, JSON.stringify(gatewayConfig, null, 2));
             console.log("[save-provider] Created gateway config, starting gateway...");
@@ -1347,13 +1635,20 @@ function registerProviderHandlers(getGatewayHandle, onStartGateway) {
       if (!fs7.existsSync(OPENCLAW_CONFIG_DIR)) {
         fs7.mkdirSync(OPENCLAW_CONFIG_DIR, { recursive: true });
       }
+      const providerId = config.provider === "openai" ? "openai" : "anthropic";
+      const modelId = config.provider === "openai" ? "gpt-4" : "claude-3-5-sonnet-20241022";
       const openclawConfig = {
+        gateway: { auth: { mode: "token" }, http: { endpoints: { chatCompletions: { enabled: true } } } },
         models: {
-          default: config.provider === "openai" ? "openai/gpt-4" : "anthropic/claude-3-5-sonnet-20241022"
-        },
-        litellm: {
-          apiKey: config.apiKey,
-          baseUrl: config.baseUrl || void 0
+          mode: "merge",
+          providers: {
+            [providerId]: {
+              apiKey: config.apiKey,
+              baseUrl: config.baseUrl || void 0,
+              api: "openai-completions",
+              models: [{ id: modelId, name: modelId }]
+            }
+          }
         }
       };
       fs7.writeFileSync(CONFIG_FILE, JSON.stringify(openclawConfig, null, 2));
@@ -1409,7 +1704,7 @@ function registerRelayHandlers() {
       const state = loadAppState();
       const deviceId = state.deviceId || "";
       const homepageUrl = "https://myopenclaws.app";
-      const loginUrl = `${homepageUrl}/login.html?deviceId=${deviceId}&redirect=myopenclaw`;
+      const loginUrl = `${homepageUrl}/login?deviceId=${deviceId}&redirect=myopenclaw`;
       await import_electron7.shell.openExternal(loginUrl);
       return { success: true };
     } catch (err) {
@@ -1490,6 +1785,280 @@ function registerChannelHandlers() {
   });
 }
 
+// src/ipc/skills-ipc.ts
+var crypto4 = __toESM(require("crypto"));
+var import_electron10 = require("electron");
+async function gatewayRpc(gw, method, params = {}) {
+  const id = crypto4.randomUUID();
+  const token = readGatewayTokenFromConfig();
+  const wsUrl = gw.baseUrl.replace(/^http/, "ws") + "/ws";
+  return new Promise((resolve2, reject) => {
+    let WS;
+    try {
+      WS = global.WebSocket || require("ws");
+    } catch {
+      WS = require("ws");
+    }
+    const socket = new WS(wsUrl, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    const timer = setTimeout(() => {
+      try {
+        socket.close();
+      } catch {
+      }
+      reject(new Error(`Gateway RPC timeout for method "${method}"`));
+    }, 15e3);
+    let connected = false;
+    const connectId = crypto4.randomUUID();
+    const reqMsg = JSON.stringify({ type: "req", id, method, params });
+    socket.onopen = () => {
+      socket.send(JSON.stringify({
+        type: "req",
+        id: connectId,
+        method: "connect",
+        params: {
+          minProtocol: 3,
+          maxProtocol: 3,
+          client: {
+            id: "gateway-client",
+            version: "1.0.0",
+            platform: process.platform,
+            mode: "backend"
+          },
+          caps: [],
+          role: "operator",
+          scopes: ["operator.admin"],
+          auth: { token }
+        }
+      }));
+    };
+    socket.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(typeof event.data === "string" ? event.data : String(event.data));
+        if (msg.type === "event") return;
+        if (!connected) {
+          if (msg.type === "res" && msg.id === connectId && msg.ok) {
+            connected = true;
+            socket.send(reqMsg);
+            return;
+          }
+        }
+        if (msg.id !== id) return;
+        clearTimeout(timer);
+        socket.close();
+        if (msg.ok) {
+          resolve2(msg.payload);
+        } else {
+          const errMsg = typeof msg.error === "object" ? msg.error?.message : msg.error;
+          reject(new Error(errMsg || `Gateway RPC error for "${method}"`));
+        }
+      } catch (e) {
+        clearTimeout(timer);
+        socket.close();
+        reject(e);
+      }
+    };
+    socket.onerror = (err) => {
+      clearTimeout(timer);
+      reject(new Error(`Gateway WebSocket error: ${err.message || String(err)}`));
+    };
+  });
+}
+function registerSkillsHandlers(getGatewayHandle) {
+  import_electron10.ipcMain.handle("skills-list", async () => {
+    try {
+      const gw = getGatewayHandle();
+      if (!gw?.baseUrl) return { success: false, error: "Gateway not running", skills: [] };
+      const payload = await gatewayRpc(gw, "skills.status", {});
+      const skills = Array.isArray(payload?.skills) ? payload.skills : Array.isArray(payload) ? payload : [];
+      return { success: true, skills };
+    } catch (e) {
+      return { success: false, error: e.message, skills: [] };
+    }
+  });
+  import_electron10.ipcMain.handle("skills-toggle", async (_event, payload) => {
+    try {
+      const gw = getGatewayHandle();
+      if (!gw?.baseUrl) return { success: false, error: "Gateway not running" };
+      const { skillKey, enabled } = payload || {};
+      if (!skillKey) return { success: false, error: "skillKey is required" };
+      await gatewayRpc(gw, "skills.update", { skillKey, enabled: !!enabled });
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  import_electron10.ipcMain.handle("skills-install", async (_event, payload) => {
+    try {
+      const gw = getGatewayHandle();
+      if (!gw?.baseUrl) return { success: false, error: "Gateway not running" };
+      const { name, installId } = payload || {};
+      if (!name || !installId) return { success: false, error: "name and installId are required" };
+      await gatewayRpc(gw, "skills.install", { name, installId, timeoutMs: 6e4 });
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  import_electron10.ipcMain.handle("skills-configure", async (_event, payload) => {
+    try {
+      const gw = getGatewayHandle();
+      if (!gw?.baseUrl) return { success: false, error: "Gateway not running" };
+      const { skillKey, apiKey, env } = payload || {};
+      if (!skillKey) return { success: false, error: "skillKey is required" };
+      const params = { skillKey };
+      if (apiKey !== void 0) params.apiKey = apiKey;
+      if (env !== void 0) params.env = env;
+      await gatewayRpc(gw, "skills.update", params);
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+}
+
+// src/ipc/cron-ipc.ts
+var crypto5 = __toESM(require("crypto"));
+var import_electron11 = require("electron");
+function wsRpc(port, token, method, params = {}) {
+  return new Promise((resolve2, reject) => {
+    const id = crypto5.randomUUID();
+    const reqMsg = JSON.stringify({ type: "req", id, method, params });
+    let ws;
+    try {
+      const WebSocket2 = require("ws");
+      ws = new WebSocket2(`ws://127.0.0.1:${port}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+    } catch {
+      reject(new Error("WebSocket (ws) module not available"));
+      return;
+    }
+    const timer = setTimeout(() => {
+      try {
+        ws.close();
+      } catch {
+      }
+      reject(new Error(`cron RPC timeout: ${method}`));
+    }, 1e4);
+    let connected = false;
+    const connectId = crypto5.randomUUID();
+    ws.on("open", () => {
+      ws.send(JSON.stringify({
+        type: "req",
+        id: connectId,
+        method: "connect",
+        params: {
+          minProtocol: 3,
+          maxProtocol: 3,
+          client: {
+            id: "gateway-client",
+            version: "1.0.0",
+            platform: process.platform,
+            mode: "backend"
+          },
+          caps: [],
+          role: "operator",
+          scopes: ["operator.admin"],
+          auth: { token }
+        }
+      }));
+    });
+    ws.on("message", (data) => {
+      try {
+        const msg = JSON.parse(typeof data === "string" ? data : data.toString("utf8"));
+        if (msg.type === "event") return;
+        if (!connected) {
+          if (msg.type === "res" && msg.id === connectId && msg.ok) {
+            connected = true;
+            ws.send(reqMsg);
+            return;
+          }
+        }
+        if (msg.id !== id) return;
+        clearTimeout(timer);
+        ws.close();
+        if (msg.ok) {
+          resolve2(msg.payload);
+        } else {
+          const errMsg = typeof msg.error === "object" ? msg.error?.message : msg.error;
+          reject(new Error(errMsg || `RPC error: ${method}`));
+        }
+      } catch (e) {
+        clearTimeout(timer);
+        ws.close();
+        reject(e);
+      }
+    });
+    ws.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+function registerCronHandlers(getGatewayHandle) {
+  function requireGateway() {
+    const gw = getGatewayHandle();
+    if (!gw) throw new Error("Gateway is not running");
+    return { port: gw.port, token: gw.token };
+  }
+  import_electron11.ipcMain.handle("cron-list", async () => {
+    try {
+      const { port, token } = requireGateway();
+      const payload = await wsRpc(port, token, "cron.list", {});
+      return { success: true, ...payload };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+  import_electron11.ipcMain.handle("cron-add", async (_event, params) => {
+    try {
+      const { port, token } = requireGateway();
+      const payload = await wsRpc(port, token, "cron.add", params);
+      return { success: true, ...payload };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+  import_electron11.ipcMain.handle("cron-update", async (_event, params) => {
+    try {
+      const { port, token } = requireGateway();
+      const payload = await wsRpc(port, token, "cron.update", params);
+      return { success: true, ...payload };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+  import_electron11.ipcMain.handle("cron-remove", async (_event, params) => {
+    try {
+      const { port, token } = requireGateway();
+      const payload = await wsRpc(port, token, "cron.remove", params);
+      return { success: true, ...payload };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+  import_electron11.ipcMain.handle("cron-run", async (_event, params) => {
+    try {
+      const { port, token } = requireGateway();
+      const payload = await wsRpc(port, token, "cron.run", params);
+      return { success: true, ...payload };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+  import_electron11.ipcMain.handle("cron-runs", async (_event, params) => {
+    try {
+      const { port, token } = requireGateway();
+      const payload = await wsRpc(port, token, "cron.runs", params);
+      return { success: true, ...payload };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+}
+
 // src/window.ts
 var mainWindow = null;
 var gatewayHandle = null;
@@ -1520,7 +2089,7 @@ function registerAllIpcHandlers() {
     gatewayHandle = await startGateway(updateLoadingStatus);
   };
   registerGatewayHandlers(getGW);
-  registerChatHandlers(getGW);
+  registerChatHandlers(getGW, () => mainWindow);
   registerAppStateHandlers();
   registerSubscriptionHandlers();
   registerAgentHandlers();
@@ -1528,10 +2097,12 @@ function registerAllIpcHandlers() {
   registerRelayHandlers();
   registerDeviceHandlers();
   registerChannelHandlers();
+  registerSkillsHandlers(getGW);
+  registerCronHandlers(getGW);
 }
 function createWindow() {
-  import_electron10.Menu.setApplicationMenu(null);
-  mainWindow = new import_electron10.BrowserWindow({
+  import_electron12.Menu.setApplicationMenu(null);
+  mainWindow = new import_electron12.BrowserWindow({
     width: 1200,
     height: 800,
     webPreferences: {
@@ -1543,7 +2114,7 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     const gw = gatewayHandle;
     const target = /^https?:\/\/127\.0\.0\.1:\d+\/?$/i.test(String(url || "")) ? buildDashboardUrl(url, gw?.baseUrl) : url;
-    import_electron10.shell.openExternal(target);
+    import_electron12.shell.openExternal(target);
     return { action: "deny" };
   });
   mainWindow.webContents.on("render-process-gone", (_e, details) => {
@@ -1580,14 +2151,18 @@ function createWindow() {
           console.log("[startup] No config found, running openclaw onboard...");
           await runOpenClawOnboard(binForOnboard);
         } else if (findRuntimeDir()) {
-          updateLoadingStatus("Running first-time setup...", 80);
-          console.log("[startup] No CLI found, running onboard via node entry point...");
-          const runtimeDir = findRuntimeDir();
-          const nodeBin = findNodeBinary();
-          const entryMjs = path7.join(runtimeDir, "openclaw-deps", "openclaw", "openclaw.mjs");
-          const entryJs = path7.join(runtimeDir, "openclaw-deps", "openclaw", "dist", "entry.js");
-          const entryFile = fs8.existsSync(entryMjs) ? entryMjs : entryJs;
-          await runOpenClawOnboard(nodeBin, [entryFile], runtimeDir);
+          try {
+            updateLoadingStatus("Running first-time setup...", 80);
+            console.log("[startup] No CLI found, running onboard via node entry point...");
+            const runtimeDir = findRuntimeDir();
+            const nodeBin = findNodeBinary();
+            const entryMjs = path7.join(runtimeDir, "openclaw-deps", "openclaw", "openclaw.mjs");
+            const entryJs = path7.join(runtimeDir, "openclaw-deps", "openclaw", "dist", "entry.js");
+            const entryFile = fs8.existsSync(entryMjs) ? entryMjs : entryJs;
+            await runOpenClawOnboard(nodeBin, [entryFile], runtimeDir);
+          } catch (onboardErr) {
+            console.error("[startup] Onboard via node failed:", onboardErr.message);
+          }
         } else {
           console.log("[startup] No openclaw CLI or runtime available for onboard, skipping");
         }
@@ -1624,7 +2199,7 @@ var isVM = (() => {
   }
 })();
 if (isVM) {
-  import_electron11.app.commandLine.appendSwitch("disable-gpu");
+  import_electron13.app.commandLine.appendSwitch("disable-gpu");
   console.log("[gpu] Disabled GPU acceleration (VM detected)");
 }
 process.stdout?.on("error", () => {
@@ -1633,20 +2208,20 @@ process.stderr?.on("error", () => {
 });
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
-    import_electron11.app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path8.resolve(process.argv[1])]);
+    import_electron13.app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path8.resolve(process.argv[1])]);
   }
 } else {
-  import_electron11.app.setAsDefaultProtocolClient(PROTOCOL);
+  import_electron13.app.setAsDefaultProtocolClient(PROTOCOL);
 }
-import_electron11.app.on("open-url", (event, url) => {
+import_electron13.app.on("open-url", (event, url) => {
   event.preventDefault();
   handleDeepLink(url, getMainWindow);
 });
-var gotTheLock = import_electron11.app.requestSingleInstanceLock();
+var gotTheLock = import_electron13.app.requestSingleInstanceLock();
 if (!gotTheLock) {
-  import_electron11.app.quit();
+  import_electron13.app.quit();
 } else {
-  import_electron11.app.on("second-instance", (_event, argv) => {
+  import_electron13.app.on("second-instance", (_event, argv) => {
     const deepLinkUrl = argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
     if (deepLinkUrl) handleDeepLink(deepLinkUrl, getMainWindow);
     const mainWindow2 = getMainWindow();
@@ -1656,10 +2231,10 @@ if (!gotTheLock) {
     }
   });
   registerAllIpcHandlers();
-  import_electron11.app.whenReady().then(() => {
+  import_electron13.app.whenReady().then(() => {
     console.log("[app] ready");
     const deviceId = ensureDeviceId();
-    registerDevice(deviceId, import_electron11.app.getVersion());
+    registerDevice(deviceId, import_electron13.app.getVersion());
     const state = loadAppState();
     if (!state.relay.baseUrl) {
       state.relay.baseUrl = RELAY_BASE_URL;
@@ -1670,11 +2245,11 @@ if (!gotTheLock) {
     const launchUrl = process.argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
     if (launchUrl) handleDeepLink(launchUrl, getMainWindow);
   });
-  import_electron11.app.on("window-all-closed", () => {
+  import_electron13.app.on("window-all-closed", () => {
     killGateway();
-    if (process.platform !== "darwin") import_electron11.app.quit();
+    if (process.platform !== "darwin") import_electron13.app.quit();
   });
-  import_electron11.app.on("activate", () => {
-    if (import_electron11.BrowserWindow.getAllWindows().length === 0) createWindow();
+  import_electron13.app.on("activate", () => {
+    if (import_electron13.BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 }
