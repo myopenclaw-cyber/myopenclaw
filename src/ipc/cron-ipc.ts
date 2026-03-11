@@ -35,13 +35,30 @@ function wsRpc(
       reject(new Error(`cron RPC timeout: ${method}`));
     }, 10000);
 
+    let connected = false;
+
     ws.on('open', () => {
-      ws.send(reqMsg);
+      // Gateway requires a connect handshake before RPC
+      ws.send(JSON.stringify({
+        type: 'connect',
+        role: 'operator',
+        scopes: ['operator.admin'],
+      }));
     });
 
     ws.on('message', (data: Buffer | string) => {
       try {
         const msg = JSON.parse(typeof data === 'string' ? data : data.toString('utf8'));
+
+        // Wait for connect acknowledgment before sending RPC
+        if (!connected) {
+          if (msg.type === 'connected' || msg.type === 'welcome' || (msg.type === 'resp' && msg.ok)) {
+            connected = true;
+            ws.send(reqMsg);
+            return;
+          }
+        }
+
         if (msg.id !== id) return;
         clearTimeout(timer);
         ws.close();

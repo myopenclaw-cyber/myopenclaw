@@ -997,6 +997,14 @@ var WsManager = class {
         headers: { Authorization: `Bearer ${token}` }
       });
       ws.once("open", () => {
+        console.log("[WsManager] WebSocket open, sending connect handshake...");
+        ws.send(JSON.stringify({
+          type: "connect",
+          role: "operator",
+          scopes: ["operator.admin"]
+        }));
+      });
+      ws.once("message", () => {
         console.log("[WsManager] Connected to gateway WebSocket");
         this.ws = ws;
         resolve2();
@@ -1768,12 +1776,25 @@ async function gatewayRpc(gw, method, params = {}) {
       }
       reject(new Error(`Gateway RPC timeout for method "${method}"`));
     }, 15e3);
+    let connected = false;
+    const reqMsg = JSON.stringify({ type: "req", id, method, params });
     socket.onopen = () => {
-      socket.send(JSON.stringify({ type: "req", id, method, params }));
+      socket.send(JSON.stringify({
+        type: "connect",
+        role: "operator",
+        scopes: ["operator.admin"]
+      }));
     };
     socket.onmessage = (event) => {
       try {
         const msg = JSON.parse(typeof event.data === "string" ? event.data : String(event.data));
+        if (!connected) {
+          if (msg.type === "connected" || msg.type === "welcome" || msg.type === "resp" && msg.ok) {
+            connected = true;
+            socket.send(reqMsg);
+            return;
+          }
+        }
         if (msg.id !== id) return;
         clearTimeout(timer);
         socket.close();
@@ -1871,12 +1892,24 @@ function wsRpc(port, token, method, params = {}) {
       }
       reject(new Error(`cron RPC timeout: ${method}`));
     }, 1e4);
+    let connected = false;
     ws.on("open", () => {
-      ws.send(reqMsg);
+      ws.send(JSON.stringify({
+        type: "connect",
+        role: "operator",
+        scopes: ["operator.admin"]
+      }));
     });
     ws.on("message", (data) => {
       try {
         const msg = JSON.parse(typeof data === "string" ? data : data.toString("utf8"));
+        if (!connected) {
+          if (msg.type === "connected" || msg.type === "welcome" || msg.type === "resp" && msg.ok) {
+            connected = true;
+            ws.send(reqMsg);
+            return;
+          }
+        }
         if (msg.id !== id) return;
         clearTimeout(timer);
         ws.close();

@@ -32,13 +32,31 @@ async function gatewayRpc(
       reject(new Error(`Gateway RPC timeout for method "${method}"`));
     }, 15000);
 
+    let connected = false;
+    const reqMsg = JSON.stringify({ type: 'req', id, method, params });
+
     socket.onopen = () => {
-      socket.send(JSON.stringify({ type: 'req', id, method, params }));
+      // Gateway requires a connect handshake before RPC
+      socket.send(JSON.stringify({
+        type: 'connect',
+        role: 'operator',
+        scopes: ['operator.admin'],
+      }));
     };
 
     socket.onmessage = (event: MessageEvent) => {
       try {
         const msg = JSON.parse(typeof event.data === 'string' ? event.data : String(event.data));
+
+        // Wait for connect acknowledgment before sending RPC
+        if (!connected) {
+          if (msg.type === 'connected' || msg.type === 'welcome' || (msg.type === 'resp' && msg.ok)) {
+            connected = true;
+            socket.send(reqMsg);
+            return;
+          }
+        }
+
         if (msg.id !== id) return;
         clearTimeout(timer);
         socket.close();

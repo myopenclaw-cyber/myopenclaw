@@ -83,6 +83,17 @@ export class WsManager {
       });
 
       ws.once('open', () => {
+        console.log('[WsManager] WebSocket open, sending connect handshake...');
+        // Gateway requires a connect handshake before RPC
+        ws.send(JSON.stringify({
+          type: 'connect',
+          role: 'operator',
+          scopes: ['operator.admin'],
+        }));
+      });
+
+      // Wait for connect acknowledgment
+      ws.once('message', () => {
         console.log('[WsManager] Connected to gateway WebSocket');
         this.ws = ws;
         resolve();
