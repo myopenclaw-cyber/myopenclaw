@@ -33,14 +33,29 @@ async function gatewayRpc(
     }, 15000);
 
     let connected = false;
+    const connectId = crypto.randomUUID();
     const reqMsg = JSON.stringify({ type: 'req', id, method, params });
 
     socket.onopen = () => {
-      // Gateway requires a connect handshake before RPC
+      // Gateway requires a connect request frame as the first message
       socket.send(JSON.stringify({
-        type: 'connect',
-        role: 'operator',
-        scopes: ['operator.admin'],
+        type: 'req',
+        id: connectId,
+        method: 'connect',
+        params: {
+          minProtocol: 3,
+          maxProtocol: 3,
+          client: {
+            id: 'gateway-client',
+            version: '1.0.0',
+            platform: process.platform,
+            mode: 'backend',
+          },
+          caps: [],
+          role: 'operator',
+          scopes: ['operator.admin'],
+          auth: { token },
+        },
       }));
     };
 
@@ -48,9 +63,12 @@ async function gatewayRpc(
       try {
         const msg = JSON.parse(typeof event.data === 'string' ? event.data : String(event.data));
 
+        // Ignore server-pushed events (e.g. connect.challenge)
+        if (msg.type === 'event') return;
+
         // Wait for connect acknowledgment before sending RPC
         if (!connected) {
-          if (msg.type === 'connected' || msg.type === 'welcome' || (msg.type === 'resp' && msg.ok)) {
+          if (msg.type === 'res' && msg.id === connectId && msg.ok) {
             connected = true;
             socket.send(reqMsg);
             return;
@@ -63,7 +81,8 @@ async function gatewayRpc(
         if (msg.ok) {
           resolve(msg.payload);
         } else {
-          reject(new Error(msg.error || `Gateway RPC error for "${method}"`));
+          const errMsg = typeof msg.error === 'object' ? msg.error?.message : msg.error;
+          reject(new Error(errMsg || `Gateway RPC error for "${method}"`));
         }
       } catch (e) {
         clearTimeout(timer);

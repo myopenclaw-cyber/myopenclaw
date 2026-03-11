@@ -14,10 +14,11 @@ interface RpcRequest {
 }
 
 interface RpcResponse {
-  type: 'resp';
+  type: 'res';
   id: string;
-  result?: unknown;
-  error?: { code: number; message: string };
+  ok: boolean;
+  payload?: unknown;
+  error?: { code: string; message: string };
 }
 
 interface ChatEvent {
@@ -82,21 +83,30 @@ export class WsManager {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      ws.once('open', () => {
-        console.log('[WsManager] WebSocket open, sending connect handshake...');
-        // Gateway requires a connect handshake before RPC
-        ws.send(JSON.stringify({
-          type: 'connect',
-          role: 'operator',
-          scopes: ['operator.admin'],
-        }));
-      });
+      const connectId = randomUUID();
+      let connected = false;
 
-      // Wait for connect acknowledgment
-      ws.once('message', () => {
-        console.log('[WsManager] Connected to gateway WebSocket');
-        this.ws = ws;
-        resolve();
+      ws.once('open', () => {
+        console.log('[WsManager] WebSocket open, sending connect request...');
+        ws.send(JSON.stringify({
+          type: 'req',
+          id: connectId,
+          method: 'connect',
+          params: {
+            minProtocol: 3,
+            maxProtocol: 3,
+            client: {
+              id: 'gateway-client',
+              version: '1.0.0',
+              platform: process.platform,
+              mode: 'backend',
+            },
+            caps: [],
+            role: 'operator',
+            scopes: ['operator.admin'],
+            auth: { token },
+          },
+        }));
       });
 
       ws.once('error', (err) => {
@@ -105,19 +115,44 @@ export class WsManager {
       });
 
       ws.on('message', (data: Buffer | string) => {
-        this._handleMessage(String(data));
+        const raw = String(data);
+
+        // During handshake, intercept connect response
+        if (!connected) {
+          try {
+            const msg = JSON.parse(raw);
+            // Ignore server events (e.g. connect.challenge)
+            if (msg.type === 'event') return;
+            if (msg.type === 'res' && msg.id === connectId && msg.ok) {
+              console.log('[WsManager] Connected to gateway WebSocket');
+              connected = true;
+              this.ws = ws;
+              resolve();
+              return;
+            }
+            if (msg.type === 'res' && msg.id === connectId && !msg.ok) {
+              const errMsg = typeof msg.error === 'object' ? msg.error?.message : String(msg.error);
+              reject(new Error(`Connect failed: ${errMsg}`));
+              ws.close();
+              return;
+            }
+          } catch {
+            // ignore parse errors during handshake
+          }
+          return;
+        }
+
+        this._handleMessage(raw);
       });
 
       ws.on('close', () => {
         console.log('[WsManager] WebSocket closed');
         this.ws = null;
-        // Reject any pending stream callbacks
         this.pending.forEach((cb) => cb(new Error('WebSocket closed')));
         this.pending.clear();
       });
 
       ws.on('error', (err) => {
-        // Runtime errors after connect — log only
         console.error('[WsManager] WebSocket error:', err.message);
       });
     });
@@ -215,17 +250,17 @@ export class WsManager {
       return;
     }
 
-    if (msg.type === 'resp') {
+    if (msg.type === 'res') {
       const resp = msg as unknown as RpcResponse;
-      // RPC response for the initial send — the stream events come separately
-      if (resp.error) {
+      // RPC error response — reject the pending promise
+      if (!resp.ok && resp.error) {
         const cb = this.pending.get(resp.id);
         if (cb) {
           this.pending.delete(resp.id);
           cb(new Error(resp.error.message));
         }
       }
-      // Non-error resp: we wait for final/aborted/error chat event to resolve
+      // ok response: we wait for final/aborted/error chat event to resolve
       return;
     }
 

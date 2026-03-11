@@ -996,25 +996,58 @@ var WsManager = class {
       const ws = new import_ws.WebSocket(wsUrl, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      const connectId = (0, import_crypto.randomUUID)();
+      let connected = false;
       ws.once("open", () => {
-        console.log("[WsManager] WebSocket open, sending connect handshake...");
+        console.log("[WsManager] WebSocket open, sending connect request...");
         ws.send(JSON.stringify({
-          type: "connect",
-          role: "operator",
-          scopes: ["operator.admin"]
+          type: "req",
+          id: connectId,
+          method: "connect",
+          params: {
+            minProtocol: 3,
+            maxProtocol: 3,
+            client: {
+              id: "gateway-client",
+              version: "1.0.0",
+              platform: process.platform,
+              mode: "backend"
+            },
+            caps: [],
+            role: "operator",
+            scopes: ["operator.admin"],
+            auth: { token }
+          }
         }));
-      });
-      ws.once("message", () => {
-        console.log("[WsManager] Connected to gateway WebSocket");
-        this.ws = ws;
-        resolve2();
       });
       ws.once("error", (err) => {
         console.error("[WsManager] WebSocket connection error:", err.message);
         reject(err);
       });
       ws.on("message", (data) => {
-        this._handleMessage(String(data));
+        const raw = String(data);
+        if (!connected) {
+          try {
+            const msg = JSON.parse(raw);
+            if (msg.type === "event") return;
+            if (msg.type === "res" && msg.id === connectId && msg.ok) {
+              console.log("[WsManager] Connected to gateway WebSocket");
+              connected = true;
+              this.ws = ws;
+              resolve2();
+              return;
+            }
+            if (msg.type === "res" && msg.id === connectId && !msg.ok) {
+              const errMsg = typeof msg.error === "object" ? msg.error?.message : String(msg.error);
+              reject(new Error(`Connect failed: ${errMsg}`));
+              ws.close();
+              return;
+            }
+          } catch {
+          }
+          return;
+        }
+        this._handleMessage(raw);
       });
       ws.on("close", () => {
         console.log("[WsManager] WebSocket closed");
@@ -1101,9 +1134,9 @@ var WsManager = class {
       console.warn("[WsManager] Non-JSON message:", raw.slice(0, 100));
       return;
     }
-    if (msg.type === "resp") {
+    if (msg.type === "res") {
       const resp = msg;
-      if (resp.error) {
+      if (!resp.ok && resp.error) {
         const cb = this.pending.get(resp.id);
         if (cb) {
           this.pending.delete(resp.id);
@@ -1777,19 +1810,35 @@ async function gatewayRpc(gw, method, params = {}) {
       reject(new Error(`Gateway RPC timeout for method "${method}"`));
     }, 15e3);
     let connected = false;
+    const connectId = crypto4.randomUUID();
     const reqMsg = JSON.stringify({ type: "req", id, method, params });
     socket.onopen = () => {
       socket.send(JSON.stringify({
-        type: "connect",
-        role: "operator",
-        scopes: ["operator.admin"]
+        type: "req",
+        id: connectId,
+        method: "connect",
+        params: {
+          minProtocol: 3,
+          maxProtocol: 3,
+          client: {
+            id: "gateway-client",
+            version: "1.0.0",
+            platform: process.platform,
+            mode: "backend"
+          },
+          caps: [],
+          role: "operator",
+          scopes: ["operator.admin"],
+          auth: { token }
+        }
       }));
     };
     socket.onmessage = (event) => {
       try {
         const msg = JSON.parse(typeof event.data === "string" ? event.data : String(event.data));
+        if (msg.type === "event") return;
         if (!connected) {
-          if (msg.type === "connected" || msg.type === "welcome" || msg.type === "resp" && msg.ok) {
+          if (msg.type === "res" && msg.id === connectId && msg.ok) {
             connected = true;
             socket.send(reqMsg);
             return;
@@ -1801,7 +1850,8 @@ async function gatewayRpc(gw, method, params = {}) {
         if (msg.ok) {
           resolve2(msg.payload);
         } else {
-          reject(new Error(msg.error || `Gateway RPC error for "${method}"`));
+          const errMsg = typeof msg.error === "object" ? msg.error?.message : msg.error;
+          reject(new Error(errMsg || `Gateway RPC error for "${method}"`));
         }
       } catch (e) {
         clearTimeout(timer);
@@ -1893,18 +1943,34 @@ function wsRpc(port, token, method, params = {}) {
       reject(new Error(`cron RPC timeout: ${method}`));
     }, 1e4);
     let connected = false;
+    const connectId = crypto5.randomUUID();
     ws.on("open", () => {
       ws.send(JSON.stringify({
-        type: "connect",
-        role: "operator",
-        scopes: ["operator.admin"]
+        type: "req",
+        id: connectId,
+        method: "connect",
+        params: {
+          minProtocol: 3,
+          maxProtocol: 3,
+          client: {
+            id: "gateway-client",
+            version: "1.0.0",
+            platform: process.platform,
+            mode: "backend"
+          },
+          caps: [],
+          role: "operator",
+          scopes: ["operator.admin"],
+          auth: { token }
+        }
       }));
     });
     ws.on("message", (data) => {
       try {
         const msg = JSON.parse(typeof data === "string" ? data : data.toString("utf8"));
+        if (msg.type === "event") return;
         if (!connected) {
-          if (msg.type === "connected" || msg.type === "welcome" || msg.type === "resp" && msg.ok) {
+          if (msg.type === "res" && msg.id === connectId && msg.ok) {
             connected = true;
             ws.send(reqMsg);
             return;
@@ -1916,7 +1982,8 @@ function wsRpc(port, token, method, params = {}) {
         if (msg.ok) {
           resolve2(msg.payload);
         } else {
-          reject(new Error(msg.error || `RPC error: ${method}`));
+          const errMsg = typeof msg.error === "object" ? msg.error?.message : msg.error;
+          reject(new Error(errMsg || `RPC error: ${method}`));
         }
       } catch (e) {
         clearTimeout(timer);
