@@ -325,9 +325,12 @@ async function downloadWithFallback(urls, outputPath, onProgress) {
   }
 }
 function findRuntimeDir() {
-  const embeddedDir = path3.join(__dirname, "resources", "openclaw-deps", "openclaw", "dist");
-  if (fs2.existsSync(path3.join(embeddedDir, "entry.js")) || fs2.existsSync(path3.join(embeddedDir, "entry.mjs"))) {
-    return path3.join(__dirname, "resources");
+  const embeddedBase = path3.join(__dirname, "resources");
+  if (!embeddedBase.includes(".asar")) {
+    const embeddedDir = path3.join(embeddedBase, "openclaw-deps", "openclaw", "dist");
+    if (fs2.existsSync(path3.join(embeddedDir, "entry.js")) || fs2.existsSync(path3.join(embeddedDir, "entry.mjs"))) {
+      return embeddedBase;
+    }
   }
   const dlDir = path3.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", "openclaw", "dist");
   if (fs2.existsSync(path3.join(dlDir, "entry.js")) || fs2.existsSync(path3.join(dlDir, "entry.mjs"))) {
@@ -454,7 +457,10 @@ function findOpenClawCli() {
   }
   const binNames = process.platform === "win32" ? ["openclaw.cmd", "openclaw.exe", "openclaw"] : ["openclaw"];
   for (const bin of binNames) {
-    candidates.push(path3.join(__dirname, "resources", "openclaw-deps", ".bin", bin));
+    const embeddedBin = path3.join(__dirname, "resources", "openclaw-deps", ".bin", bin);
+    if (!embeddedBin.includes(".asar")) {
+      candidates.push(embeddedBin);
+    }
     candidates.push(path3.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", ".bin", bin));
   }
   for (const p of candidates) {
@@ -2045,14 +2051,18 @@ function createWindow() {
           console.log("[startup] No config found, running openclaw onboard...");
           await runOpenClawOnboard(binForOnboard);
         } else if (findRuntimeDir()) {
-          updateLoadingStatus("Running first-time setup...", 80);
-          console.log("[startup] No CLI found, running onboard via node entry point...");
-          const runtimeDir = findRuntimeDir();
-          const nodeBin = findNodeBinary();
-          const entryMjs = path7.join(runtimeDir, "openclaw-deps", "openclaw", "openclaw.mjs");
-          const entryJs = path7.join(runtimeDir, "openclaw-deps", "openclaw", "dist", "entry.js");
-          const entryFile = fs8.existsSync(entryMjs) ? entryMjs : entryJs;
-          await runOpenClawOnboard(nodeBin, [entryFile], runtimeDir);
+          try {
+            updateLoadingStatus("Running first-time setup...", 80);
+            console.log("[startup] No CLI found, running onboard via node entry point...");
+            const runtimeDir = findRuntimeDir();
+            const nodeBin = findNodeBinary();
+            const entryMjs = path7.join(runtimeDir, "openclaw-deps", "openclaw", "openclaw.mjs");
+            const entryJs = path7.join(runtimeDir, "openclaw-deps", "openclaw", "dist", "entry.js");
+            const entryFile = fs8.existsSync(entryMjs) ? entryMjs : entryJs;
+            await runOpenClawOnboard(nodeBin, [entryFile], runtimeDir);
+          } catch (onboardErr) {
+            console.error("[startup] Onboard via node failed:", onboardErr.message);
+          }
         } else {
           console.log("[startup] No openclaw CLI or runtime available for onboard, skipping");
         }
