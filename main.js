@@ -23,7 +23,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 
 // src/main.ts
-var path7 = __toESM(require("path"));
+var path8 = __toESM(require("path"));
 var os3 = __toESM(require("os"));
 var import_electron11 = require("electron");
 var import_child_process3 = require("child_process");
@@ -157,7 +157,7 @@ function checkPremiumGate(state) {
   };
 }
 function consumeQuota(state, tier) {
-  if (tier === "free") state.freeQuotaUsed += 1;
+  if (tier === "free" || tier === "anonymous") state.freeQuotaUsed += 1;
   if (tier === "user_api_key") state.userApiKeyQuotaUsed += 1;
 }
 function loadEmbeddedConfig() {
@@ -269,8 +269,8 @@ function handleDeepLink(url, getMainWindow2) {
 }
 
 // src/window.ts
-var path6 = __toESM(require("path"));
-var fs7 = __toESM(require("fs"));
+var path7 = __toESM(require("path"));
+var fs8 = __toESM(require("fs"));
 var import_electron10 = require("electron");
 
 // src/runtime.ts
@@ -353,8 +353,31 @@ async function ensureEmbeddedRuntime(updateLoadingStatus2) {
   if (!findRuntimeDir()) {
     throw new Error("Runtime extracted but dist/entry.(m)js not found. The runtime package may be incomplete.");
   }
+  if (process.platform === "win32") {
+    addWindowsFirewallRule(path3.join(DOWNLOADED_RUNTIME_DIR, "node", "node.exe"));
+  }
   console.log("[runtime] Runtime ready");
   updateLoadingStatus2("Runtime installed", 88);
+}
+function addWindowsFirewallRule(nodeExePath) {
+  if (!fs2.existsSync(nodeExePath)) return;
+  try {
+    (0, import_child_process.execFileSync)("netsh", [
+      "advfirewall",
+      "firewall",
+      "add",
+      "rule",
+      "name=MyOpenClaw Runtime Node",
+      "dir=in",
+      "action=allow",
+      `program=${nodeExePath}`,
+      "enable=yes",
+      "profile=any"
+    ], { stdio: "pipe", timeout: 5e3, windowsHide: true });
+    console.log("[firewall] Added firewall rule for node.exe");
+  } catch {
+    console.log("[firewall] Could not add firewall rule (needs admin privileges)");
+  }
 }
 function buildNodeEnhancedPath() {
   const nodeExe = process.platform === "win32" ? "node.exe" : "node";
@@ -450,8 +473,12 @@ function findNodeBinary() {
   throw new Error(`No suitable Node.js found (>= ${MIN_NODE_MAJOR_VERSION}). Please install Node.js or use the full version of MyOpenClaw.`);
 }
 function ensureOpenClawInPath(openclawBin) {
-  if (!openclawBin || process.platform === "win32") return;
+  if (!openclawBin) return;
   try {
+    if (process.platform === "win32") {
+      ensureOpenClawInPathWindows(openclawBin);
+      return;
+    }
     const resolved = fs2.realpathSync(openclawBin);
     const standardDirs = ["/usr/local/bin", "/usr/bin", path3.join(os2.homedir(), ".local", "bin")];
     const binDir = path3.dirname(resolved);
@@ -500,9 +527,56 @@ ${exportLine}
     console.error("[path] ensureOpenClawInPath failed:", e.message);
   }
 }
-function runOpenClawOnboard(openclawBin) {
+function ensureOpenClawInPathWindows(openclawBin) {
+  try {
+    const binDir = path3.dirname(openclawBin);
+    if (!process.env.PATH.includes(binDir)) {
+      process.env.PATH = `${binDir};${process.env.PATH}`;
+      console.log(`[path] Added to process PATH: ${binDir}`);
+    }
+    const currentUserPath = (0, import_child_process.execFileSync)("reg", [
+      "query",
+      "HKCU\\Environment",
+      "/v",
+      "Path"
+    ], { encoding: "utf8", timeout: 5e3, windowsHide: true, stdio: "pipe" });
+    if (currentUserPath.includes(binDir)) {
+      console.log("[path] openclaw already in user PATH:", binDir);
+      return;
+    }
+    const match = currentUserPath.match(/Path\s+REG_(?:EXPAND_)?SZ\s+(.+)/i);
+    const existingPath = match ? match[1].trim() : "";
+    const newPath = existingPath ? `${existingPath};${binDir}` : binDir;
+    (0, import_child_process.execFileSync)("setx", ["Path", newPath], {
+      encoding: "utf8",
+      timeout: 5e3,
+      windowsHide: true,
+      stdio: "pipe"
+    });
+    console.log(`[path] Added to user PATH via setx: ${binDir}`);
+  } catch (e) {
+    if (e.message?.includes("unable to find")) {
+      try {
+        const binDir = path3.dirname(openclawBin);
+        (0, import_child_process.execFileSync)("setx", ["Path", binDir], {
+          encoding: "utf8",
+          timeout: 5e3,
+          windowsHide: true,
+          stdio: "pipe"
+        });
+        console.log(`[path] Created user PATH with: ${binDir}`);
+      } catch (e2) {
+        console.error("[path] Failed to create user PATH:", e2.message);
+      }
+    } else {
+      console.error("[path] ensureOpenClawInPathWindows failed:", e.message);
+    }
+  }
+}
+function runOpenClawOnboard(cmd, prependArgs = [], cwd) {
   return new Promise((resolve2, _reject) => {
     const args = [
+      ...prependArgs,
       "onboard",
       "--non-interactive",
       "--accept-risk",
@@ -522,8 +596,8 @@ function runOpenClawOnboard(openclawBin) {
       OPENCLAW_STATE_DIR: OPENCLAW_CONFIG_DIR,
       OPENCLAW_CONFIG_PATH: CONFIG_FILE
     };
-    console.log(`[onboard] Running: ${openclawBin} ${args.join(" ")}`);
-    const proc = (0, import_child_process.spawn)(openclawBin, args, { stdio: "pipe", env });
+    console.log(`[onboard] Running: ${cmd} ${args.join(" ")}`);
+    const proc = (0, import_child_process.spawn)(cmd, args, { stdio: "pipe", env, ...cwd ? { cwd } : {} });
     let output = "";
     proc.stdout.on("data", (d) => {
       output += d;
@@ -803,9 +877,11 @@ async function sendViaGateway(gatewayBaseUrl, messages) {
 }
 async function sendViaRelay(relayBaseUrl, relayAuthToken, messages, deviceId) {
   const headers = {
-    "Authorization": `Bearer ${relayAuthToken}`,
     "Content-Type": "application/json"
   };
+  if (relayAuthToken) {
+    headers["Authorization"] = `Bearer ${relayAuthToken}`;
+  }
   if (deviceId) {
     headers["X-Device-Id"] = deviceId;
   }
@@ -853,6 +929,8 @@ function registerChatHandlers(getGatewayHandle) {
         content = await sendViaGateway(gatewayBaseUrl, messages);
       } else if (hasRelay) {
         content = await sendViaRelay(relay.baseUrl, relayAuthToken, messages, deviceId);
+      } else if (deviceId && (relay.baseUrl || RELAY_BASE_URL)) {
+        content = await sendViaRelay(relay.baseUrl || RELAY_BASE_URL, "", messages, deviceId);
       } else if (gatewayBaseUrl) {
         const userProvider = getUserProviderConfig();
         if (!userProvider) {
@@ -958,6 +1036,60 @@ function loadAgentConversationFromOpenClaw(agentId = "main", limit = 80) {
   }
 }
 
+// src/logger.ts
+var fs6 = __toESM(require("fs"));
+var path6 = __toESM(require("path"));
+var LOG_FILE = path6.join(OPENCLAW_CONFIG_DIR, "myopenclaw.log");
+var MAX_LOG_SIZE = 2 * 1024 * 1024;
+var logStream = null;
+function ensureLogStream() {
+  if (logStream) return logStream;
+  fs6.mkdirSync(OPENCLAW_CONFIG_DIR, { recursive: true });
+  try {
+    const stats = fs6.statSync(LOG_FILE);
+    if (stats.size > MAX_LOG_SIZE) {
+      const prev = LOG_FILE + ".prev";
+      try {
+        fs6.unlinkSync(prev);
+      } catch {
+      }
+      fs6.renameSync(LOG_FILE, prev);
+    }
+  } catch {
+  }
+  logStream = fs6.createWriteStream(LOG_FILE, { flags: "a" });
+  return logStream;
+}
+function formatLine(level, msg) {
+  const ts = (/* @__PURE__ */ new Date()).toISOString();
+  return `${ts} [${level}] ${msg}
+`;
+}
+function initFileLogger() {
+  const origLog = console.log;
+  const origError = console.error;
+  const origWarn = console.warn;
+  console.log = (...args) => {
+    origLog(...args);
+    const msg = args.map((a) => typeof a === "string" ? a : JSON.stringify(a)).join(" ");
+    ensureLogStream().write(formatLine("INFO", msg));
+  };
+  console.error = (...args) => {
+    origError(...args);
+    const msg = args.map((a) => typeof a === "string" ? a : a instanceof Error ? a.stack || a.message : JSON.stringify(a)).join(" ");
+    ensureLogStream().write(formatLine("ERROR", msg));
+  };
+  console.warn = (...args) => {
+    origWarn(...args);
+    const msg = args.map((a) => typeof a === "string" ? a : JSON.stringify(a)).join(" ");
+    ensureLogStream().write(formatLine("WARN", msg));
+  };
+  console.log(`[logger] Logging to ${LOG_FILE}`);
+}
+function getLogFilePath() {
+  return LOG_FILE;
+}
+
 // src/ipc/app-state-ipc.ts
 function registerAppStateHandlers() {
   import_electron3.ipcMain.handle("get-app-state", async () => {
@@ -971,6 +1103,11 @@ function registerAppStateHandlers() {
   });
   import_electron3.ipcMain.handle("get-app-version", () => {
     return import_electron3.app.getVersion();
+  });
+  import_electron3.ipcMain.handle("open-log-file", async () => {
+    const logPath = getLogFilePath();
+    await import_electron3.shell.openPath(logPath);
+    return { success: true, path: logPath };
   });
 }
 
@@ -1098,7 +1235,7 @@ function registerAgentHandlers() {
 }
 
 // src/ipc/provider-ipc.ts
-var fs6 = __toESM(require("fs"));
+var fs7 = __toESM(require("fs"));
 var import_electron6 = require("electron");
 function registerProviderHandlers(getGatewayHandle, onStartGateway) {
   import_electron6.ipcMain.handle("save-provider-config", async (_event, payload) => {
@@ -1131,13 +1268,13 @@ function registerProviderHandlers(getGatewayHandle, onStartGateway) {
       const gw = getGatewayHandle();
       if (!gw?.baseUrl) {
         try {
-          if (!fs6.existsSync(CONFIG_FILE)) {
-            fs6.mkdirSync(OPENCLAW_CONFIG_DIR, { recursive: true });
+          if (!fs7.existsSync(CONFIG_FILE)) {
+            fs7.mkdirSync(OPENCLAW_CONFIG_DIR, { recursive: true });
             const gatewayConfig = {
               models: { default: `${cleanProviderId}/${cleanModelId}` },
               litellm: { apiKey, baseUrl: baseUrl || void 0 }
             };
-            fs6.writeFileSync(CONFIG_FILE, JSON.stringify(gatewayConfig, null, 2));
+            fs7.writeFileSync(CONFIG_FILE, JSON.stringify(gatewayConfig, null, 2));
             console.log("[save-provider] Created gateway config, starting gateway...");
           }
           await onStartGateway();
@@ -1198,8 +1335,8 @@ function registerProviderHandlers(getGatewayHandle, onStartGateway) {
       cfg.agents.defaults = cfg.agents.defaults || {};
       if (cfg.agents.defaults.model !== void 0) delete cfg.agents.defaults.model;
       saveEmbeddedConfig(cfg);
-      fs6.mkdirSync(AUTH_PROFILES_DIR, { recursive: true });
-      fs6.writeFileSync(AUTH_PROFILES_FILE, JSON.stringify({ version: 1, profiles: {}, lastGood: {}, usageStats: {} }, null, 2), "utf8");
+      fs7.mkdirSync(AUTH_PROFILES_DIR, { recursive: true });
+      fs7.writeFileSync(AUTH_PROFILES_FILE, JSON.stringify({ version: 1, profiles: {}, lastGood: {}, usageStats: {} }, null, 2), "utf8");
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
@@ -1207,8 +1344,8 @@ function registerProviderHandlers(getGatewayHandle, onStartGateway) {
   });
   import_electron6.ipcMain.handle("save-config", async (_event, config) => {
     try {
-      if (!fs6.existsSync(OPENCLAW_CONFIG_DIR)) {
-        fs6.mkdirSync(OPENCLAW_CONFIG_DIR, { recursive: true });
+      if (!fs7.existsSync(OPENCLAW_CONFIG_DIR)) {
+        fs7.mkdirSync(OPENCLAW_CONFIG_DIR, { recursive: true });
       }
       const openclawConfig = {
         models: {
@@ -1219,7 +1356,7 @@ function registerProviderHandlers(getGatewayHandle, onStartGateway) {
           baseUrl: config.baseUrl || void 0
         }
       };
-      fs6.writeFileSync(CONFIG_FILE, JSON.stringify(openclawConfig, null, 2));
+      fs7.writeFileSync(CONFIG_FILE, JSON.stringify(openclawConfig, null, 2));
       await onStartGateway();
       return { success: true };
     } catch (error) {
@@ -1400,7 +1537,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path6.join(__dirname, "preload.js")
+      preload: path7.join(__dirname, "preload.js")
     }
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -1436,17 +1573,26 @@ function createWindow() {
       if (openclawBin) {
         ensureOpenClawInPath(openclawBin);
       }
-      if (!fs7.existsSync(CONFIG_FILE)) {
+      if (!fs8.existsSync(CONFIG_FILE)) {
         const binForOnboard = openclawBin || findOpenClawCli();
         if (binForOnboard) {
           updateLoadingStatus("Running first-time setup...", 80);
           console.log("[startup] No config found, running openclaw onboard...");
           await runOpenClawOnboard(binForOnboard);
+        } else if (findRuntimeDir()) {
+          updateLoadingStatus("Running first-time setup...", 80);
+          console.log("[startup] No CLI found, running onboard via node entry point...");
+          const runtimeDir = findRuntimeDir();
+          const nodeBin = findNodeBinary();
+          const entryMjs = path7.join(runtimeDir, "openclaw-deps", "openclaw", "openclaw.mjs");
+          const entryJs = path7.join(runtimeDir, "openclaw-deps", "openclaw", "dist", "entry.js");
+          const entryFile = fs8.existsSync(entryMjs) ? entryMjs : entryJs;
+          await runOpenClawOnboard(nodeBin, [entryFile], runtimeDir);
         } else {
-          console.log("[startup] No openclaw CLI available for onboard, skipping");
+          console.log("[startup] No openclaw CLI or runtime available for onboard, skipping");
         }
       }
-      if (fs7.existsSync(CONFIG_FILE)) {
+      if (fs8.existsSync(CONFIG_FILE)) {
         gatewayHandle = await startGateway(updateLoadingStatus);
       } else {
         console.log("[startup] No gateway config after onboard, relay-only mode");
@@ -1464,6 +1610,7 @@ function createWindow() {
 }
 
 // src/main.ts
+initFileLogger();
 var isVM = (() => {
   try {
     if (process.platform === "darwin") {
@@ -1486,7 +1633,7 @@ process.stderr?.on("error", () => {
 });
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
-    import_electron11.app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path7.resolve(process.argv[1])]);
+    import_electron11.app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path8.resolve(process.argv[1])]);
   }
 } else {
   import_electron11.app.setAsDefaultProtocolClient(PROTOCOL);
@@ -1508,26 +1655,26 @@ if (!gotTheLock) {
       mainWindow2.focus();
     }
   });
+  registerAllIpcHandlers();
+  import_electron11.app.whenReady().then(() => {
+    console.log("[app] ready");
+    const deviceId = ensureDeviceId();
+    registerDevice(deviceId, import_electron11.app.getVersion());
+    const state = loadAppState();
+    if (!state.relay.baseUrl) {
+      state.relay.baseUrl = RELAY_BASE_URL;
+      saveAppState(state);
+    }
+    console.log("[app] creating window...");
+    createWindow();
+    const launchUrl = process.argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
+    if (launchUrl) handleDeepLink(launchUrl, getMainWindow);
+  });
+  import_electron11.app.on("window-all-closed", () => {
+    killGateway();
+    if (process.platform !== "darwin") import_electron11.app.quit();
+  });
+  import_electron11.app.on("activate", () => {
+    if (import_electron11.BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
 }
-registerAllIpcHandlers();
-import_electron11.app.whenReady().then(() => {
-  console.log("[app] ready");
-  const deviceId = ensureDeviceId();
-  registerDevice(deviceId, import_electron11.app.getVersion());
-  const state = loadAppState();
-  if (!state.relay.baseUrl) {
-    state.relay.baseUrl = RELAY_BASE_URL;
-    saveAppState(state);
-  }
-  console.log("[app] creating window...");
-  createWindow();
-  const launchUrl = process.argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
-  if (launchUrl) handleDeepLink(launchUrl, getMainWindow);
-});
-import_electron11.app.on("window-all-closed", () => {
-  killGateway();
-  if (process.platform !== "darwin") import_electron11.app.quit();
-});
-import_electron11.app.on("activate", () => {
-  if (import_electron11.BrowserWindow.getAllWindows().length === 0) createWindow();
-});

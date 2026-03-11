@@ -48,5 +48,6 @@ import_electron.contextBridge.exposeInMainWorld("electronAPI", {
   // Channel config
   saveAgentChannelConfig: (payload) => import_electron.ipcRenderer.invoke("save-agent-channel-config", payload),
   // App info
-  getAppVersion: () => import_electron.ipcRenderer.invoke("get-app-version")
+  getAppVersion: () => import_electron.ipcRenderer.invoke("get-app-version"),
+  openLogFile: () => import_electron.ipcRenderer.invoke("open-log-file")
 });
