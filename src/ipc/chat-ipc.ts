@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron';
+import type { BrowserWindow } from 'electron';
 import {
   loadAppState,
   saveAppState,
@@ -9,10 +10,12 @@ import {
 } from '../config-store';
 import { sendViaGateway, sendViaRelay } from '../messaging';
 import { RELAY_BASE_URL } from '../constants';
+import { wsManager } from '../ws-manager';
 import type { GatewayHandle } from '../types';
 
 export function registerChatHandlers(
   getGatewayHandle: () => GatewayHandle | null,
+  getMainWindow: () => BrowserWindow | null,
 ): void {
   ipcMain.handle('send-message', async (_event, payload) => {
     try {
@@ -44,18 +47,25 @@ export function registerChatHandlers(
       const deviceId = state.deviceId || '';
       const gw = getGatewayHandle();
       const gatewayBaseUrl = gw?.baseUrl || null;
+      const gatewayToken = gw?.token || '';
+
+      // Use WebSocket streaming when gateway is available (local provider or user provider key)
+      const hasUserProvider = !!(getUserProviderConfig());
+      const canUseGateway = !!gatewayBaseUrl && (hasLocalProvider || hasUserProvider);
 
       let content: string;
-      if (hasLocalProvider && gatewayBaseUrl) {
-        content = await sendViaGateway(gatewayBaseUrl, messages);
+
+      if (canUseGateway) {
+        const win = getMainWindow();
+        if (win) wsManager.setWindow(win);
+        content = await wsManager.sendChatMessageStreaming(gatewayBaseUrl!, gatewayToken, agentId, message);
       } else if (hasRelay) {
         content = await sendViaRelay(relay.baseUrl, relayAuthToken, messages, deviceId);
       } else if (deviceId && (relay.baseUrl || RELAY_BASE_URL)) {
         // Anonymous: send via relay with device ID only (no auth token)
         content = await sendViaRelay(relay.baseUrl || RELAY_BASE_URL, '', messages, deviceId);
       } else if (gatewayBaseUrl) {
-        const userProvider = getUserProviderConfig();
-        if (!userProvider) {
+        if (!hasUserProvider) {
           return {
             success: false,
             noApiKeyConfigured: true,

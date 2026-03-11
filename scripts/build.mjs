@@ -7,7 +7,7 @@ await esbuild.build({
   platform: 'node',
   target: 'node18',
   outfile: 'main.js',
-  external: ['electron', 'axios'],
+  external: ['electron', 'axios', 'ws'],
   format: 'cjs',
   sourcemap: false,
 });

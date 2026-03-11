@@ -25,7 +25,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 // src/main.ts
 var path8 = __toESM(require("path"));
 var os3 = __toESM(require("os"));
-var import_electron11 = require("electron");
+var import_electron13 = require("electron");
 var import_child_process3 = require("child_process");
 
 // src/constants.ts
@@ -272,7 +272,7 @@ function handleDeepLink(url, getMainWindow2) {
 // src/window.ts
 var path7 = __toESM(require("path"));
 var fs8 = __toESM(require("fs"));
-var import_electron10 = require("electron");
+var import_electron12 = require("electron");
 
 // src/runtime.ts
 var path3 = __toESM(require("path"));
@@ -960,8 +960,170 @@ async function sendViaRelay(relayBaseUrl, relayAuthToken, messages, deviceId) {
   return response?.data?.choices?.[0]?.message?.content || "No response from relay.";
 }
 
+// src/ws-manager.ts
+var import_ws = require("ws");
+var import_crypto = require("crypto");
+var WsManager = class {
+  constructor() {
+    this.ws = null;
+    this.baseUrl = "";
+    this.token = "";
+    this.pending = /* @__PURE__ */ new Map();
+    this.mainWindow = null;
+    this.streamCallbacks = /* @__PURE__ */ new Set();
+    this.activeStreamId = null;
+  }
+  setWindow(win) {
+    this.mainWindow = win;
+  }
+  connect(baseUrl, token) {
+    if (this.baseUrl && this.baseUrl !== baseUrl) {
+      this.disconnect();
+    }
+    this.baseUrl = baseUrl;
+    this.token = token;
+    if (this.ws && this.ws.readyState === import_ws.WebSocket.OPEN) {
+      return Promise.resolve();
+    }
+    const wsUrl = baseUrl.replace(/^http/, "ws") + "/ws";
+    return new Promise((resolve2, reject) => {
+      const ws = new import_ws.WebSocket(wsUrl, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      ws.once("open", () => {
+        console.log("[WsManager] Connected to gateway WebSocket");
+        this.ws = ws;
+        resolve2();
+      });
+      ws.once("error", (err) => {
+        console.error("[WsManager] WebSocket connection error:", err.message);
+        reject(err);
+      });
+      ws.on("message", (data) => {
+        this._handleMessage(String(data));
+      });
+      ws.on("close", () => {
+        console.log("[WsManager] WebSocket closed");
+        this.ws = null;
+        this.pending.forEach((cb) => cb(new Error("WebSocket closed")));
+        this.pending.clear();
+      });
+      ws.on("error", (err) => {
+        console.error("[WsManager] WebSocket error:", err.message);
+      });
+    });
+  }
+  disconnect() {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+  }
+  isConnected() {
+    return this.ws !== null && this.ws.readyState === import_ws.WebSocket.OPEN;
+  }
+  /**
+   * Send a chat message via WebSocket JSON-RPC.
+   * Streams delta events to the renderer window.
+   * Returns the fully assembled text content when streaming completes.
+   */
+  async sendChatMessageStreaming(baseUrl, token, agentId, message) {
+    if (!this.isConnected()) {
+      await this.connect(baseUrl, token);
+    }
+    const id = (0, import_crypto.randomUUID)();
+    this.activeStreamId = id;
+    let assembledText = "";
+    const onPayload = (payload) => {
+      if (payload.state === "delta") {
+        const items = payload.message?.content || [];
+        for (const item of items) {
+          if (item.type === "text" && item.text) {
+            assembledText += item.text;
+          }
+        }
+      }
+    };
+    this.streamCallbacks.add(onPayload);
+    const req = {
+      type: "req",
+      id,
+      method: "chat.send",
+      params: {
+        sessionKey: `agent:${agentId}`,
+        message,
+        deliver: false
+      }
+    };
+    return new Promise((resolve2, reject) => {
+      this.pending.set(id, (err) => {
+        this.streamCallbacks.delete(onPayload);
+        if (err) {
+          reject(err);
+        } else {
+          resolve2(assembledText || "Response received.");
+        }
+      });
+      if (!this.ws || this.ws.readyState !== import_ws.WebSocket.OPEN) {
+        this.pending.delete(id);
+        this.streamCallbacks.delete(onPayload);
+        reject(new Error("WebSocket not connected"));
+        return;
+      }
+      this.ws.send(JSON.stringify(req), (sendErr) => {
+        if (sendErr) {
+          this.pending.delete(id);
+          this.streamCallbacks.delete(onPayload);
+          reject(sendErr);
+        }
+      });
+    });
+  }
+  _handleMessage(raw) {
+    let msg;
+    try {
+      msg = JSON.parse(raw);
+    } catch {
+      console.warn("[WsManager] Non-JSON message:", raw.slice(0, 100));
+      return;
+    }
+    if (msg.type === "resp") {
+      const resp = msg;
+      if (resp.error) {
+        const cb = this.pending.get(resp.id);
+        if (cb) {
+          this.pending.delete(resp.id);
+          cb(new Error(resp.error.message));
+        }
+      }
+      return;
+    }
+    if (msg.type === "event" && msg.event === "chat") {
+      const payload = msg.payload;
+      this.streamCallbacks.forEach((cb) => cb(payload));
+      this._forwardChatEvent(payload);
+      if (payload.state === "final" || payload.state === "aborted" || payload.state === "error") {
+        if (this.activeStreamId) {
+          const cb = this.pending.get(this.activeStreamId);
+          if (cb) {
+            this.pending.delete(this.activeStreamId);
+            const err = payload.state === "error" ? new Error(payload.error || "Stream error") : null;
+            cb(err);
+          }
+          this.activeStreamId = null;
+        }
+      }
+    }
+  }
+  _forwardChatEvent(payload) {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+    this.mainWindow.webContents.send("chat-stream", payload);
+  }
+};
+var wsManager = new WsManager();
+
 // src/ipc/chat-ipc.ts
-function registerChatHandlers(getGatewayHandle) {
+function registerChatHandlers(getGatewayHandle, getMainWindow2) {
   import_electron2.ipcMain.handle("send-message", async (_event, payload) => {
     try {
       const message = typeof payload === "string" ? payload : payload?.message;
@@ -989,16 +1151,20 @@ function registerChatHandlers(getGatewayHandle) {
       const deviceId = state.deviceId || "";
       const gw = getGatewayHandle();
       const gatewayBaseUrl = gw?.baseUrl || null;
+      const gatewayToken = gw?.token || "";
+      const hasUserProvider = !!getUserProviderConfig();
+      const canUseGateway = !!gatewayBaseUrl && (hasLocalProvider || hasUserProvider);
       let content;
-      if (hasLocalProvider && gatewayBaseUrl) {
-        content = await sendViaGateway(gatewayBaseUrl, messages);
+      if (canUseGateway) {
+        const win = getMainWindow2();
+        if (win) wsManager.setWindow(win);
+        content = await wsManager.sendChatMessageStreaming(gatewayBaseUrl, gatewayToken, agentId, message);
       } else if (hasRelay) {
         content = await sendViaRelay(relay.baseUrl, relayAuthToken, messages, deviceId);
       } else if (deviceId && (relay.baseUrl || RELAY_BASE_URL)) {
         content = await sendViaRelay(relay.baseUrl || RELAY_BASE_URL, "", messages, deviceId);
       } else if (gatewayBaseUrl) {
-        const userProvider = getUserProviderConfig();
-        if (!userProvider) {
+        if (!hasUserProvider) {
           return {
             success: false,
             noApiKeyConfigured: true,
@@ -1572,6 +1738,221 @@ function registerChannelHandlers() {
   });
 }
 
+// src/ipc/skills-ipc.ts
+var crypto4 = __toESM(require("crypto"));
+var import_electron10 = require("electron");
+async function gatewayRpc(gw, method, params = {}) {
+  const id = crypto4.randomUUID();
+  const token = readGatewayTokenFromConfig();
+  const wsUrl = gw.baseUrl.replace(/^http/, "ws") + "/ws";
+  return new Promise((resolve2, reject) => {
+    let WS;
+    try {
+      WS = global.WebSocket || require("ws");
+    } catch {
+      WS = require("ws");
+    }
+    const socket = new WS(wsUrl, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    const timer = setTimeout(() => {
+      try {
+        socket.close();
+      } catch {
+      }
+      reject(new Error(`Gateway RPC timeout for method "${method}"`));
+    }, 15e3);
+    socket.onopen = () => {
+      socket.send(JSON.stringify({ type: "req", id, method, params }));
+    };
+    socket.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(typeof event.data === "string" ? event.data : String(event.data));
+        if (msg.id !== id) return;
+        clearTimeout(timer);
+        socket.close();
+        if (msg.ok) {
+          resolve2(msg.payload);
+        } else {
+          reject(new Error(msg.error || `Gateway RPC error for "${method}"`));
+        }
+      } catch (e) {
+        clearTimeout(timer);
+        socket.close();
+        reject(e);
+      }
+    };
+    socket.onerror = (err) => {
+      clearTimeout(timer);
+      reject(new Error(`Gateway WebSocket error: ${err.message || String(err)}`));
+    };
+  });
+}
+function registerSkillsHandlers(getGatewayHandle) {
+  import_electron10.ipcMain.handle("skills-list", async () => {
+    try {
+      const gw = getGatewayHandle();
+      if (!gw?.baseUrl) return { success: false, error: "Gateway not running", skills: [] };
+      const payload = await gatewayRpc(gw, "skills.status", {});
+      const skills = Array.isArray(payload?.skills) ? payload.skills : Array.isArray(payload) ? payload : [];
+      return { success: true, skills };
+    } catch (e) {
+      return { success: false, error: e.message, skills: [] };
+    }
+  });
+  import_electron10.ipcMain.handle("skills-toggle", async (_event, payload) => {
+    try {
+      const gw = getGatewayHandle();
+      if (!gw?.baseUrl) return { success: false, error: "Gateway not running" };
+      const { skillKey, enabled } = payload || {};
+      if (!skillKey) return { success: false, error: "skillKey is required" };
+      await gatewayRpc(gw, "skills.update", { skillKey, enabled: !!enabled });
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  import_electron10.ipcMain.handle("skills-install", async (_event, payload) => {
+    try {
+      const gw = getGatewayHandle();
+      if (!gw?.baseUrl) return { success: false, error: "Gateway not running" };
+      const { name, installId } = payload || {};
+      if (!name || !installId) return { success: false, error: "name and installId are required" };
+      await gatewayRpc(gw, "skills.install", { name, installId, timeoutMs: 6e4 });
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  import_electron10.ipcMain.handle("skills-configure", async (_event, payload) => {
+    try {
+      const gw = getGatewayHandle();
+      if (!gw?.baseUrl) return { success: false, error: "Gateway not running" };
+      const { skillKey, apiKey, env } = payload || {};
+      if (!skillKey) return { success: false, error: "skillKey is required" };
+      const params = { skillKey };
+      if (apiKey !== void 0) params.apiKey = apiKey;
+      if (env !== void 0) params.env = env;
+      await gatewayRpc(gw, "skills.update", params);
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+}
+
+// src/ipc/cron-ipc.ts
+var crypto5 = __toESM(require("crypto"));
+var import_electron11 = require("electron");
+function wsRpc(port, token, method, params = {}) {
+  return new Promise((resolve2, reject) => {
+    const id = crypto5.randomUUID();
+    const reqMsg = JSON.stringify({ type: "req", id, method, params });
+    let ws;
+    try {
+      const WebSocket2 = require("ws");
+      ws = new WebSocket2(`ws://127.0.0.1:${port}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+    } catch {
+      reject(new Error("WebSocket (ws) module not available"));
+      return;
+    }
+    const timer = setTimeout(() => {
+      try {
+        ws.close();
+      } catch {
+      }
+      reject(new Error(`cron RPC timeout: ${method}`));
+    }, 1e4);
+    ws.on("open", () => {
+      ws.send(reqMsg);
+    });
+    ws.on("message", (data) => {
+      try {
+        const msg = JSON.parse(typeof data === "string" ? data : data.toString("utf8"));
+        if (msg.id !== id) return;
+        clearTimeout(timer);
+        ws.close();
+        if (msg.ok) {
+          resolve2(msg.payload);
+        } else {
+          reject(new Error(msg.error || `RPC error: ${method}`));
+        }
+      } catch (e) {
+        clearTimeout(timer);
+        ws.close();
+        reject(e);
+      }
+    });
+    ws.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+function registerCronHandlers(getGatewayHandle) {
+  function requireGateway() {
+    const gw = getGatewayHandle();
+    if (!gw) throw new Error("Gateway is not running");
+    return { port: gw.port, token: gw.token };
+  }
+  import_electron11.ipcMain.handle("cron-list", async () => {
+    try {
+      const { port, token } = requireGateway();
+      const payload = await wsRpc(port, token, "cron.list", {});
+      return { success: true, ...payload };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+  import_electron11.ipcMain.handle("cron-add", async (_event, params) => {
+    try {
+      const { port, token } = requireGateway();
+      const payload = await wsRpc(port, token, "cron.add", params);
+      return { success: true, ...payload };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+  import_electron11.ipcMain.handle("cron-update", async (_event, params) => {
+    try {
+      const { port, token } = requireGateway();
+      const payload = await wsRpc(port, token, "cron.update", params);
+      return { success: true, ...payload };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+  import_electron11.ipcMain.handle("cron-remove", async (_event, params) => {
+    try {
+      const { port, token } = requireGateway();
+      const payload = await wsRpc(port, token, "cron.remove", params);
+      return { success: true, ...payload };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+  import_electron11.ipcMain.handle("cron-run", async (_event, params) => {
+    try {
+      const { port, token } = requireGateway();
+      const payload = await wsRpc(port, token, "cron.run", params);
+      return { success: true, ...payload };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+  import_electron11.ipcMain.handle("cron-runs", async (_event, params) => {
+    try {
+      const { port, token } = requireGateway();
+      const payload = await wsRpc(port, token, "cron.runs", params);
+      return { success: true, ...payload };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+}
+
 // src/window.ts
 var mainWindow = null;
 var gatewayHandle = null;
@@ -1602,7 +1983,7 @@ function registerAllIpcHandlers() {
     gatewayHandle = await startGateway(updateLoadingStatus);
   };
   registerGatewayHandlers(getGW);
-  registerChatHandlers(getGW);
+  registerChatHandlers(getGW, () => mainWindow);
   registerAppStateHandlers();
   registerSubscriptionHandlers();
   registerAgentHandlers();
@@ -1610,10 +1991,12 @@ function registerAllIpcHandlers() {
   registerRelayHandlers();
   registerDeviceHandlers();
   registerChannelHandlers();
+  registerSkillsHandlers(getGW);
+  registerCronHandlers(getGW);
 }
 function createWindow() {
-  import_electron10.Menu.setApplicationMenu(null);
-  mainWindow = new import_electron10.BrowserWindow({
+  import_electron12.Menu.setApplicationMenu(null);
+  mainWindow = new import_electron12.BrowserWindow({
     width: 1200,
     height: 800,
     webPreferences: {
@@ -1625,7 +2008,7 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     const gw = gatewayHandle;
     const target = /^https?:\/\/127\.0\.0\.1:\d+\/?$/i.test(String(url || "")) ? buildDashboardUrl(url, gw?.baseUrl) : url;
-    import_electron10.shell.openExternal(target);
+    import_electron12.shell.openExternal(target);
     return { action: "deny" };
   });
   mainWindow.webContents.on("render-process-gone", (_e, details) => {
@@ -1706,7 +2089,7 @@ var isVM = (() => {
   }
 })();
 if (isVM) {
-  import_electron11.app.commandLine.appendSwitch("disable-gpu");
+  import_electron13.app.commandLine.appendSwitch("disable-gpu");
   console.log("[gpu] Disabled GPU acceleration (VM detected)");
 }
 process.stdout?.on("error", () => {
@@ -1715,20 +2098,20 @@ process.stderr?.on("error", () => {
 });
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
-    import_electron11.app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path8.resolve(process.argv[1])]);
+    import_electron13.app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path8.resolve(process.argv[1])]);
   }
 } else {
-  import_electron11.app.setAsDefaultProtocolClient(PROTOCOL);
+  import_electron13.app.setAsDefaultProtocolClient(PROTOCOL);
 }
-import_electron11.app.on("open-url", (event, url) => {
+import_electron13.app.on("open-url", (event, url) => {
   event.preventDefault();
   handleDeepLink(url, getMainWindow);
 });
-var gotTheLock = import_electron11.app.requestSingleInstanceLock();
+var gotTheLock = import_electron13.app.requestSingleInstanceLock();
 if (!gotTheLock) {
-  import_electron11.app.quit();
+  import_electron13.app.quit();
 } else {
-  import_electron11.app.on("second-instance", (_event, argv) => {
+  import_electron13.app.on("second-instance", (_event, argv) => {
     const deepLinkUrl = argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
     if (deepLinkUrl) handleDeepLink(deepLinkUrl, getMainWindow);
     const mainWindow2 = getMainWindow();
@@ -1738,10 +2121,10 @@ if (!gotTheLock) {
     }
   });
   registerAllIpcHandlers();
-  import_electron11.app.whenReady().then(() => {
+  import_electron13.app.whenReady().then(() => {
     console.log("[app] ready");
     const deviceId = ensureDeviceId();
-    registerDevice(deviceId, import_electron11.app.getVersion());
+    registerDevice(deviceId, import_electron13.app.getVersion());
     const state = loadAppState();
     if (!state.relay.baseUrl) {
       state.relay.baseUrl = RELAY_BASE_URL;
@@ -1752,11 +2135,11 @@ if (!gotTheLock) {
     const launchUrl = process.argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
     if (launchUrl) handleDeepLink(launchUrl, getMainWindow);
   });
-  import_electron11.app.on("window-all-closed", () => {
+  import_electron13.app.on("window-all-closed", () => {
     killGateway();
-    if (process.platform !== "darwin") import_electron11.app.quit();
+    if (process.platform !== "darwin") import_electron13.app.quit();
   });
-  import_electron11.app.on("activate", () => {
-    if (import_electron11.BrowserWindow.getAllWindows().length === 0) createWindow();
+  import_electron13.app.on("activate", () => {
+    if (import_electron13.BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 }

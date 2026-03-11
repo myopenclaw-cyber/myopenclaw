@@ -1,0 +1,252 @@
+import { WebSocket } from 'ws';
+import { randomUUID } from 'crypto';
+import type { BrowserWindow } from 'electron';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface RpcRequest {
+  type: 'req';
+  id: string;
+  method: string;
+  params: Record<string, unknown>;
+}
+
+interface RpcResponse {
+  type: 'resp';
+  id: string;
+  result?: unknown;
+  error?: { code: number; message: string };
+}
+
+interface ChatEvent {
+  type: 'event';
+  event: 'chat';
+  payload: ChatPayload;
+}
+
+export interface ChatPayload {
+  state: 'delta' | 'final' | 'aborted' | 'error';
+  message?: {
+    content: ContentItem[];
+  };
+  error?: string;
+}
+
+export interface ContentItem {
+  type: 'text' | 'thinking' | 'tool_use' | string;
+  text?: string;
+  thinking?: string;
+  name?: string;
+  input?: unknown;
+}
+
+type StreamCallback = (payload: ChatPayload) => void;
+
+// ---------------------------------------------------------------------------
+// WebSocket manager
+// ---------------------------------------------------------------------------
+
+export class WsManager {
+  private ws: WebSocket | null = null;
+  private baseUrl: string = '';
+  private token: string = '';
+  private pending: Map<string, (err: Error | null) => void> = new Map();
+  private mainWindow: BrowserWindow | null = null;
+  private streamCallbacks: Set<StreamCallback> = new Set();
+  private activeStreamId: string | null = null;
+
+  setWindow(win: BrowserWindow): void {
+    this.mainWindow = win;
+  }
+
+  connect(baseUrl: string, token: string): Promise<void> {
+    // Disconnect if connecting to a different URL
+    if (this.baseUrl && this.baseUrl !== baseUrl) {
+      this.disconnect();
+    }
+
+    this.baseUrl = baseUrl;
+    this.token = token;
+
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      return Promise.resolve();
+    }
+
+    // Convert http://host:port to ws://host:port
+    const wsUrl = baseUrl.replace(/^http/, 'ws') + '/ws';
+
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(wsUrl, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      ws.once('open', () => {
+        console.log('[WsManager] Connected to gateway WebSocket');
+        this.ws = ws;
+        resolve();
+      });
+
+      ws.once('error', (err) => {
+        console.error('[WsManager] WebSocket connection error:', err.message);
+        reject(err);
+      });
+
+      ws.on('message', (data: Buffer | string) => {
+        this._handleMessage(String(data));
+      });
+
+      ws.on('close', () => {
+        console.log('[WsManager] WebSocket closed');
+        this.ws = null;
+        // Reject any pending stream callbacks
+        this.pending.forEach((cb) => cb(new Error('WebSocket closed')));
+        this.pending.clear();
+      });
+
+      ws.on('error', (err) => {
+        // Runtime errors after connect — log only
+        console.error('[WsManager] WebSocket error:', err.message);
+      });
+    });
+  }
+
+  disconnect(): void {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+  }
+
+  isConnected(): boolean {
+    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
+
+  /**
+   * Send a chat message via WebSocket JSON-RPC.
+   * Streams delta events to the renderer window.
+   * Returns the fully assembled text content when streaming completes.
+   */
+  async sendChatMessageStreaming(
+    baseUrl: string,
+    token: string,
+    agentId: string,
+    message: string,
+  ): Promise<string> {
+    if (!this.isConnected()) {
+      await this.connect(baseUrl, token);
+    }
+
+    const id = randomUUID();
+    this.activeStreamId = id;
+
+    // Assembled text and thinking content from all delta events
+    let assembledText = '';
+
+    const onPayload: StreamCallback = (payload) => {
+      if (payload.state === 'delta') {
+        const items = payload.message?.content || [];
+        for (const item of items) {
+          if (item.type === 'text' && item.text) {
+            assembledText += item.text;
+          }
+        }
+      }
+    };
+    this.streamCallbacks.add(onPayload);
+
+    const req: RpcRequest = {
+      type: 'req',
+      id,
+      method: 'chat.send',
+      params: {
+        sessionKey: `agent:${agentId}`,
+        message,
+        deliver: false,
+      },
+    };
+
+    return new Promise((resolve, reject) => {
+      // Register completion callback keyed by the request ID
+      this.pending.set(id, (err) => {
+        this.streamCallbacks.delete(onPayload);
+        if (err) {
+          reject(err);
+        } else {
+          resolve(assembledText || 'Response received.');
+        }
+      });
+
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        this.pending.delete(id);
+        this.streamCallbacks.delete(onPayload);
+        reject(new Error('WebSocket not connected'));
+        return;
+      }
+
+      this.ws.send(JSON.stringify(req), (sendErr) => {
+        if (sendErr) {
+          this.pending.delete(id);
+          this.streamCallbacks.delete(onPayload);
+          reject(sendErr);
+        }
+      });
+    });
+  }
+
+  private _handleMessage(raw: string): void {
+    let msg: Record<string, unknown>;
+    try {
+      msg = JSON.parse(raw);
+    } catch {
+      console.warn('[WsManager] Non-JSON message:', raw.slice(0, 100));
+      return;
+    }
+
+    if (msg.type === 'resp') {
+      const resp = msg as unknown as RpcResponse;
+      // RPC response for the initial send — the stream events come separately
+      if (resp.error) {
+        const cb = this.pending.get(resp.id);
+        if (cb) {
+          this.pending.delete(resp.id);
+          cb(new Error(resp.error.message));
+        }
+      }
+      // Non-error resp: we wait for final/aborted/error chat event to resolve
+      return;
+    }
+
+    if (msg.type === 'event' && msg.event === 'chat') {
+      const payload = (msg as unknown as ChatEvent).payload;
+
+      // Notify local stream callbacks (for assembling text)
+      this.streamCallbacks.forEach((cb) => cb(payload));
+
+      // Forward to renderer for UI updates
+      this._forwardChatEvent(payload);
+
+      // Resolve/reject the pending promise on terminal states
+      if (payload.state === 'final' || payload.state === 'aborted' || payload.state === 'error') {
+        if (this.activeStreamId) {
+          const cb = this.pending.get(this.activeStreamId);
+          if (cb) {
+            this.pending.delete(this.activeStreamId);
+            const err = payload.state === 'error' ? new Error(payload.error || 'Stream error') : null;
+            cb(err);
+          }
+          this.activeStreamId = null;
+        }
+      }
+    }
+  }
+
+  private _forwardChatEvent(payload: ChatPayload): void {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+    this.mainWindow.webContents.send('chat-stream', payload);
+  }
+}
+
+// Singleton instance
+export const wsManager = new WsManager();

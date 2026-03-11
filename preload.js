@@ -49,5 +49,20 @@ import_electron.contextBridge.exposeInMainWorld("electronAPI", {
   saveAgentChannelConfig: (payload) => import_electron.ipcRenderer.invoke("save-agent-channel-config", payload),
   // App info
   getAppVersion: () => import_electron.ipcRenderer.invoke("get-app-version"),
-  openLogFile: () => import_electron.ipcRenderer.invoke("open-log-file")
+  openLogFile: () => import_electron.ipcRenderer.invoke("open-log-file"),
+  // Skills
+  skillsList: () => import_electron.ipcRenderer.invoke("skills-list"),
+  skillsToggle: (payload) => import_electron.ipcRenderer.invoke("skills-toggle", payload),
+  skillsInstall: (payload) => import_electron.ipcRenderer.invoke("skills-install", payload),
+  skillsConfigure: (payload) => import_electron.ipcRenderer.invoke("skills-configure", payload),
+  // Cron jobs
+  cronList: () => import_electron.ipcRenderer.invoke("cron-list"),
+  cronAdd: (params) => import_electron.ipcRenderer.invoke("cron-add", params),
+  cronUpdate: (params) => import_electron.ipcRenderer.invoke("cron-update", params),
+  cronRemove: (params) => import_electron.ipcRenderer.invoke("cron-remove", params),
+  cronRun: (params) => import_electron.ipcRenderer.invoke("cron-run", params),
+  cronRuns: (params) => import_electron.ipcRenderer.invoke("cron-runs", params),
+  // Chat streaming
+  onChatStream: (callback) => import_electron.ipcRenderer.on("chat-stream", (_event, ...args) => callback(...args)),
+  removeChatStreamListeners: () => import_electron.ipcRenderer.removeAllListeners("chat-stream")
 });
