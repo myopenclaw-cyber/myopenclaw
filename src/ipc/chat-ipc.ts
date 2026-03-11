@@ -1,5 +1,6 @@
-import { ipcMain } from 'electron';
+import { ipcMain, dialog, clipboard, nativeImage } from 'electron';
 import type { BrowserWindow } from 'electron';
+import { readFileSync } from 'fs';
 import {
   loadAppState,
   saveAppState,
@@ -15,6 +16,57 @@ export function registerChatHandlers(
   getGatewayHandle: () => GatewayHandle | null,
   getMainWindow: () => BrowserWindow | null,
 ): void {
+  ipcMain.handle('copy-rich', (_event, payload: { text: string; imagePaths: string[] }) => {
+    const { text, imagePaths } = payload;
+    if (!imagePaths.length) {
+      clipboard.writeText(text);
+      return true;
+    }
+    // Build HTML with embedded base64 images + text
+    let html = '';
+    const lines = text.split('\n');
+    for (const line of lines) {
+      const imgMatch = line.match(/\/([\w./\-]+\.(?:png|jpg|jpeg|gif|webp|svg))/i);
+      if (imgMatch) {
+        const fullPath = '/' + imgMatch[1];
+        const matched = imagePaths.find(p => p === fullPath || fullPath.endsWith(p.split('/').pop()!));
+        if (matched) {
+          try {
+            const buf = readFileSync(matched);
+            const ext = matched.split('.').pop()?.toLowerCase() || 'png';
+            const mime = ext === 'jpg' ? 'jpeg' : ext;
+            const b64 = buf.toString('base64');
+            html += `<p>${line.replace(/`/g, '')}</p><img src="data:image/${mime};base64,${b64}" style="max-width:600px"><br>`;
+            continue;
+          } catch { /* skip */ }
+        }
+      }
+      html += `<p>${line}</p>`;
+    }
+    // Write image as native image for apps that prefer image format
+    try {
+      const img = nativeImage.createFromPath(imagePaths[0]);
+      clipboard.write({
+        text,
+        html,
+        image: img,
+      });
+    } catch {
+      clipboard.write({ text, html });
+    }
+    return true;
+  });
+
+  ipcMain.handle('pick-file', async () => {
+    const opts = { properties: ['openFile' as const, 'multiSelections' as const] };
+    const win = getMainWindow();
+    const result = win
+      ? await dialog.showOpenDialog(win, opts)
+      : await dialog.showOpenDialog(opts);
+    if (result.canceled) return [];
+    return result.filePaths;
+  });
+
   ipcMain.handle('send-message', async (_event, payload) => {
     try {
       const message = typeof payload === 'string' ? payload : payload?.message;

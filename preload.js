@@ -7,6 +7,8 @@ import_electron.contextBridge.exposeInMainWorld("electronAPI", {
   saveConfig: (config) => import_electron.ipcRenderer.invoke("save-config", config),
   // Chat
   sendMessage: (payload) => import_electron.ipcRenderer.invoke("send-message", payload),
+  pickFile: () => import_electron.ipcRenderer.invoke("pick-file"),
+  copyRich: (payload) => import_electron.ipcRenderer.invoke("copy-rich", payload),
   // Gateway
   getGatewayInfo: () => import_electron.ipcRenderer.invoke("get-gateway-info"),
   openGatewayDashboard: () => import_electron.ipcRenderer.invoke("open-gateway-dashboard"),

@@ -43,6 +43,15 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .m { max-width: 78%; padding: 10px 12px; border-radius: 12px; margin: 8px 0; line-height: 1.5; word-break: break-word; font-size: 14px; color: #161835; }
 .u { margin-left: auto; background: linear-gradient(90deg, rgba(93,104,255,1) 0%, rgba(140,70,252,1) 100%); color: #FFFFFF; }
 .a { background: rgba(107,70,255,0.06); border: 1px solid rgba(107,70,255,0.1); }
+.msg-actions { display: flex; justify-content: flex-end; margin-top: 4px; opacity: 0; transition: opacity .15s; }
+.m:hover .msg-actions { opacity: 1; }
+.msg-copy { background: none; border: none; cursor: pointer; font-size: 12px; padding: 1px 6px; border-radius: 4px; color: rgba(0,0,0,0.35); min-width: auto; line-height: 1; }
+.msg-copy:hover { background: rgba(107,70,255,0.1); color: #6b46ff; }
+.u .msg-copy { color: rgba(255,255,255,0.45); }
+.u .msg-copy:hover { background: rgba(255,255,255,0.2); color: #fff; }
+.file-attach { display: flex; align-items: center; gap: 6px; padding: 4px 8px; margin-top: 4px; font-size: 12px; color: #6b46ff; background: rgba(107,70,255,0.06); border-radius: 8px; }
+.file-attach .file-remove { cursor: pointer; opacity: 0.6; background: none; border: none; font-size: 14px; padding: 0 2px; min-width: auto; color: inherit; }
+.file-attach .file-remove:hover { opacity: 1; }
 ul { list-style: none; padding: 0; }
 li { padding: 10px; border: 1px solid rgba(107,70,255,0.15); background: rgba(255,255,255,0.5); border-radius: 10px; margin: 8px 0; color: #161835; }
 .small { font-size: 12px; color: rgba(0,0,0,0.55); }
@@ -250,7 +259,9 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
           <button class="alt" onclick="openDashboardChat()" title="Open full chat in Dashboard" style="white-space:nowrap;font-size:12px;padding:8px 12px">Dashboard Chat</button>
         </div>
         <div id="chatBox" class="chat"></div>
+        <div id="filePreview" style="display:none"></div>
         <div class="row">
+          <button onclick="pickFile()" title="Attach file" style="min-width:36px;padding:8px;font-size:16px">&#128206;</button>
           <textarea id="msg" rows="2" placeholder="Type your message... (Enter to send, Shift+Enter for new line)" style="max-height:160px"></textarea>
           <button onclick="sendMsg()">Send</button>
         </div>
@@ -816,10 +827,39 @@ function startPairingPolling() {
 function chat(t, c) {
   const d = document.createElement('div');
   d.className = 'm ' + c;
-  d.innerHTML = renderMarkdown(t);
+  d.setAttribute('data-raw', t);
+  d.innerHTML = renderMarkdown(t) + '<div class="msg-actions"><button class="msg-copy" onclick="copyMsg(this)">Copy</button></div>';
   const b = document.getElementById('chatBox');
   b.appendChild(d);
   b.scrollTop = b.scrollHeight;
+}
+
+function copyMsg(btn) {
+  const msgEl = btn.closest('.m');
+  const raw = msgEl ? msgEl.getAttribute('data-raw') : '';
+  const imgs = msgEl ? msgEl.querySelectorAll('img') : [];
+
+  // Extract local file paths from images
+  var imagePaths = [];
+  for (var i = 0; i < imgs.length; i++) {
+    var src = imgs[i].getAttribute('src') || '';
+    if (src.startsWith('file://')) {
+      imagePaths.push(decodeURIComponent(src.replace('file://', '')));
+    }
+  }
+
+  if (imagePaths.length && window.electronAPI.copyRich) {
+    window.electronAPI.copyRich({ text: raw || msgEl.textContent, imagePaths: imagePaths }).then(function() {
+      btn.textContent = 'Copied!';
+      setTimeout(function() { btn.textContent = 'Copy'; }, 1200);
+    });
+    return;
+  }
+
+  navigator.clipboard.writeText(raw || msgEl.textContent).then(function() {
+    btn.textContent = 'Copied!';
+    setTimeout(function() { btn.textContent = 'Copy'; }, 1200);
+  });
 }
 
 function createThinkingBubble() {
@@ -847,6 +887,8 @@ function updateStreamingBubble(bubble, textSoFar, thinkingText, toolSteps) {
   }
   if (textSoFar) {
     html += '<span>' + renderMarkdown(textSoFar) + '</span>';
+    bubble.setAttribute('data-raw', textSoFar);
+    html += '<div class="msg-actions"><button class="msg-copy" onclick="copyMsg(this)">Copy</button></div>';
   } else {
     html +=
       '<span style="opacity:.7;font-size:13px">Thinking\u00a0</span>' +
@@ -882,6 +924,36 @@ function renderMarkdown(str) {
 
 async function openDashboardChat() {
   await window.electronAPI.openGatewayDashboard();
+}
+
+// ---------------------------------------------------------------------------
+// File attachment
+// ---------------------------------------------------------------------------
+var pendingFiles = [];
+
+async function pickFile() {
+  const result = await window.electronAPI.pickFile();
+  if (result && result.length) {
+    for (const f of result) {
+      if (pendingFiles.indexOf(f) === -1) pendingFiles.push(f);
+    }
+    renderFilePreview();
+  }
+}
+
+function removeFile(idx) {
+  pendingFiles.splice(idx, 1);
+  renderFilePreview();
+}
+
+function renderFilePreview() {
+  const el = document.getElementById('filePreview');
+  if (!pendingFiles.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = 'block';
+  el.innerHTML = pendingFiles.map(function(f, i) {
+    var name = f.split('/').pop();
+    return '<div class="file-attach"><span>&#128206; ' + escapeHtml(name) + '</span><button class="file-remove" onclick="removeFile(' + i + ')" title="Remove">&times;</button></div>';
+  }).join('');
 }
 
 // ---------------------------------------------------------------------------
@@ -1124,13 +1196,23 @@ function renderConversation() {
 // Send message
 // ---------------------------------------------------------------------------
 async function sendMsg() {
-  const text = document.getElementById('msg').value.trim();
-  if (!text) return;
+  const rawText = document.getElementById('msg').value.trim();
+  if (!rawText && !pendingFiles.length) return;
 
   const sendBtn = document.querySelector('#chat button[onclick="sendMsg()"]');
   if (sendBtn) sendBtn.disabled = true;
 
-  chat(text, 'u');
+  // Build message with file attachments
+  let text = rawText;
+  if (pendingFiles.length) {
+    const filePart = pendingFiles.map(function(f) { return '[File: ' + f + ']'; }).join('\n');
+    text = text ? text + '\n\n' + filePart : filePart;
+  }
+  const displayText = rawText + (pendingFiles.length ? '\n' + pendingFiles.map(function(f) { return '📎 ' + f.split('/').pop(); }).join('\n') : '');
+  pendingFiles = [];
+  renderFilePreview();
+
+  chat(displayText, 'u');
   document.getElementById('msg').value = '';
 
   let streamingBubble = null;

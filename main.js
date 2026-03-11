@@ -763,7 +763,7 @@ async function startGateway(updateLoadingStatus2) {
     if (process.platform === "win32") {
       (0, import_child_process2.execSync)(`wmic process where "CommandLine like '%OPENCLAW_SERVICE_MARKER=myopenclaw%' and name like '%node%'" call terminate`, { timeout: 5e3, stdio: "pipe" });
     } else {
-      (0, import_child_process2.execSync)("ps -eo pid,command | grep 'OPENCLAW_SERVICE_MARKER=myopenclaw' | grep -v grep | awk '{print $1}' | xargs kill -9 2>/dev/null", { timeout: 5e3, stdio: "pipe", shell: true });
+      (0, import_child_process2.execSync)("ps -eo pid,command | grep 'OPENCLAW_SERVICE_MARKER=myopenclaw' | grep -v grep | awk '{print $1}' | xargs kill -9 2>/dev/null", { timeout: 5e3, stdio: "pipe" });
     }
   } catch {
   }
@@ -953,6 +953,7 @@ function registerGatewayHandlers(getGatewayHandle) {
 
 // src/ipc/chat-ipc.ts
 var import_electron2 = require("electron");
+var import_fs = require("fs");
 
 // src/messaging.ts
 var import_axios6 = __toESM(require("axios"));
@@ -1320,6 +1321,52 @@ var wsManager = new WsManager();
 
 // src/ipc/chat-ipc.ts
 function registerChatHandlers(getGatewayHandle, getMainWindow2) {
+  import_electron2.ipcMain.handle("copy-rich", (_event, payload) => {
+    const { text, imagePaths } = payload;
+    if (!imagePaths.length) {
+      import_electron2.clipboard.writeText(text);
+      return true;
+    }
+    let html = "";
+    const lines = text.split("\n");
+    for (const line of lines) {
+      const imgMatch = line.match(/\/([\w./\-]+\.(?:png|jpg|jpeg|gif|webp|svg))/i);
+      if (imgMatch) {
+        const fullPath = "/" + imgMatch[1];
+        const matched = imagePaths.find((p) => p === fullPath || fullPath.endsWith(p.split("/").pop()));
+        if (matched) {
+          try {
+            const buf = (0, import_fs.readFileSync)(matched);
+            const ext = matched.split(".").pop()?.toLowerCase() || "png";
+            const mime = ext === "jpg" ? "jpeg" : ext;
+            const b64 = buf.toString("base64");
+            html += `<p>${line.replace(/`/g, "")}</p><img src="data:image/${mime};base64,${b64}" style="max-width:600px"><br>`;
+            continue;
+          } catch {
+          }
+        }
+      }
+      html += `<p>${line}</p>`;
+    }
+    try {
+      const img = import_electron2.nativeImage.createFromPath(imagePaths[0]);
+      import_electron2.clipboard.write({
+        text,
+        html,
+        image: img
+      });
+    } catch {
+      import_electron2.clipboard.write({ text, html });
+    }
+    return true;
+  });
+  import_electron2.ipcMain.handle("pick-file", async () => {
+    const opts = { properties: ["openFile", "multiSelections"] };
+    const win = getMainWindow2();
+    const result = win ? await import_electron2.dialog.showOpenDialog(win, opts) : await import_electron2.dialog.showOpenDialog(opts);
+    if (result.canceled) return [];
+    return result.filePaths;
+  });
   import_electron2.ipcMain.handle("send-message", async (_event, payload) => {
     try {
       const message = typeof payload === "string" ? payload : payload?.message;

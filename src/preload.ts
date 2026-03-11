@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Chat
   sendMessage: (payload: Record<string, unknown> | string) => ipcRenderer.invoke('send-message', payload),
+  pickFile: () => ipcRenderer.invoke('pick-file'),
+  copyRich: (payload: { text: string; imagePaths: string[] }) => ipcRenderer.invoke('copy-rich', payload),
 
   // Gateway
   getGatewayInfo: () => ipcRenderer.invoke('get-gateway-info'),
