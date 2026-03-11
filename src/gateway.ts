@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { spawn } from 'child_process';
+import { spawn, execFileSync } from 'child_process';
 import axios from 'axios';
 import {
   OPENCLAW_CONFIG_DIR,
@@ -46,6 +46,9 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
   } catch (e: any) {
     console.error('[startGateway] Failed to sync token to openclaw.json:', e.message);
   }
+
+  // Auto-fix invalid config keys before starting gateway
+  tryDoctorFix();
 
   updateLoadingStatus('Launching openclaw gateway...', 90);
 
@@ -130,4 +133,42 @@ export async function waitForGateway(gatewayBaseUrl: string, maxRetries: number 
   }
   console.error('[waitForGateway] Max retries reached, gateway failed to start');
   throw new Error('Gateway failed to start after 30 attempts. Please check your configuration and try again.');
+}
+
+function tryDoctorFix(): void {
+  try {
+    const cli = findOpenClawCli();
+    if (!cli) return;
+
+    const env = { ...process.env, PATH: buildNodeEnhancedPath(), OPENCLAW_CONFIG_PATH: CONFIG_FILE };
+    const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(cli);
+
+    const output = execFileSync(cli, ['doctor', '--fix'], {
+      encoding: 'utf8', timeout: 15000, stdio: 'pipe', env, shell: useShell,
+      ...(process.platform === 'win32' ? { windowsHide: true } : {}),
+    });
+    if (output.includes('fix') || output.includes('removed') || output.includes('Unrecognized')) {
+      console.log('[doctor] Auto-fixed config:', output.trim());
+    }
+  } catch (err: any) {
+    // doctor --fix is best-effort; if CLI not available, try node fallback
+    try {
+      const runtimeDir = findRuntimeDir();
+      if (!runtimeDir) return;
+      const entryMjs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'openclaw.mjs');
+      const entryJs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'dist', 'entry.js');
+      const entryFile = fs.existsSync(entryMjs) ? entryMjs : entryJs;
+      const nodeBin = findNodeBinary();
+      const env = { ...process.env, PATH: buildNodeEnhancedPath(), OPENCLAW_CONFIG_PATH: CONFIG_FILE };
+
+      const output = execFileSync(nodeBin, [entryFile, 'doctor', '--fix'], {
+        encoding: 'utf8', timeout: 15000, stdio: 'pipe', env, cwd: runtimeDir,
+      });
+      if (output.includes('fix') || output.includes('removed') || output.includes('Unrecognized')) {
+        console.log('[doctor] Auto-fixed config via node fallback:', output.trim());
+      }
+    } catch {
+      console.log('[doctor] Could not run doctor --fix:', err.message);
+    }
+  }
 }

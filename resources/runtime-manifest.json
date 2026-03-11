@@ -1,11 +1,20 @@
 {
   "windows": {
-    "url": "https://github.com/myopenclaw-cyber/myopenclaw/releases/download/runtime-v1.1.0/openclaw-runtime-windows.zip"
+    "urls": [
+      "https://cdn.myopenclaws.app/runtime/v1.1.0/openclaw-runtime-windows.zip",
+      "https://github.com/myopenclaw-cyber/myopenclaw/releases/download/runtime-v1.1.0/openclaw-runtime-windows.zip"
+    ]
   },
   "mac_silicon": {
-    "url": "https://github.com/myopenclaw-cyber/myopenclaw/releases/download/runtime-v1.1.0/openclaw-runtime-mac-silicon.zip"
+    "urls": [
+      "https://cdn.myopenclaws.app/runtime/v1.1.0/openclaw-runtime-mac-silicon.zip",
+      "https://github.com/myopenclaw-cyber/myopenclaw/releases/download/runtime-v1.1.0/openclaw-runtime-mac-silicon.zip"
+    ]
   },
   "mac_intel": {
-    "url": "https://github.com/myopenclaw-cyber/myopenclaw/releases/download/runtime-v1.1.0/openclaw-runtime-mac-intel.zip"
+    "urls": [
+      "https://cdn.myopenclaws.app/runtime/v1.1.0/openclaw-runtime-mac-intel.zip",
+      "https://github.com/myopenclaw-cyber/myopenclaw/releases/download/runtime-v1.1.0/openclaw-runtime-mac-intel.zip"
+    ]
   }
 }

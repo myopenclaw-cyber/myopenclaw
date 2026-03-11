@@ -36,6 +36,26 @@ export async function downloadFile(url: string, outputPath: string, onProgress?:
   });
 }
 
+async function downloadWithFallback(urls: string[], outputPath: string, onProgress?: (percent: number) => void): Promise<void> {
+  for (let i = 0; i < urls.length; i++) {
+    const url = urls[i];
+    const label = i === 0 ? 'CDN' : `mirror ${i}`;
+    try {
+      console.log(`[runtime] Trying ${label}: ${url}`);
+      await downloadFile(url, outputPath, onProgress);
+      console.log(`[runtime] Download succeeded from ${label}`);
+      return;
+    } catch (err: any) {
+      console.error(`[runtime] Download failed from ${label}: ${err.message}`);
+      try { fs.unlinkSync(outputPath); } catch {}
+      if (i === urls.length - 1) {
+        throw new Error(`All download sources failed. Last error: ${err.message}`);
+      }
+      console.log(`[runtime] Falling back to next source...`);
+    }
+  }
+}
+
 export function findRuntimeDir(): string | null {
   const embeddedDir = path.join(__dirname, 'resources', 'openclaw-deps', 'openclaw', 'dist');
   if (fs.existsSync(path.join(embeddedDir, 'entry.js')) || fs.existsSync(path.join(embeddedDir, 'entry.mjs'))) {
@@ -62,9 +82,9 @@ export async function ensureEmbeddedRuntime(updateLoadingStatus: LoadingStatusCa
 
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   const target = getRuntimeTargetLabel();
-  const url = manifest?.[target]?.url;
+  const urls: string[] = manifest?.[target]?.urls || (manifest?.[target]?.url ? [manifest[target].url] : []);
 
-  if (!url) {
+  if (!urls.length) {
     throw new Error(`No runtime download URL configured for platform "${target}". Please download the runtime manually or use the full installer.`);
   }
 
@@ -72,7 +92,7 @@ export async function ensureEmbeddedRuntime(updateLoadingStatus: LoadingStatusCa
 
   console.log(`[runtime] Downloading runtime for ${target}...`);
   updateLoadingStatus('Downloading openclaw ...', 52);
-  await downloadFile(url, zipPath, (p) => {
+  await downloadWithFallback(urls, zipPath, (p) => {
     updateLoadingStatus(`Downloading openclaw ... ${p}%`, 52 + Math.round(p * 0.28));
   });
 
