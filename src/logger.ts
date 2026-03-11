@@ -1,15 +1,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { OPENCLAW_CONFIG_DIR } from './constants';
+import { MYOPENCLAW_DATA_DIR } from './constants';
 
-const LOG_FILE = path.join(OPENCLAW_CONFIG_DIR, 'myopenclaw.log');
+const LOG_FILE = path.join(MYOPENCLAW_DATA_DIR, 'myopenclaw.log');
 const MAX_LOG_SIZE = 2 * 1024 * 1024; // 2MB
 
 let logStream: fs.WriteStream | null = null;
 
 function ensureLogStream(): fs.WriteStream {
   if (logStream) return logStream;
-  fs.mkdirSync(OPENCLAW_CONFIG_DIR, { recursive: true });
+  fs.mkdirSync(MYOPENCLAW_DATA_DIR, { recursive: true });
 
   // Rotate if too large
   try {

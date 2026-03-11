@@ -10,7 +10,7 @@ import { createWindow, getMainWindow, killGateway, registerAllIpcHandlers } from
 import { initFileLogger } from './logger';
 
 // ---------------------------------------------------------------------------
-// File logger — write all console output to ~/.openclaw/myopenclaw.log
+// File logger — write all console output to ~/.myopenclaw/myopenclaw.log
 // ---------------------------------------------------------------------------
 initFileLogger();
 

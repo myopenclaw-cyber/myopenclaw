@@ -5,6 +5,7 @@ import axios from 'axios';
 import {
   OPENCLAW_CONFIG_DIR,
   CONFIG_FILE,
+  DEFAULT_PORT,
 } from './constants';
 import {
   ensureRandomGatewayToken,
@@ -18,10 +19,10 @@ import type { GatewayHandle, LoadingStatusCallback } from './types';
 export async function startGateway(updateLoadingStatus: LoadingStatusCallback): Promise<GatewayHandle> {
   let gatewayPort: number;
 
-  if (await isOpenClawGatewayRunning(18800)) {
-    gatewayPort = 18800;
+  if (await isOpenClawGatewayRunning(DEFAULT_PORT)) {
+    gatewayPort = DEFAULT_PORT;
   } else {
-    gatewayPort = await findAvailablePort(18800);
+    gatewayPort = await findAvailablePort(DEFAULT_PORT);
   }
   const gatewayBaseUrl = `http://127.0.0.1:${gatewayPort}`;
 
