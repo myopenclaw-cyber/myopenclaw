@@ -113,7 +113,7 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
 .skill-apikey input { flex: 1; font-size: 12px; padding: 6px 8px; }
 .skill-apikey button { flex-shrink: 0; padding: 6px 10px; font-size: 12px; }
 /* Channel setup guide */
-.channel-guide { background: #0d1530cc; border: 1px solid #4f9eff44; border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
+.channel-guide { background: rgba(255, 255, 255, 0.40); border: 1px solid #4f9eff44; border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
 .channel-guide p { margin: 0 0 10px; font-size: 13px; font-weight: 700; color: #8aa1ff; letter-spacing: .03em; }
 .channel-guide ol { margin: 0; padding-left: 20px; }
 .channel-guide ol li { font-size: 13px; color: #c8d4ff; line-height: 1.7; }
@@ -318,15 +318,19 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
     <section id="account" class="page">
       <div class="card">
         <h3 style="margin:0 0 12px">Account</h3>
-        <div class="row" style="align-items:center;margin-bottom:8px">
-          <label style="min-width:130px" class="small">Device ID</label>
-          <input id="accountDeviceId" readonly style="opacity:.7;cursor:default;font-size:12px" placeholder="Loading..."/>
-          <button class="alt" style="flex-shrink:0;padding:8px 10px;font-size:12px;margin-left:8px" onclick="copyDeviceId()">Copy</button>
+        <div  style="align-items:center;margin-bottom:8px">
+          <label style="min-width:130px;display: block;margin-bottom: 8px;" class="small">Device ID</label>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input id="accountDeviceId" readonly style="opacity:.7;cursor:default;font-size:12px" placeholder="Loading..."/>
+            <button class="alt" style="flex-shrink:0;padding:8px 10px;font-size:12px;margin-left:8px" onclick="copyDeviceId()">Copy</button>
+          </div>
         </div>
-        <div class="row" style="align-items:center;margin-bottom:8px">
-          <label style="min-width:130px" class="small">Usage</label>
-          <span id="accountQuotaText" class="small" style="opacity:.75">Loading...</span>
-          <button class="alt" style="flex-shrink:0;padding:8px 10px;font-size:12px;margin-left:auto" onclick="refreshQuota()">Refresh</button>
+        <div  style="align-items:center;margin-bottom:8px">
+          <label style="min-width:130px;display: block;margin-bottom: 8px;margin-top: 20px;" class="small">Usage</label>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span id="accountQuotaText" class="small" style="opacity:.75">Loading...</span>
+            <button class="alt" style="flex-shrink:0;padding:8px 10px;font-size:12px;margin-left:auto" onclick="refreshQuota()">Refresh</button>
+          </div>
         </div>
         <div id="accountAuthRow" class="row" style="align-items:center;margin-top:6px">
           <!-- Populated by updateAuthUI() -->
@@ -383,10 +387,10 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
             </tr>
           </tbody>
         </table>
-        <div class="row" style="margin-top:14px;flex-wrap:wrap;gap:10px">
-          <button id="upgradeFreeBtnAccount" class="alt upgrade-btn" onclick="upgradePlan('free')">Use Free</button>
-          <button id="upgradePremiumBtnAccount" class="alt upgrade-btn" onclick="upgradePlan('premium')">Upgrade to Premium</button>
-          <button id="upgradeProBtnAccount" class="alt upgrade-btn" onclick="upgradePlan('pro')">Upgrade to Pro</button>
+        <div class="row" style="margin-top:14px;flex-wrap:wrap;gap:10px;justify-content: flex-end;">
+          <button id="upgradeFreeBtnAccount" class="alt upgrade-btn" onclick="upgradePlan('free')" style="background:rgba(0,0,0,0.04);color:#000000;">Use Free</button>
+          <button id="upgradePremiumBtnAccount" class="alt upgrade-btn" onclick="upgradePlan('premium')" style="background:#6B46FF;color:#FFFFFF;">Upgrade to Premium</button>
+          <button id="upgradeProBtnAccount" class="alt upgrade-btn" onclick="upgradePlan('pro')" style="background:linear-gradient(90deg, #DF5DFF 0%, #8C46FC 100%);color:#FFFFFF;">Upgrade to Pro</button>
         </div>
       </div>
     </section>
@@ -402,7 +406,7 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
         <div id="cronStatus" class="small" style="opacity:.7;margin-bottom:12px"></div>
 
         <!-- Add / Edit Job Form (hidden by default) -->
-        <div id="cronForm" style="display:none;background:#0d1530cc;border:1px solid #ffffff22;border-radius:12px;padding:14px;margin-bottom:14px">
+        <div id="cronForm" style="display:none;background:rgba(255, 255, 255, 0.40);border:1px solid #ffffff22;border-radius:12px;padding:14px;margin-bottom:14px">
           <h4 style="margin:0 0 12px;font-size:14px" id="cronFormTitle">Add Cron Job</h4>
           <input type="hidden" id="cronEditId"/>
           <div class="row">
