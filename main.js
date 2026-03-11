@@ -1491,7 +1491,7 @@ function registerRelayHandlers() {
       const state = loadAppState();
       const deviceId = state.deviceId || "";
       const homepageUrl = "https://myopenclaws.app";
-      const loginUrl = `${homepageUrl}/login.html?deviceId=${deviceId}&redirect=myopenclaw`;
+      const loginUrl = `${homepageUrl}/login?deviceId=${deviceId}&redirect=myopenclaw`;
       await import_electron7.shell.openExternal(loginUrl);
       return { success: true };
     } catch (err) {

@@ -660,7 +660,7 @@ async function upgradePlan(plan) {
   // Logged in — open the web pricing page to handle plan change
   const deviceId = (await window.electronAPI.getDeviceId())?.deviceId || '';
   await window.electronAPI.openExternal(
-    `https://myopenclaws.app/pricing.html?plan=${plan}&deviceId=${deviceId}`
+    `https://myopenclaws.app/pricing?plan=${plan}&deviceId=${deviceId}`
   );
 }
 
