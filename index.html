@@ -76,6 +76,56 @@ hr { border: none; border-top: 1px solid #ffffff22; margin: 18px 0; }
 /* Toast */
 .toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 20px; border-radius: 12px; background: #1a214b; border: 1px solid #ffffff2a; font-size: 14px; font-weight: 500; z-index: 200; animation: fadeIn .2s ease; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+/* Streaming / thinking */
+.thinking-dots { display: inline-flex; gap: 4px; align-items: center; padding: 2px 0; }
+.thinking-dots span { width: 7px; height: 7px; border-radius: 50%; background: #8aa1ff; animation: dot-bounce 1.2s infinite ease-in-out; }
+.thinking-dots span:nth-child(2) { animation-delay: .2s; }
+.thinking-dots span:nth-child(3) { animation-delay: .4s; }
+@keyframes dot-bounce { 0%, 80%, 100% { transform: scale(0.6); opacity: .4; } 40% { transform: scale(1); opacity: 1; } }
+.thinking-block { margin: 4px 0 6px; font-size: 12px; color: #a0afd8; font-style: italic; border-left: 2px solid #5a6aaa44; padding-left: 8px; display: none; }
+.thinking-toggle { font-size: 11px; color: #6a7fbb; cursor: pointer; background: none; border: none; padding: 0 0 2px; font-family: inherit; text-decoration: underline; display: none; }
+.tool-step { font-size: 12px; color: #45e07a; padding: 2px 0; }
+/* Skills tab */
+.skill-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.skill-card { padding: 14px; border-radius: 14px; border: 1px solid #ffffff22; background: #ffffff10; display: flex; flex-direction: column; gap: 8px; }
+.skill-card.ineligible { opacity: 0.5; }
+.skill-header { display: flex; align-items: center; gap: 10px; }
+.skill-emoji { font-size: 24px; line-height: 1; flex-shrink: 0; }
+.skill-name { font-weight: 700; font-size: 15px; flex: 1; }
+.skill-toggle { flex-shrink: 0; }
+.skill-toggle input[type=checkbox] { width: 36px; height: 20px; cursor: pointer; accent-color: #45e07a; }
+.skill-desc { font-size: 13px; opacity: .75; line-height: 1.5; }
+.skill-warning { font-size: 12px; color: #fbbf24; background: #fbbf2418; border: 1px solid #fbbf2440; border-radius: 8px; padding: 6px 10px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.skill-warning-label { flex: 1; min-width: 120px; }
+.skill-install-btn { padding: 4px 10px; font-size: 12px; background: #fbbf2433; color: #fde68a; border: 1px solid #fbbf2466; border-radius: 8px; cursor: pointer; white-space: nowrap; }
+.skill-install-btn:hover { background: #fbbf2455; }
+.skill-apikey { display: flex; gap: 6px; margin-top: 2px; }
+.skill-apikey input { flex: 1; font-size: 12px; padding: 6px 8px; }
+.skill-apikey button { flex-shrink: 0; padding: 6px 10px; font-size: 12px; }
+/* Channel setup guide */
+.channel-guide { background: #0d1530cc; border: 1px solid #4f9eff44; border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
+.channel-guide p { margin: 0 0 10px; font-size: 13px; font-weight: 700; color: #8aa1ff; letter-spacing: .03em; }
+.channel-guide ol { margin: 0; padding-left: 20px; }
+.channel-guide ol li { font-size: 13px; color: #c8d4ff; line-height: 1.7; }
+.channel-guide a { color: #6db3ff; text-decoration: none; border-bottom: 1px dotted #6db3ff88; }
+.channel-guide a:hover { color: #a8d4ff; border-bottom-color: #a8d4ff; }
+/* Cron jobs */
+.cron-job { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid #ffffff1f; background: #0b1229aa; border-radius: 10px; margin: 8px 0; }
+.cron-job-info { flex: 1; min-width: 0; }
+.cron-job-name { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+.cron-job-meta { font-size: 12px; opacity: .75; line-height: 1.5; }
+.cron-job-actions { display: flex; gap: 6px; flex-shrink: 0; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.cron-status-ok { color: #45e07a; }
+.cron-status-error { color: #f87171; }
+.cron-toggle { position: relative; display: inline-block; width: 34px; height: 20px; flex-shrink: 0; }
+.cron-toggle input { opacity: 0; width: 0; height: 0; }
+.cron-toggle-slider { position: absolute; cursor: pointer; inset: 0; background: #ffffff22; border-radius: 999px; transition: .2s; }
+.cron-toggle-slider:before { content: ''; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+.cron-toggle input:checked + .cron-toggle-slider { background: #45e07a; }
+.cron-toggle input:checked + .cron-toggle-slider:before { transform: translateX(14px); }
+.cron-runs { background: #080d1fcc; border-radius: 10px; padding: 10px; margin-top: 8px; font-size: 12px; }
+.cron-run-row { display: flex; gap: 10px; padding: 4px 0; border-bottom: 1px solid #ffffff10; }
+.cron-run-row:last-child { border-bottom: none; }
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'">
@@ -97,6 +147,8 @@ hr { border: none; border-top: 1px solid #ffffff22; margin: 18px 0; }
       <button id="tab-keys" onclick="showPage('keys')">&#128273; API Keys</button>
       <button id="tab-config" onclick="showPage('config')">&#9881;&#65039; Config</button>
       <button id="tab-account" onclick="showPage('account')">&#128100; Account</button>
+      <button id="tab-skills" onclick="showPage('skills');loadSkills()">&#129513; Skills</button>
+      <button id="tab-cron" onclick="showPage('cron');loadCronJobs()">&#9200; Cron Tasks</button>
     </nav>
   </aside>
 
@@ -212,6 +264,18 @@ hr { border: none; border-top: 1px solid #ffffff22; margin: 18px 0; }
       </div>
     </section>
 
+    <!-- Skills Page -->
+    <section id="skills" class="page">
+      <div class="card">
+        <div class="row" style="margin:0 0 12px;align-items:center">
+          <h3 style="margin:0;flex:1">Skills</h3>
+          <button class="alt" style="padding:6px 12px;font-size:12px" onclick="loadSkills()">&#8635; Refresh</button>
+        </div>
+        <div id="skillsStatus" class="small" style="opacity:.7;margin-bottom:12px">Loading skills...</div>
+        <div id="skillsGrid" class="skill-grid"></div>
+      </div>
+    </section>
+
     <!-- Account Page -->
     <section id="account" class="page">
       <div class="card">
@@ -286,6 +350,55 @@ hr { border: none; border-top: 1px solid #ffffff22; margin: 18px 0; }
           <button id="upgradePremiumBtnAccount" class="alt upgrade-btn" onclick="upgradePlan('premium')">Upgrade to Premium</button>
           <button id="upgradeProBtnAccount" class="alt upgrade-btn" onclick="upgradePlan('pro')">Upgrade to Pro</button>
         </div>
+      </div>
+    </section>
+
+    <!-- Cron Tasks Page -->
+    <section id="cron" class="page">
+      <div class="card">
+        <div class="row" style="margin:0 0 12px;align-items:center">
+          <h3 style="margin:0;flex:1">&#9200; Cron Tasks</h3>
+          <button class="alt" style="padding:6px 12px;font-size:12px" onclick="loadCronJobs()">&#8635; Refresh</button>
+          <button style="padding:6px 14px;font-size:12px;margin-left:8px" onclick="openCronAddForm()">+ Add Job</button>
+        </div>
+        <div id="cronStatus" class="small" style="opacity:.7;margin-bottom:12px"></div>
+
+        <!-- Add / Edit Job Form (hidden by default) -->
+        <div id="cronForm" style="display:none;background:#0d1530cc;border:1px solid #ffffff22;border-radius:12px;padding:14px;margin-bottom:14px">
+          <h4 style="margin:0 0 12px;font-size:14px" id="cronFormTitle">Add Cron Job</h4>
+          <input type="hidden" id="cronEditId"/>
+          <div class="row">
+            <label style="min-width:130px" class="small">Job Name</label>
+            <input id="cronJobName" placeholder="e.g. daily-report"/>
+          </div>
+          <div class="row">
+            <label style="min-width:130px" class="small">Schedule Type</label>
+            <select id="cronScheduleKind" onchange="cronScheduleKindChanged()">
+              <option value="cron">cron (expr)</option>
+              <option value="every">every (interval ms)</option>
+              <option value="at">at (one-shot ISO time)</option>
+            </select>
+          </div>
+          <div id="cronScheduleFields">
+            <!-- Populated by cronScheduleKindChanged() -->
+          </div>
+          <div class="row">
+            <label style="min-width:130px" class="small">Agent</label>
+            <select id="cronAgentSelect"></select>
+          </div>
+          <div class="row">
+            <label style="min-width:130px" class="small">Prompt Message</label>
+          </div>
+          <div class="row" style="margin-top:0">
+            <textarea id="cronMessage" rows="3" placeholder="Prompt to send to the agent when the job runs..." style="resize:vertical"></textarea>
+          </div>
+          <div class="row" style="justify-content:flex-end;margin-top:6px">
+            <button class="alt" onclick="closeCronForm()">Cancel</button>
+            <button onclick="saveCronJob()" style="margin-left:8px">Save Job</button>
+          </div>
+        </div>
+
+        <div id="cronJobList"></div>
       </div>
     </section>
   </main>
@@ -504,10 +617,45 @@ function closeChannelModal() {
   document.getElementById('channelModal').classList.remove('show');
 }
 
+const channelGuides = {
+  telegram: `<div class="channel-guide">
+    <p>Setup guide</p>
+    <ol>
+      <li>Open Telegram and search for <strong>@BotFather</strong></li>
+      <li>Send <code>/newbot</code> and follow the prompts to create a bot</li>
+      <li>Copy the Bot Token provided by BotFather</li>
+      <li>Paste the token in the field below</li>
+    </ol>
+  </div>`,
+  discord: `<div class="channel-guide">
+    <p>Setup guide</p>
+    <ol>
+      <li>Go to <a href="https://discord.com/developers/applications" onclick="window.electronAPI && window.electronAPI.openExternal ? window.electronAPI.openExternal('https://discord.com/developers/applications') : window.open('https://discord.com/developers/applications','_blank'); return false;">discord.com/developers/applications</a></li>
+      <li>Click <strong>"New Application"</strong> and give it a name</li>
+      <li>Go to the <strong>"Bot"</strong> tab and click <strong>"Add Bot"</strong></li>
+      <li>Copy the Bot Token</li>
+      <li>Go to <strong>OAuth2 &rarr; URL Generator</strong>, select the <em>bot</em> scope with <em>Send Messages</em> permission</li>
+      <li>Use the generated URL to invite the bot to your server</li>
+      <li>Paste the token in the field below</li>
+    </ol>
+  </div>`,
+  slack: `<div class="channel-guide">
+    <p>Setup guide</p>
+    <ol>
+      <li>Go to <a href="https://api.slack.com/apps" onclick="window.electronAPI && window.electronAPI.openExternal ? window.electronAPI.openExternal('https://api.slack.com/apps') : window.open('https://api.slack.com/apps','_blank'); return false;">api.slack.com/apps</a></li>
+      <li>Click <strong>"Create New App"</strong> &rarr; <strong>"From scratch"</strong></li>
+      <li>Under <strong>OAuth &amp; Permissions</strong>, add Bot Token Scopes: <code>chat:write</code>, <code>app_mentions:read</code></li>
+      <li>Click <strong>"Install App to Workspace"</strong> and authorise it</li>
+      <li>Copy the <strong>Bot User OAuth Token</strong> (starts with <code>xoxb-</code>)</li>
+      <li>Paste the token in the field below</li>
+    </ol>
+  </div>`
+};
+
 function renderChannelFields() {
   const type = document.getElementById('channelType').value;
   const box = document.getElementById('channelFields');
-  box.innerHTML = '';
+  box.innerHTML = channelGuides[type] || '';
   (channelSchemas[type] || []).forEach(k => {
     const row = document.createElement('div');
     row.className = 'row';
@@ -549,6 +697,47 @@ function chat(t, c) {
   const b = document.getElementById('chatBox');
   b.appendChild(d);
   b.scrollTop = b.scrollHeight;
+}
+
+/** Create a "Thinking..." bubble with animated dots. Returns the bubble element. */
+function createThinkingBubble() {
+  const b = document.getElementById('chatBox');
+  const d = document.createElement('div');
+  d.className = 'm a';
+  d.id = 'streamingBubble';
+  d.innerHTML =
+    '<span style="opacity:.7;font-size:13px">Thinking\u00a0</span>' +
+    '<span class="thinking-dots"><span></span><span></span><span></span></span>';
+  b.appendChild(d);
+  b.scrollTop = b.scrollHeight;
+  return d;
+}
+
+/** Update the streaming bubble with a partial text chunk. */
+function updateStreamingBubble(bubble, textSoFar, thinkingText, toolSteps) {
+  let html = '';
+  if (thinkingText) {
+    html +=
+      '<button class="thinking-toggle" onclick="this.nextSibling.style.display=this.nextSibling.style.display===\'block\'?\'none\':\'block\'" style="display:block">&#128161; Show thinking</button>' +
+      '<div class="thinking-block" style="display:none">' + escapeHtml(thinkingText) + '</div>';
+  }
+  for (const step of toolSteps) {
+    html += '<div class="tool-step">&#9881; ' + escapeHtml(step) + '</div>';
+  }
+  if (textSoFar) {
+    html += '<span>' + escapeHtml(textSoFar) + '</span>';
+  } else {
+    html +=
+      '<span style="opacity:.7;font-size:13px">Thinking\u00a0</span>' +
+      '<span class="thinking-dots"><span></span><span></span><span></span></span>';
+  }
+  bubble.innerHTML = html;
+  const b = document.getElementById('chatBox');
+  b.scrollTop = b.scrollHeight;
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 // ---------------------------------------------------------------------------
@@ -793,11 +982,67 @@ function renderConversation() {
 async function sendMsg() {
   const text = document.getElementById('msg').value.trim();
   if (!text) return;
+
+  // Prevent double-send while streaming
+  const sendBtn = document.querySelector('#chat button[onclick="sendMsg()"]');
+  if (sendBtn) sendBtn.disabled = true;
+
   chat(text, 'u');
   document.getElementById('msg').value = '';
+
+  // Set up streaming state
+  let streamingBubble = null;
+  let streamingText = '';
+  let thinkingText = '';
+  const toolSteps = [];
+  let streamReceived = false;
+
+  // Listen for stream events from main process
+  if (window.electronAPI.onChatStream) {
+    window.electronAPI.removeChatStreamListeners();
+    window.electronAPI.onChatStream(function(payload) {
+      if (!streamingBubble) {
+        streamingBubble = createThinkingBubble();
+      }
+      streamReceived = true;
+
+      if (payload.state === 'delta' && payload.message && payload.message.content) {
+        for (const item of payload.message.content) {
+          if (item.type === 'text' && item.text) {
+            streamingText += item.text;
+          } else if (item.type === 'thinking' && item.thinking) {
+            thinkingText += item.thinking;
+          } else if (item.type === 'tool_use' && item.name) {
+            toolSteps.push('Running: ' + item.name);
+          }
+        }
+        updateStreamingBubble(streamingBubble, streamingText, thinkingText, toolSteps);
+      }
+    });
+
+    // Show thinking bubble immediately for perceived responsiveness
+    streamingBubble = createThinkingBubble();
+  }
+
   const r = await window.electronAPI.sendMessage({ message: text, agentId: currentAgent });
+
+  // Clean up stream listener
+  if (window.electronAPI.removeChatStreamListeners) {
+    window.electronAPI.removeChatStreamListeners();
+  }
+
+  // Remove streaming bubble (final content comes from r.response or was streamed)
+  if (streamingBubble) {
+    streamingBubble.remove();
+    streamingBubble = null;
+  }
+
+  if (sendBtn) sendBtn.disabled = false;
+
   if (r.success) {
-    chat(r.response || 'Received', 'a');
+    // Prefer the streamed text if we received it; fall back to r.response
+    const finalText = (streamReceived && streamingText) ? streamingText : (r.response || 'Received');
+    chat(finalText, 'a');
     await refreshState();
     renderConversation();
   } else if (r.loginRequired) {
@@ -1014,6 +1259,471 @@ async function saveRelayJwt() {
   } else {
     showToast('Failed: ' + (r && r.error || 'unknown'));
   }
+}
+
+// ---------------------------------------------------------------------------
+// Skills
+// ---------------------------------------------------------------------------
+let skillsData = [];
+
+async function loadSkills() {
+  const statusEl = document.getElementById('skillsStatus');
+  const gridEl = document.getElementById('skillsGrid');
+  if (statusEl) statusEl.textContent = 'Loading skills...';
+  if (gridEl) gridEl.innerHTML = '';
+
+  const r = await window.electronAPI.skillsList();
+  if (!r || !r.success) {
+    if (statusEl) statusEl.textContent = 'Could not load skills: ' + (r && r.error || 'Gateway not running');
+    return;
+  }
+
+  skillsData = r.skills || [];
+  if (statusEl) {
+    statusEl.textContent = skillsData.length
+      ? skillsData.length + ' skill' + (skillsData.length === 1 ? '' : 's') + ' available'
+      : 'No skills found.';
+  }
+  renderSkills();
+}
+
+function renderSkills() {
+  const gridEl = document.getElementById('skillsGrid');
+  if (!gridEl) return;
+  gridEl.innerHTML = '';
+
+  skillsData.forEach(skill => {
+    const card = document.createElement('div');
+    card.className = 'skill-card' + (skill.eligible === false ? ' ineligible' : '');
+
+    // Header row: emoji + name + toggle
+    const header = document.createElement('div');
+    header.className = 'skill-header';
+
+    const emoji = document.createElement('span');
+    emoji.className = 'skill-emoji';
+    emoji.textContent = skill.emoji || '🔧';
+    header.appendChild(emoji);
+
+    const name = document.createElement('span');
+    name.className = 'skill-name';
+    name.textContent = skill.name || skill.key;
+    header.appendChild(name);
+
+    const toggleWrap = document.createElement('label');
+    toggleWrap.className = 'skill-toggle';
+    toggleWrap.title = skill.eligible === false ? 'Skill not eligible on this system' : (skill.enabled ? 'Disable skill' : 'Enable skill');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = !!skill.enabled;
+    checkbox.disabled = skill.eligible === false;
+    checkbox.onchange = async () => {
+      checkbox.disabled = true;
+      const r = await window.electronAPI.skillsToggle({ skillKey: skill.key, enabled: checkbox.checked });
+      checkbox.disabled = skill.eligible === false;
+      if (!r || !r.success) {
+        checkbox.checked = !checkbox.checked;
+        showToast('Toggle failed: ' + (r && r.error || 'unknown'));
+      } else {
+        skill.enabled = checkbox.checked;
+        showToast((checkbox.checked ? 'Enabled' : 'Disabled') + ' ' + (skill.name || skill.key));
+      }
+    };
+    toggleWrap.appendChild(checkbox);
+    header.appendChild(toggleWrap);
+
+    card.appendChild(header);
+
+    // Description
+    if (skill.description) {
+      const desc = document.createElement('div');
+      desc.className = 'skill-desc';
+      desc.textContent = skill.description;
+      card.appendChild(desc);
+    }
+
+    // Missing dependencies warning
+    const missing = skill.missing || {};
+    const missingBins = Array.isArray(missing.bins) ? missing.bins : [];
+    const missingEnv = Array.isArray(missing.env) ? missing.env : [];
+    const hasMissing = missingBins.length > 0 || missingEnv.length > 0;
+
+    if (hasMissing) {
+      const warn = document.createElement('div');
+      warn.className = 'skill-warning';
+
+      const label = document.createElement('span');
+      label.className = 'skill-warning-label';
+      const parts = [];
+      if (missingBins.length) parts.push('Missing: ' + missingBins.join(', '));
+      if (missingEnv.length) parts.push('Env needed: ' + missingEnv.join(', '));
+      label.textContent = '⚠ ' + parts.join(' | ');
+      warn.appendChild(label);
+
+      // Install buttons for each install option
+      const installOptions = Array.isArray(skill.install) ? skill.install : [];
+      installOptions.forEach(opt => {
+        const btn = document.createElement('button');
+        btn.className = 'skill-install-btn';
+        btn.textContent = opt.label || ('Install via ' + (opt.kind || opt.id));
+        btn.onclick = async () => {
+          btn.disabled = true;
+          btn.textContent = 'Installing...';
+          const r = await window.electronAPI.skillsInstall({ name: skill.key, installId: opt.id });
+          if (!r || !r.success) {
+            showToast('Install failed: ' + (r && r.error || 'unknown'));
+            btn.textContent = opt.label || 'Install';
+            btn.disabled = false;
+          } else {
+            showToast('Installed ' + (opt.label || opt.id));
+            await loadSkills();
+          }
+        };
+        warn.appendChild(btn);
+      });
+
+      card.appendChild(warn);
+    }
+
+    // API key input (if skill has apiKey field in its config)
+    if (skill.hasApiKey || (skill.config && 'apiKey' in skill.config)) {
+      const apiKeyRow = document.createElement('div');
+      apiKeyRow.className = 'skill-apikey';
+
+      const apiKeyInput = document.createElement('input');
+      apiKeyInput.type = 'password';
+      apiKeyInput.placeholder = 'API Key for ' + (skill.name || skill.key);
+      apiKeyInput.value = (skill.config && skill.config.apiKey) ? skill.config.apiKey : '';
+      apiKeyRow.appendChild(apiKeyInput);
+
+      const saveApiKeyBtn = document.createElement('button');
+      saveApiKeyBtn.className = 'alt';
+      saveApiKeyBtn.textContent = 'Save';
+      saveApiKeyBtn.onclick = async () => {
+        const r = await window.electronAPI.skillsConfigure({ skillKey: skill.key, apiKey: apiKeyInput.value.trim() });
+        if (!r || !r.success) {
+          showToast('Failed: ' + (r && r.error || 'unknown'));
+        } else {
+          showToast('API key saved for ' + (skill.name || skill.key));
+        }
+      };
+      apiKeyRow.appendChild(saveApiKeyBtn);
+      card.appendChild(apiKeyRow);
+    }
+
+    gridEl.appendChild(card);
+  });
+
+  if (!skillsData.length) {
+    gridEl.innerHTML = '<div class="small" style="opacity:.6">No skills returned by gateway.</div>';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Cron Tasks
+// ---------------------------------------------------------------------------
+var cronJobs = [];
+
+function cronFmtTime(ms) {
+  if (!ms) return '\u2014';
+  return new Date(ms).toLocaleString();
+}
+
+function cronScheduleLabel(schedule) {
+  if (!schedule) return '\u2014';
+  if (schedule.kind === 'cron') return schedule.expr + (schedule.tz ? ' (' + schedule.tz + ')' : '');
+  if (schedule.kind === 'every') return 'every ' + schedule.everyMs + ' ms';
+  if (schedule.kind === 'at') return 'at ' + schedule.at;
+  return JSON.stringify(schedule);
+}
+
+function cronScheduleKindChanged() {
+  var kind = document.getElementById('cronScheduleKind').value;
+  var box = document.getElementById('cronScheduleFields');
+  box.innerHTML = '';
+  if (kind === 'cron') {
+    box.innerHTML =
+      '<div class="row"><label style="min-width:130px" class="small">Cron Expr</label><input id="cronExpr" placeholder="0 9 * * * (min hr dom mon dow)"/></div>' +
+      '<div class="row"><label style="min-width:130px" class="small">Timezone</label><input id="cronTz" placeholder="Asia/Shanghai (leave blank for UTC)"/></div>' +
+      '<div class="small" style="opacity:.6;margin:0 0 6px 134px">Standard 5-field cron. e.g. <code>0 9 * * 1-5</code> (weekdays 9 AM), <code>*/30 * * * *</code> (every 30 min)</div>';
+  } else if (kind === 'every') {
+    box.innerHTML =
+      '<div class="row"><label style="min-width:130px" class="small">Interval (ms)</label><input id="cronEveryMs" type="number" min="1000" placeholder="60000 = every 1 minute"/></div>';
+  } else if (kind === 'at') {
+    box.innerHTML =
+      '<div class="row"><label style="min-width:130px" class="small">ISO Timestamp</label><input id="cronAt" placeholder="2026-03-15T09:00:00Z"/></div>';
+  }
+}
+
+function openCronAddForm() {
+  document.getElementById('cronFormTitle').textContent = 'Add Cron Job';
+  document.getElementById('cronEditId').value = '';
+  document.getElementById('cronJobName').value = '';
+  document.getElementById('cronScheduleKind').value = 'cron';
+  cronScheduleKindChanged();
+  document.getElementById('cronMessage').value = '';
+  populateCronAgentSelect(null);
+  document.getElementById('cronForm').style.display = 'block';
+  document.getElementById('cronJobName').focus();
+}
+
+function openCronEditForm(job) {
+  document.getElementById('cronFormTitle').textContent = 'Edit Cron Job';
+  document.getElementById('cronEditId').value = job.id;
+  document.getElementById('cronJobName').value = job.name || '';
+  var kind = (job.schedule && job.schedule.kind) || 'cron';
+  document.getElementById('cronScheduleKind').value = kind;
+  cronScheduleKindChanged();
+  if (kind === 'cron') {
+    var exprEl = document.getElementById('cronExpr');
+    var tzEl = document.getElementById('cronTz');
+    if (exprEl) exprEl.value = job.schedule.expr || '';
+    if (tzEl) tzEl.value = job.schedule.tz || '';
+  } else if (kind === 'every') {
+    var evEl = document.getElementById('cronEveryMs');
+    if (evEl) evEl.value = job.schedule.everyMs || '';
+  } else if (kind === 'at') {
+    var atEl = document.getElementById('cronAt');
+    if (atEl) atEl.value = job.schedule.at || '';
+  }
+  document.getElementById('cronMessage').value = (job.payload && job.payload.message) || '';
+  var agentId = job.payload && job.payload.agentId;
+  populateCronAgentSelect(agentId || null);
+  document.getElementById('cronForm').style.display = 'block';
+}
+
+function closeCronForm() {
+  document.getElementById('cronForm').style.display = 'none';
+}
+
+function populateCronAgentSelect(selectedId) {
+  var sel = document.getElementById('cronAgentSelect');
+  if (!sel) return;
+  sel.innerHTML = '';
+  if (appState && appState.agents) {
+    appState.agents.forEach(function(a) {
+      var o = document.createElement('option');
+      o.value = a.id;
+      o.textContent = a.name;
+      if (selectedId === a.id) o.selected = true;
+      sel.appendChild(o);
+    });
+  }
+  if (!sel.options.length) {
+    var fallback = document.createElement('option');
+    fallback.value = 'main';
+    fallback.textContent = 'main';
+    sel.appendChild(fallback);
+  }
+}
+
+async function saveCronJob() {
+  var editId = document.getElementById('cronEditId').value;
+  var name = document.getElementById('cronJobName').value.trim();
+  if (!name) { showToast('Job name is required'); return; }
+
+  var kind = document.getElementById('cronScheduleKind').value;
+  var schedule;
+  if (kind === 'cron') {
+    var exprEl2 = document.getElementById('cronExpr');
+    var expr = exprEl2 ? exprEl2.value.trim() : '';
+    if (!expr) { showToast('Cron expression is required'); return; }
+    var tzEl2 = document.getElementById('cronTz');
+    var tz = tzEl2 ? tzEl2.value.trim() : '';
+    schedule = tz ? { kind: 'cron', expr: expr, tz: tz } : { kind: 'cron', expr: expr };
+  } else if (kind === 'every') {
+    var evEl2 = document.getElementById('cronEveryMs');
+    var everyMs = evEl2 ? parseInt(evEl2.value, 10) : 0;
+    if (!everyMs || everyMs < 1000) { showToast('Interval must be >= 1000 ms'); return; }
+    schedule = { kind: 'every', everyMs: everyMs };
+  } else {
+    var atEl2 = document.getElementById('cronAt');
+    var at = atEl2 ? atEl2.value.trim() : '';
+    if (!at) { showToast('ISO timestamp is required'); return; }
+    schedule = { kind: 'at', at: at };
+  }
+
+  var message = document.getElementById('cronMessage').value.trim();
+  var cronAgentSel = document.getElementById('cronAgentSelect');
+  var agentId = cronAgentSel ? (cronAgentSel.value || 'main') : 'main';
+  var payload = { kind: 'agentTurn', message: message, agentId: agentId, timeoutSeconds: 300 };
+
+  var r;
+  if (editId) {
+    r = await window.electronAPI.cronUpdate({ id: editId, name: name, schedule: schedule, payload: payload });
+  } else {
+    r = await window.electronAPI.cronAdd({
+      name: name, enabled: true, schedule: schedule,
+      sessionTarget: 'isolated', payload: payload, delivery: { mode: 'none' },
+    });
+  }
+
+  if (!r || !r.success) { showToast('Failed: ' + (r && r.error || 'unknown')); return; }
+  closeCronForm();
+  showToast(editId ? 'Job updated' : 'Job created');
+  await loadCronJobs();
+}
+
+async function loadCronJobs() {
+  var statusEl = document.getElementById('cronStatus');
+  var listEl = document.getElementById('cronJobList');
+  if (statusEl) statusEl.textContent = 'Loading...';
+  if (listEl) listEl.innerHTML = '';
+
+  var r = await window.electronAPI.cronList();
+  if (!r || !r.success) {
+    if (statusEl) statusEl.textContent = 'Error: ' + (r && r.error || 'Gateway not available');
+    return;
+  }
+  cronJobs = r.jobs || [];
+  if (statusEl) statusEl.textContent = cronJobs.length + ' job' + (cronJobs.length === 1 ? '' : 's') + ' scheduled';
+  renderCronJobList();
+}
+
+function renderCronJobList() {
+  var listEl = document.getElementById('cronJobList');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+
+  if (!cronJobs.length) {
+    listEl.innerHTML = '<div class="small" style="opacity:.6;text-align:center;padding:16px">No cron jobs yet. Click \u201c+ Add Job\u201d to create one.</div>';
+    return;
+  }
+
+  cronJobs.forEach(function(job) {
+    var item = document.createElement('div');
+    item.className = 'cron-job';
+
+    var toggle = document.createElement('label');
+    toggle.className = 'cron-toggle';
+    toggle.title = job.enabled ? 'Enabled \u2014 click to disable' : 'Disabled \u2014 click to enable';
+    var chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.checked = !!job.enabled;
+    (function(j, c) {
+      c.onchange = async function() {
+        var r2 = await window.electronAPI.cronUpdate({ id: j.id, enabled: c.checked });
+        if (!r2 || !r2.success) {
+          c.checked = !c.checked;
+          showToast('Toggle failed: ' + (r2 && r2.error || 'unknown'));
+        } else {
+          j.enabled = c.checked;
+          showToast(j.name + (c.checked ? ' enabled' : ' disabled'));
+        }
+      };
+    })(job, chk);
+    var slider = document.createElement('span');
+    slider.className = 'cron-toggle-slider';
+    toggle.appendChild(chk);
+    toggle.appendChild(slider);
+    item.appendChild(toggle);
+
+    var info = document.createElement('div');
+    info.className = 'cron-job-info';
+
+    var nameLine = document.createElement('div');
+    nameLine.className = 'cron-job-name';
+    nameLine.textContent = job.name || job.id;
+    info.appendChild(nameLine);
+
+    var meta = document.createElement('div');
+    meta.className = 'cron-job-meta';
+    var state = job.state || {};
+    var lastStatus = state.lastStatus;
+    var statusSpan = lastStatus
+      ? ' | Last: <span class="cron-status-' + lastStatus + '">' + lastStatus + '</span>'
+      : '';
+    meta.innerHTML =
+      'Schedule: ' + cronScheduleLabel(job.schedule) +
+      ' | Next: ' + cronFmtTime(state.nextRunAtMs) +
+      (state.lastRunAtMs ? ' | Prev: ' + cronFmtTime(state.lastRunAtMs) : '') +
+      statusSpan;
+    info.appendChild(meta);
+
+    var runsContainer = document.createElement('div');
+    runsContainer.id = 'cron-runs-' + job.id;
+    runsContainer.style.display = 'none';
+    info.appendChild(runsContainer);
+    item.appendChild(info);
+
+    var actions = document.createElement('div');
+    actions.className = 'cron-job-actions';
+
+    var editBtn = document.createElement('button');
+    editBtn.className = 'alt';
+    editBtn.style.cssText = 'padding:6px 10px;font-size:12px';
+    editBtn.textContent = 'Edit';
+    (function(j2) { editBtn.onclick = function() { openCronEditForm(j2); }; })(job);
+    actions.appendChild(editBtn);
+
+    var runBtn = document.createElement('button');
+    runBtn.className = 'alt';
+    runBtn.style.cssText = 'padding:6px 10px;font-size:12px';
+    runBtn.textContent = 'Run Now';
+    (function(j3, rb) {
+      rb.onclick = async function() {
+        rb.disabled = true;
+        var r3 = await window.electronAPI.cronRun({ id: j3.id });
+        rb.disabled = false;
+        showToast(r3 && r3.success ? 'Job triggered' : 'Failed: ' + (r3 && r3.error || 'unknown'));
+      };
+    })(job, runBtn);
+    actions.appendChild(runBtn);
+
+    var histBtn = document.createElement('button');
+    histBtn.className = 'alt';
+    histBtn.style.cssText = 'padding:6px 10px;font-size:12px';
+    histBtn.textContent = 'History';
+    (function(j4, rc) {
+      histBtn.onclick = async function() {
+        if (rc.style.display !== 'none') { rc.style.display = 'none'; return; }
+        rc.innerHTML = '<div class="small" style="opacity:.6">Loading...</div>';
+        rc.style.display = 'block';
+        var r4 = await window.electronAPI.cronRuns({ id: j4.id, limit: 10 });
+        if (!r4 || !r4.success) {
+          rc.innerHTML = '<div class="small cron-status-error">Failed: ' + (r4 && r4.error || 'unknown') + '</div>';
+          return;
+        }
+        var runs = r4.runs || [];
+        if (!runs.length) {
+          rc.innerHTML = '<div class="cron-runs"><span class="small" style="opacity:.6">No runs yet</span></div>';
+          return;
+        }
+        var runsBox = document.createElement('div');
+        runsBox.className = 'cron-runs';
+        runs.forEach(function(run) {
+          var row = document.createElement('div');
+          row.className = 'cron-run-row';
+          row.innerHTML =
+            '<span class="cron-status-' + (run.status || 'ok') + '">' + (run.status || '?') + '</span>' +
+            '<span>' + (run.startedAtMs ? new Date(run.startedAtMs).toLocaleString() : '\u2014') + '</span>' +
+            '<span style="opacity:.6">' + (run.durationMs ? run.durationMs + ' ms' : '') + '</span>';
+          runsBox.appendChild(row);
+        });
+        rc.innerHTML = '';
+        rc.appendChild(runsBox);
+      };
+    })(job, runsContainer);
+    actions.appendChild(histBtn);
+
+    var delBtn = document.createElement('button');
+    delBtn.className = 'alt';
+    delBtn.style.cssText = 'padding:6px 10px;font-size:12px;color:#f87171';
+    delBtn.textContent = 'Delete';
+    (function(j5) {
+      delBtn.onclick = async function() {
+        if (!confirm('Delete job "' + (j5.name || j5.id) + '"?')) return;
+        var r5 = await window.electronAPI.cronRemove({ id: j5.id });
+        if (!r5 || !r5.success) { showToast('Delete failed: ' + (r5 && r5.error || 'unknown')); return; }
+        showToast('Job deleted');
+        await loadCronJobs();
+      };
+    })(job);
+    actions.appendChild(delBtn);
+
+    item.appendChild(actions);
+    listEl.appendChild(item);
+  });
 }
 
 // ---------------------------------------------------------------------------
