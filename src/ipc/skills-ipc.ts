@@ -1,11 +1,76 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
-import { execFile } from 'child_process';
+import * as os from 'os';
+import * as path from 'path';
+import { execFile, execFileSync } from 'child_process';
 import { ipcMain } from 'electron';
 import { readGatewayTokenFromConfig } from '../config-store';
-import { CONFIG_FILE } from '../constants';
+import { CONFIG_FILE, OPENCLAW_CONFIG_DIR, DOWNLOADED_RUNTIME_DIR } from '../constants';
 import type { GatewayHandle } from '../types';
 import { buildConnectParams, handleConnectResponse } from '../device-identity';
+
+function findClawHubCli(): string | null {
+  const candidates: string[] = [];
+
+  try {
+    const cmd = process.platform === 'win32' ? 'where' : 'which';
+    const result = execFileSync(cmd, ['clawhub'], { encoding: 'utf8', timeout: 3000 }).trim();
+    if (result) candidates.push(result.split(/\r?\n/)[0]);
+  } catch { /* not in PATH */ }
+
+  const home = os.homedir();
+  const nvmDir = path.join(home, '.nvm', 'versions', 'node');
+  try {
+    if (fs.existsSync(nvmDir)) {
+      const versions = fs.readdirSync(nvmDir)
+        .filter(v => v.startsWith('v'))
+        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+      for (const ver of versions) {
+        candidates.push(path.join(nvmDir, ver, 'bin', 'clawhub'));
+      }
+    }
+  } catch { /* ignore */ }
+
+  const binNames = process.platform === 'win32'
+    ? ['clawhub.cmd', 'clawhub.exe', 'clawhub']
+    : ['clawhub'];
+
+  for (const bin of binNames) {
+    candidates.push(path.join(DOWNLOADED_RUNTIME_DIR, 'openclaw-deps', '.bin', bin));
+  }
+
+  candidates.push(
+    '/usr/local/bin/clawhub',
+    '/opt/homebrew/bin/clawhub',
+  );
+
+  const seen = new Set<string>();
+  for (const p of candidates) {
+    const resolved = path.resolve(p);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+function runClawHubCli(args: string[]): Promise<string> {
+  const bin = findClawHubCli();
+  if (!bin) return Promise.reject(new Error('clawhub CLI not found. Install with: npm i -g clawhub'));
+
+  const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(bin);
+  return new Promise((resolve, reject) => {
+    execFile(bin, args, {
+      timeout: 120000,
+      encoding: 'utf8',
+      shell: useShell ? true : undefined,
+      windowsHide: true,
+    }, (err, stdout, stderr) => {
+      if (err) reject(new Error(stderr || stdout || err.message));
+      else resolve(stdout);
+    });
+  });
+}
 
 async function gatewayRpc(
   gw: GatewayHandle,
@@ -241,13 +306,27 @@ export function registerSkillsHandlers(
 
   ipcMain.handle('marketplace-install', async (_event, payload) => {
     try {
-      const gw = getGatewayHandle();
-      if (!gw?.baseUrl) return { success: false, error: 'Gateway not running' };
-
       const { slug } = payload || {};
       if (!slug || !/^[a-zA-Z0-9_-]+$/.test(slug)) return { success: false, error: 'Invalid slug' };
 
-      await gatewayRpc(gw, 'skills.install', { name: slug, installId: slug, timeoutMs: 120000 });
+      await runClawHubCli([
+        'install', slug,
+        '--workdir', OPENCLAW_CONFIG_DIR,
+        '--no-input',
+        '--force',
+      ]);
+
+      // Tell gateway to load the newly downloaded skill, then enable it
+      const gw = getGatewayHandle();
+      if (gw?.baseUrl) {
+        try {
+          await gatewayRpc(gw, 'skills.install', { name: slug, installId: slug, timeoutMs: 60000 });
+        } catch { /* skill files are on disk; gateway will pick up on restart */ }
+        try {
+          await gatewayRpc(gw, 'skills.update', { skillKey: slug, enabled: true });
+        } catch { /* best effort */ }
+      }
+
       return { success: true };
     } catch (e: any) {
       return { success: false, error: e.message };
@@ -256,13 +335,23 @@ export function registerSkillsHandlers(
 
   ipcMain.handle('marketplace-uninstall', async (_event, payload) => {
     try {
-      const gw = getGatewayHandle();
-      if (!gw?.baseUrl) return { success: false, error: 'Gateway not running' };
-
       const { slug } = payload || {};
       if (!slug || !/^[a-zA-Z0-9_-]+$/.test(slug)) return { success: false, error: 'Invalid slug' };
 
-      await gatewayRpc(gw, 'skills.uninstall', { name: slug });
+      // Disable in gateway first
+      const gw = getGatewayHandle();
+      if (gw?.baseUrl) {
+        try {
+          await gatewayRpc(gw, 'skills.update', { skillKey: slug, enabled: false });
+        } catch { /* best effort */ }
+      }
+
+      await runClawHubCli([
+        'uninstall', slug,
+        '--workdir', OPENCLAW_CONFIG_DIR,
+        '--no-input',
+      ]);
+
       return { success: true };
     } catch (e: any) {
       return { success: false, error: e.message };
