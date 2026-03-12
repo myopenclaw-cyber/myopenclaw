@@ -49,6 +49,7 @@ import_electron.contextBridge.exposeInMainWorld("electronAPI", {
   logout: () => import_electron.ipcRenderer.invoke("logout"),
   // Channel config
   saveAgentChannelConfig: (payload) => import_electron.ipcRenderer.invoke("save-agent-channel-config", payload),
+  getChannelStatus: () => import_electron.ipcRenderer.invoke("get-channel-status"),
   // Channel pairing
   pairingList: (payload) => import_electron.ipcRenderer.invoke("pairing-list", payload),
   pairingListAll: () => import_electron.ipcRenderer.invoke("pairing-list-all"),

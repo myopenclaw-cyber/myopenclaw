@@ -1,8 +1,26 @@
 import * as fs from 'fs';
+import * as path from 'path';
 import { ipcMain } from 'electron';
+import axios from 'axios';
 import { loadEmbeddedConfig, saveEmbeddedConfig } from '../config-store';
-import { CONFIG_FILE } from '../constants';
+import { CONFIG_FILE, OPENCLAW_CONFIG_DIR } from '../constants';
 import { ensureGatewayProviderOrRelay } from '../auth';
+
+function maskToken(token: string): string {
+  if (!token || token.length <= 12) return '****';
+  const prefix = token.slice(0, 10);
+  const suffix = token.slice(-10);
+  return prefix + '****' + suffix;
+}
+
+async function fetchTelegramBotName(botToken: string): Promise<string> {
+  try {
+    const res = await axios.get(`https://api.telegram.org/bot${botToken}/getMe`, { timeout: 5000 });
+    return res.data?.result?.username || '';
+  } catch {
+    return '';
+  }
+}
 
 /**
  * Sync channels from embedded-config.json into openclaw.json
@@ -41,6 +59,67 @@ export function registerChannelHandlers(): void {
       ensureGatewayProviderOrRelay();
 
       return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  // Return configured channels, their config (masked), and paired users
+  ipcMain.handle('get-channel-status', async () => {
+    try {
+      const cfg = loadEmbeddedConfig();
+      const channels: Record<string, {
+        enabled: boolean;
+        accounts: Record<string, Record<string, unknown>>;
+        pairedUsers: Record<string, Array<{ id: string }>>;
+      }> = {};
+
+      const cfgChannels = cfg.channels || {};
+      const credDir = path.join(OPENCLAW_CONFIG_DIR, 'credentials');
+
+      for (const [channelType, channelCfg] of Object.entries(cfgChannels)) {
+        const ch = channelCfg as { enabled?: boolean; accounts?: Record<string, Record<string, unknown>> };
+        if (!ch.accounts || !Object.keys(ch.accounts).length) continue;
+
+        const accounts: Record<string, Record<string, unknown>> = {};
+        const pairedUsers: Record<string, Array<{ id: string }>> = {};
+
+        for (const [accountId, accountCfg] of Object.entries(ch.accounts)) {
+          const masked: Record<string, unknown> = { ...(accountCfg || {}) };
+
+          // Mask sensitive token fields for display
+          for (const key of ['botToken', 'token', 'apiKey']) {
+            if (typeof masked[key] === 'string' && (masked[key] as string).length > 0) {
+              masked[`_raw_${key}`] = masked[key];
+              masked[key] = maskToken(masked[key] as string);
+            }
+          }
+
+          // Fetch bot name for Telegram
+          if (channelType === 'telegram' && accountCfg?.botToken) {
+            const botName = await fetchTelegramBotName(accountCfg.botToken as string);
+            if (botName) masked._botName = botName;
+          }
+
+          accounts[accountId] = masked;
+
+          const allowFile = path.join(credDir, `${channelType}-${accountId}-allowFrom.json`);
+          try {
+            if (fs.existsSync(allowFile)) {
+              const data = JSON.parse(fs.readFileSync(allowFile, 'utf8'));
+              pairedUsers[accountId] = (data.allowFrom || []).map((id: string) => ({ id }));
+            }
+          } catch { /* ignore */ }
+        }
+
+        channels[channelType] = {
+          enabled: ch.enabled !== false,
+          accounts,
+          pairedUsers,
+        };
+      }
+
+      return { success: true, channels };
     } catch (e: any) {
       return { success: false, error: e.message };
     }

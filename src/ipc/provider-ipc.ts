@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import { ipcMain } from 'electron';
 import { OPENCLAW_CONFIG_DIR, CONFIG_FILE, AUTH_PROFILES_DIR, AUTH_PROFILES_FILE } from '../constants';
-import { loadEmbeddedConfig, saveEmbeddedConfig } from '../config-store';
+import { loadEmbeddedConfig, saveEmbeddedConfig, loadAppState } from '../config-store';
 import { syncAuthProfileForProvider } from '../auth';
 import type { GatewayHandle, LoadingStatusCallback } from '../types';
 
@@ -78,19 +78,29 @@ export function registerProviderHandlers(
       const cfg = loadEmbeddedConfig();
       const providers = cfg?.models?.providers || {};
       const entries = Object.entries(providers);
-      if (!entries.length) return { success: true, configured: false };
-      const [providerId, p] = entries[0];
-      return {
-        success: true,
-        configured: !!String(p?.apiKey || '').trim(),
-        provider: {
-          providerId,
-          modelId: p?.models?.[0]?.id || 'default',
-          api: p?.api || 'openai-completions',
-          baseUrl: p?.baseUrl || '',
-          apiKey: p?.apiKey || '',
-        },
-      };
+
+      // Check embedded-config providers (user API key)
+      if (entries.length) {
+        const [providerId, p] = entries[0];
+        if (String(p?.apiKey || '').trim()) {
+          return {
+            success: true,
+            configured: true,
+            provider: {
+              providerId,
+              modelId: p?.models?.[0]?.id || 'default',
+              api: p?.api || 'openai-completions',
+              baseUrl: p?.baseUrl || '',
+              apiKey: p?.apiKey || '',
+            },
+          };
+        }
+      }
+
+      // Check relay mode (device token or device ID = relay is configured)
+      const state = loadAppState();
+      const hasRelay = !!(state.deviceToken || state.deviceId);
+      return { success: true, configured: hasRelay };
     } catch (e: any) {
       return { success: false, error: e.message };
     }

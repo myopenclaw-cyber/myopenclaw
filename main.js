@@ -23,7 +23,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 
 // src/main.ts
-var path11 = __toESM(require("path"));
+var path13 = __toESM(require("path"));
 var os5 = __toESM(require("os"));
 var import_electron14 = require("electron");
 var import_child_process4 = require("child_process");
@@ -280,7 +280,7 @@ function handleDeepLink(url, getMainWindow2) {
 }
 
 // src/window.ts
-var path10 = __toESM(require("path"));
+var path12 = __toESM(require("path"));
 var fs12 = __toESM(require("fs"));
 var import_electron13 = require("electron");
 
@@ -382,6 +382,14 @@ async function ensureEmbeddedRuntime(updateLoadingStatus2) {
     for (const dir of [binDir, nodeDir]) {
       if (fs2.existsSync(dir)) {
         (0, import_child_process.execFileSync)("chmod", ["-R", "+x", dir], { stdio: "inherit" });
+        try {
+          (0, import_child_process.execFileSync)("xattr", ["-rd", "com.apple.quarantine", dir], { stdio: "pipe" });
+        } catch {
+        }
+        try {
+          (0, import_child_process.execFileSync)("xattr", ["-rd", "com.apple.provenance", dir], { stdio: "pipe" });
+        } catch {
+        }
         console.log(`[runtime] Fixed permissions: ${dir}`);
       }
     }
@@ -431,7 +439,12 @@ function verifyOpenClawCli(binPath) {
       encoding: "utf8",
       timeout: 1e4,
       stdio: "pipe",
-      env: { ...process.env, PATH: buildNodeEnhancedPath() },
+      env: {
+        ...process.env,
+        PATH: buildNodeEnhancedPath(),
+        OPENCLAW_STATE_DIR: OPENCLAW_CONFIG_DIR,
+        OPENCLAW_CONFIG_PATH: CONFIG_FILE
+      },
       shell: useShell,
       windowsHide: true
     });
@@ -442,46 +455,57 @@ function verifyOpenClawCli(binPath) {
   }
 }
 function findOpenClawCli() {
-  const candidates = [];
+  const binNames = process.platform === "win32" ? ["openclaw.cmd", "openclaw.exe", "openclaw"] : ["openclaw"];
+  const ownCandidates = [];
+  for (const bin of binNames) {
+    const embeddedBin = path3.join(__dirname, "resources", "openclaw-deps", ".bin", bin);
+    if (!embeddedBin.includes(".asar")) {
+      ownCandidates.push(embeddedBin);
+    }
+    ownCandidates.push(path3.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", ".bin", bin));
+  }
+  const seen = /* @__PURE__ */ new Set();
+  for (const p of ownCandidates) {
+    const resolved = path3.resolve(p);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    if (!fs2.existsSync(p)) continue;
+    console.log(`[cli] Found own runtime: ${p}, verifying...`);
+    if (verifyOpenClawCli(p)) {
+      console.log(`[cli] Verified own openclaw CLI: ${p}`);
+      return p;
+    }
+  }
+  const systemCandidates = [];
   try {
     const cmd = process.platform === "win32" ? "where" : "which";
     const result = (0, import_child_process.execFileSync)(cmd, ["openclaw"], { encoding: "utf8", timeout: 3e3 }).trim();
-    if (result) candidates.push(result.split(/\r?\n/)[0]);
+    if (result) systemCandidates.push(result.split(/\r?\n/)[0]);
   } catch {
   }
   const home = os2.homedir();
-  candidates.push(
+  systemCandidates.push(
     path3.join(home, ".local", "bin", "openclaw"),
-    "/usr/local/bin/openclaw",
-    path3.join(home, ".openclaw", "bin", "openclaw")
+    "/usr/local/bin/openclaw"
   );
   const nvmDir = path3.join(home, ".nvm", "versions", "node");
   try {
     if (fs2.existsSync(nvmDir)) {
       const versions = fs2.readdirSync(nvmDir).filter((v) => v.startsWith("v")).sort((a, b) => b.localeCompare(a, void 0, { numeric: true }));
       for (const ver of versions) {
-        candidates.push(path3.join(nvmDir, ver, "bin", "openclaw"));
+        systemCandidates.push(path3.join(nvmDir, ver, "bin", "openclaw"));
       }
     }
   } catch {
   }
-  const binNames = process.platform === "win32" ? ["openclaw.cmd", "openclaw.exe", "openclaw"] : ["openclaw"];
-  for (const bin of binNames) {
-    const embeddedBin = path3.join(__dirname, "resources", "openclaw-deps", ".bin", bin);
-    if (!embeddedBin.includes(".asar")) {
-      candidates.push(embeddedBin);
-    }
-    candidates.push(path3.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", ".bin", bin));
-  }
-  const seen = /* @__PURE__ */ new Set();
-  for (const p of candidates) {
+  for (const p of systemCandidates) {
     const resolved = path3.resolve(p);
     if (seen.has(resolved)) continue;
     seen.add(resolved);
     if (!fs2.existsSync(p)) continue;
-    console.log(`[cli] Found candidate: ${p}, verifying...`);
+    console.log(`[cli] Found system candidate: ${p}, verifying...`);
     if (verifyOpenClawCli(p)) {
-      console.log(`[cli] Verified openclaw CLI: ${p}`);
+      console.log(`[cli] Using system openclaw CLI: ${p}`);
       return p;
     }
   }
@@ -518,102 +542,14 @@ function findNodeBinary() {
 function ensureOpenClawInPath(openclawBin) {
   if (!openclawBin) return;
   try {
-    if (process.platform === "win32") {
-      ensureOpenClawInPathWindows(openclawBin);
-      return;
-    }
-    const resolved = fs2.realpathSync(openclawBin);
-    const standardDirs = ["/usr/local/bin", "/usr/bin", path3.join(os2.homedir(), ".local", "bin")];
-    const binDir = path3.dirname(resolved);
-    if (standardDirs.includes(binDir)) {
-      console.log("[path] openclaw already in standard PATH:", resolved);
-      return;
-    }
-    if (binDir.includes(".bin")) {
-      console.log("[path] Skipping symlink for npm .bin script:", resolved);
-      if (!process.env.PATH.includes(binDir)) {
-        process.env.PATH = `${binDir}:${process.env.PATH}`;
-      }
-      return;
-    }
-    const localBinDir = path3.join(os2.homedir(), ".local", "bin");
-    const symlinkTarget = path3.join(localBinDir, "openclaw");
-    fs2.mkdirSync(localBinDir, { recursive: true });
-    try {
-      fs2.unlinkSync(symlinkTarget);
-    } catch {
-    }
-    fs2.symlinkSync(resolved, symlinkTarget);
-    fs2.chmodSync(symlinkTarget, 493);
-    console.log(`[path] Created symlink: ${symlinkTarget} -> ${resolved}`);
-    const home = os2.homedir();
-    const exportLine = 'export PATH="$HOME/.local/bin:$PATH"';
-    const profiles = [".zshrc", ".bashrc"].map((f) => path3.join(home, f));
-    for (const profile of profiles) {
-      try {
-        const content = fs2.existsSync(profile) ? fs2.readFileSync(profile, "utf8") : "";
-        if (!content.includes(".local/bin")) {
-          fs2.appendFileSync(profile, `
-# Added by MyOpenClaw
-${exportLine}
-`);
-          console.log(`[path] Added ~/.local/bin to ${profile}`);
-        }
-      } catch (e) {
-        console.log(`[path] Could not update ${profile}:`, e.message);
-      }
-    }
-    if (!process.env.PATH.includes(localBinDir)) {
-      process.env.PATH = `${localBinDir}:${process.env.PATH}`;
+    const binDir = path3.dirname(fs2.realpathSync(openclawBin));
+    if (!process.env.PATH.includes(binDir)) {
+      const sep = process.platform === "win32" ? ";" : ":";
+      process.env.PATH = `${binDir}${sep}${process.env.PATH}`;
+      console.log(`[path] Added to process PATH: ${binDir}`);
     }
   } catch (e) {
     console.error("[path] ensureOpenClawInPath failed:", e.message);
-  }
-}
-function ensureOpenClawInPathWindows(openclawBin) {
-  try {
-    const binDir = path3.dirname(openclawBin);
-    if (!process.env.PATH.includes(binDir)) {
-      process.env.PATH = `${binDir};${process.env.PATH}`;
-      console.log(`[path] Added to process PATH: ${binDir}`);
-    }
-    const currentUserPath = (0, import_child_process.execFileSync)("reg", [
-      "query",
-      "HKCU\\Environment",
-      "/v",
-      "Path"
-    ], { encoding: "utf8", timeout: 5e3, windowsHide: true, stdio: "pipe" });
-    if (currentUserPath.includes(binDir)) {
-      console.log("[path] openclaw already in user PATH:", binDir);
-      return;
-    }
-    const match = currentUserPath.match(/Path\s+REG_(?:EXPAND_)?SZ\s+(.+)/i);
-    const existingPath = match ? match[1].trim() : "";
-    const newPath = existingPath ? `${existingPath};${binDir}` : binDir;
-    (0, import_child_process.execFileSync)("setx", ["Path", newPath], {
-      encoding: "utf8",
-      timeout: 5e3,
-      windowsHide: true,
-      stdio: "pipe"
-    });
-    console.log(`[path] Added to user PATH via setx: ${binDir}`);
-  } catch (e) {
-    if (e.message?.includes("unable to find")) {
-      try {
-        const binDir = path3.dirname(openclawBin);
-        (0, import_child_process.execFileSync)("setx", ["Path", binDir], {
-          encoding: "utf8",
-          timeout: 5e3,
-          windowsHide: true,
-          stdio: "pipe"
-        });
-        console.log(`[path] Created user PATH with: ${binDir}`);
-      } catch (e2) {
-        console.error("[path] Failed to create user PATH:", e2.message);
-      }
-    } else {
-      console.error("[path] ensureOpenClawInPathWindows failed:", e.message);
-    }
   }
 }
 function runOpenClawOnboard(cmd, prependArgs = [], cwd) {
@@ -668,7 +604,7 @@ function runOpenClawOnboard(cmd, prependArgs = [], cwd) {
 }
 
 // src/gateway.ts
-var path4 = __toESM(require("path"));
+var path5 = __toESM(require("path"));
 var fs4 = __toESM(require("fs"));
 var os3 = __toESM(require("os"));
 var crypto3 = __toESM(require("crypto"));
@@ -677,6 +613,7 @@ var import_axios5 = __toESM(require("axios"));
 
 // src/auth.ts
 var fs3 = __toESM(require("fs"));
+var path4 = __toESM(require("path"));
 function syncAuthProfileForProvider(providerId, apiKey, api = "") {
   try {
     const key = String(apiKey || "").trim();
@@ -727,22 +664,35 @@ function ensureGatewayProviderOrRelay() {
     const deviceId = state.deviceId || "";
     if (!relayUrl || !deviceToken && !deviceId) return;
     const relayApiKey = deviceToken || `device:${deviceId}`;
-    syncAuthProfileForProvider("anthropic", relayApiKey);
+    const RELAY_PROVIDER = "relay";
+    const RELAY_MODEL = "claude-opus-4-6";
+    syncAuthProfileForProvider(RELAY_PROVIDER, relayApiKey);
     const ocCfg = fs3.existsSync(CONFIG_FILE) ? JSON.parse(fs3.readFileSync(CONFIG_FILE, "utf8").replace(/^\uFEFF/, "")) : {};
     ocCfg.models = ocCfg.models || {};
     ocCfg.models.mode = ocCfg.models.mode || "merge";
     ocCfg.models.providers = ocCfg.models.providers || {};
-    ocCfg.models.providers["anthropic"] = {
-      ...ocCfg.models.providers["anthropic"] || {},
+    const oldAnthropic = ocCfg.models.providers["anthropic"];
+    if (oldAnthropic?.baseUrl?.includes("myopenclaw-relay-service")) {
+      delete ocCfg.models.providers["anthropic"];
+    }
+    ocCfg.models.providers[RELAY_PROVIDER] = {
+      ...ocCfg.models.providers[RELAY_PROVIDER] || {},
       baseUrl: relayUrl,
       api: "openai-completions",
-      models: ocCfg.models.providers["anthropic"]?.models?.length ? ocCfg.models.providers["anthropic"].models : [{ id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", contextWindow: 18e4, maxTokens: 8192 }]
+      models: ocCfg.models.providers[RELAY_PROVIDER]?.models?.length ? ocCfg.models.providers[RELAY_PROVIDER].models : [{ id: RELAY_MODEL, name: "Claude Opus 4.6", contextWindow: 18e4, maxTokens: 8192 }]
     };
+    ocCfg.agents = ocCfg.agents || {};
+    ocCfg.agents.defaults = ocCfg.agents.defaults || {};
+    ocCfg.agents.defaults.model = {
+      ...ocCfg.agents.defaults.model || {},
+      primary: `${RELAY_PROVIDER}/${RELAY_MODEL}`
+    };
+    ocCfg.agents.defaults.workspace = path4.join(OPENCLAW_CONFIG_DIR, "workspace");
     if (ocCfg.tools?.profile) {
       delete ocCfg.tools.profile;
     }
     fs3.writeFileSync(CONFIG_FILE, JSON.stringify(ocCfg, null, 2), "utf8");
-    console.log("[auth] Configured relay as anthropic provider fallback:", relayUrl);
+    console.log("[auth] Configured relay provider fallback:", relayUrl);
   } catch (e) {
     console.error("[auth] ensureGatewayProviderOrRelay failed:", e.message);
   }
@@ -823,27 +773,6 @@ async function startGateway(updateLoadingStatus2) {
   tryDoctorFix();
   updateLoadingStatus2("Launching openclaw gateway...", 90);
   forceCleanGatewayLock();
-  try {
-    const lockFile = resolveGatewayLockFile();
-    const lockDir = path4.dirname(lockFile);
-    console.log(`[lock-diag] Expected lock file: ${lockFile}`);
-    console.log(`[lock-diag] CONFIG_FILE resolved: ${path4.resolve(CONFIG_FILE)}`);
-    console.log(`[lock-diag] Lock dir exists: ${fs4.existsSync(lockDir)}`);
-    if (fs4.existsSync(lockDir)) {
-      const files = fs4.readdirSync(lockDir);
-      console.log(`[lock-diag] Lock dir contents (${files.length}): ${files.join(", ")}`);
-      for (const f of files) {
-        try {
-          const content = fs4.readFileSync(path4.join(lockDir, f), "utf8");
-          console.log(`[lock-diag] ${f}: ${content.slice(0, 200)}`);
-        } catch {
-        }
-      }
-    }
-    console.log(`[lock-diag] Lock file exists: ${fs4.existsSync(lockFile)}`);
-  } catch (e) {
-    console.log(`[lock-diag] Error: ${e.message}`);
-  }
   const gatewayEnv = {
     ...process.env,
     PATH: buildNodeEnhancedPath(),
@@ -865,9 +794,9 @@ async function startGateway(updateLoadingStatus2) {
       windowsHide: true
     });
   } else {
-    const runtimeDir = findRuntimeDir() || path4.join(__dirname, "resources");
-    const entryMjs = path4.join(runtimeDir, "openclaw-deps", "openclaw", "openclaw.mjs");
-    const entryJs = path4.join(runtimeDir, "openclaw-deps", "openclaw", "dist", "entry.js");
+    const runtimeDir = findRuntimeDir() || path5.join(__dirname, "resources");
+    const entryMjs = path5.join(runtimeDir, "openclaw-deps", "openclaw", "openclaw.mjs");
+    const entryJs = path5.join(runtimeDir, "openclaw-deps", "openclaw", "dist", "entry.js");
     const entryFile = fs4.existsSync(entryMjs) ? entryMjs : entryJs;
     const nodeBin = findNodeBinary();
     console.log(`[startGateway] Fallback: ${nodeBin} ${entryFile} gateway run --port ${gatewayPort}`);
@@ -949,10 +878,10 @@ function stopExistingGateway() {
   }
 }
 function resolveGatewayLockFile() {
-  const hash = crypto3.createHash("sha256").update(path4.resolve(CONFIG_FILE)).digest("hex").slice(0, 8);
+  const hash = crypto3.createHash("sha256").update(path5.resolve(CONFIG_FILE)).digest("hex").slice(0, 8);
   const uid = process.getuid?.();
-  const lockDir = path4.join(os3.tmpdir(), uid != null ? `openclaw-${uid}` : "openclaw");
-  return path4.join(lockDir, `gateway.${hash}.lock`);
+  const lockDir = path5.join(os3.tmpdir(), uid != null ? `openclaw-${uid}` : "openclaw");
+  return path5.join(lockDir, `gateway.${hash}.lock`);
 }
 function forceCleanGatewayLock() {
   try {
@@ -1003,8 +932,8 @@ function tryDoctorFix() {
     try {
       const runtimeDir = findRuntimeDir();
       if (!runtimeDir) return;
-      const entryMjs = path4.join(runtimeDir, "openclaw-deps", "openclaw", "openclaw.mjs");
-      const entryJs = path4.join(runtimeDir, "openclaw-deps", "openclaw", "dist", "entry.js");
+      const entryMjs = path5.join(runtimeDir, "openclaw-deps", "openclaw", "openclaw.mjs");
+      const entryJs = path5.join(runtimeDir, "openclaw-deps", "openclaw", "dist", "entry.js");
       const entryFile = fs4.existsSync(entryMjs) ? entryMjs : entryJs;
       const nodeBin = findNodeBinary();
       const env = { ...process.env, PATH: buildNodeEnhancedPath(), OPENCLAW_CONFIG_PATH: CONFIG_FILE };
@@ -1104,10 +1033,10 @@ var import_crypto = require("crypto");
 // src/device-identity.ts
 var crypto4 = __toESM(require("crypto"));
 var fs5 = __toESM(require("fs"));
-var path5 = __toESM(require("path"));
-var IDENTITY_DIR = path5.join(OPENCLAW_CONFIG_DIR, "identity");
-var KEYPAIR_FILE = path5.join(IDENTITY_DIR, "device.json");
-var DEVICE_AUTH_FILE = path5.join(IDENTITY_DIR, "device-auth.json");
+var path6 = __toESM(require("path"));
+var IDENTITY_DIR = path6.join(OPENCLAW_CONFIG_DIR, "identity");
+var KEYPAIR_FILE = path6.join(IDENTITY_DIR, "device.json");
+var DEVICE_AUTH_FILE = path6.join(IDENTITY_DIR, "device-auth.json");
 function ensureIdentityDir() {
   fs5.mkdirSync(IDENTITY_DIR, { recursive: true });
 }
@@ -1526,7 +1455,7 @@ function registerChatHandlers(getGatewayHandle, getMainWindow2) {
 var import_electron3 = require("electron");
 
 // src/conversation.ts
-var path6 = __toESM(require("path"));
+var path7 = __toESM(require("path"));
 var fs6 = __toESM(require("fs"));
 function extractTextFromMessageContent(content) {
   if (typeof content === "string") return content;
@@ -1554,10 +1483,10 @@ function normalizeConversationText(role, text) {
 }
 function loadAgentConversationFromOpenClaw(agentId = "main", limit = 80) {
   try {
-    const sessionsDir = path6.join(__dirname, "resources", ".openclaw-myopenclaw", "agents", agentId, "sessions");
+    const sessionsDir = path7.join(__dirname, "resources", ".openclaw-myopenclaw", "agents", agentId, "sessions");
     if (!fs6.existsSync(sessionsDir)) return [];
     let sessionFiles = [];
-    const sessionsIndex = path6.join(sessionsDir, "sessions.json");
+    const sessionsIndex = path7.join(sessionsDir, "sessions.json");
     if (fs6.existsSync(sessionsIndex)) {
       const idx = JSON.parse(fs6.readFileSync(sessionsIndex, "utf8").replace(/^\uFEFF/, ""));
       const rows = Object.values(idx || {}).filter((v) => v && v.sessionFile);
@@ -1565,7 +1494,7 @@ function loadAgentConversationFromOpenClaw(agentId = "main", limit = 80) {
       sessionFiles = rows.map((r) => r.sessionFile).filter((f) => f && fs6.existsSync(f));
     }
     if (!sessionFiles.length) {
-      sessionFiles = fs6.readdirSync(sessionsDir).filter((f) => f.endsWith(".jsonl")).map((f) => ({ full: path6.join(sessionsDir, f), mtime: fs6.statSync(path6.join(sessionsDir, f)).mtimeMs })).sort((a, b) => b.mtime - a.mtime).map((x) => x.full);
+      sessionFiles = fs6.readdirSync(sessionsDir).filter((f) => f.endsWith(".jsonl")).map((f) => ({ full: path7.join(sessionsDir, f), mtime: fs6.statSync(path7.join(sessionsDir, f)).mtimeMs })).sort((a, b) => b.mtime - a.mtime).map((x) => x.full);
     }
     const conv = [];
     for (const file of sessionFiles) {
@@ -1600,8 +1529,8 @@ function loadAgentConversationFromOpenClaw(agentId = "main", limit = 80) {
 
 // src/logger.ts
 var fs7 = __toESM(require("fs"));
-var path7 = __toESM(require("path"));
-var LOG_FILE = path7.join(MYOPENCLAW_DATA_DIR, "myopenclaw.log");
+var path8 = __toESM(require("path"));
+var LOG_FILE = path8.join(MYOPENCLAW_DATA_DIR, "myopenclaw.log");
 var MAX_LOG_SIZE = 2 * 1024 * 1024;
 var logStream = null;
 function ensureLogStream() {
@@ -1864,19 +1793,25 @@ function registerProviderHandlers(getGatewayHandle, onStartGateway) {
       const cfg = loadEmbeddedConfig();
       const providers = cfg?.models?.providers || {};
       const entries = Object.entries(providers);
-      if (!entries.length) return { success: true, configured: false };
-      const [providerId, p] = entries[0];
-      return {
-        success: true,
-        configured: !!String(p?.apiKey || "").trim(),
-        provider: {
-          providerId,
-          modelId: p?.models?.[0]?.id || "default",
-          api: p?.api || "openai-completions",
-          baseUrl: p?.baseUrl || "",
-          apiKey: p?.apiKey || ""
+      if (entries.length) {
+        const [providerId, p] = entries[0];
+        if (String(p?.apiKey || "").trim()) {
+          return {
+            success: true,
+            configured: true,
+            provider: {
+              providerId,
+              modelId: p?.models?.[0]?.id || "default",
+              api: p?.api || "openai-completions",
+              baseUrl: p?.baseUrl || "",
+              apiKey: p?.apiKey || ""
+            }
+          };
         }
-      };
+      }
+      const state = loadAppState();
+      const hasRelay = !!(state.deviceToken || state.deviceId);
+      return { success: true, configured: hasRelay };
     } catch (e) {
       return { success: false, error: e.message };
     }
@@ -2050,7 +1985,23 @@ function registerDeviceHandlers() {
 
 // src/ipc/channel-ipc.ts
 var fs9 = __toESM(require("fs"));
+var path9 = __toESM(require("path"));
 var import_electron9 = require("electron");
+var import_axios8 = __toESM(require("axios"));
+function maskToken(token) {
+  if (!token || token.length <= 12) return "****";
+  const prefix = token.slice(0, 10);
+  const suffix = token.slice(-10);
+  return prefix + "****" + suffix;
+}
+async function fetchTelegramBotName(botToken) {
+  try {
+    const res = await import_axios8.default.get(`https://api.telegram.org/bot${botToken}/getMe`, { timeout: 5e3 });
+    return res.data?.result?.username || "";
+  } catch {
+    return "";
+  }
+}
 function syncChannelsToGatewayConfig(channels) {
   try {
     const ocCfg = fs9.existsSync(CONFIG_FILE) ? JSON.parse(fs9.readFileSync(CONFIG_FILE, "utf8").replace(/^\uFEFF/, "")) : {};
@@ -2080,13 +2031,57 @@ function registerChannelHandlers() {
       return { success: false, error: e.message };
     }
   });
+  import_electron9.ipcMain.handle("get-channel-status", async () => {
+    try {
+      const cfg = loadEmbeddedConfig();
+      const channels = {};
+      const cfgChannels = cfg.channels || {};
+      const credDir = path9.join(OPENCLAW_CONFIG_DIR, "credentials");
+      for (const [channelType, channelCfg] of Object.entries(cfgChannels)) {
+        const ch = channelCfg;
+        if (!ch.accounts || !Object.keys(ch.accounts).length) continue;
+        const accounts = {};
+        const pairedUsers = {};
+        for (const [accountId, accountCfg] of Object.entries(ch.accounts)) {
+          const masked = { ...accountCfg || {} };
+          for (const key of ["botToken", "token", "apiKey"]) {
+            if (typeof masked[key] === "string" && masked[key].length > 0) {
+              masked[`_raw_${key}`] = masked[key];
+              masked[key] = maskToken(masked[key]);
+            }
+          }
+          if (channelType === "telegram" && accountCfg?.botToken) {
+            const botName = await fetchTelegramBotName(accountCfg.botToken);
+            if (botName) masked._botName = botName;
+          }
+          accounts[accountId] = masked;
+          const allowFile = path9.join(credDir, `${channelType}-${accountId}-allowFrom.json`);
+          try {
+            if (fs9.existsSync(allowFile)) {
+              const data = JSON.parse(fs9.readFileSync(allowFile, "utf8"));
+              pairedUsers[accountId] = (data.allowFrom || []).map((id) => ({ id }));
+            }
+          } catch {
+          }
+        }
+        channels[channelType] = {
+          enabled: ch.enabled !== false,
+          accounts,
+          pairedUsers
+        };
+      }
+      return { success: true, channels };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
 }
 
 // src/ipc/skills-ipc.ts
 var crypto6 = __toESM(require("crypto"));
 var fs10 = __toESM(require("fs"));
 var os4 = __toESM(require("os"));
-var path8 = __toESM(require("path"));
+var path10 = __toESM(require("path"));
 var import_child_process3 = require("child_process");
 var import_electron10 = require("electron");
 function findClawHubCli() {
@@ -2098,19 +2093,19 @@ function findClawHubCli() {
   } catch {
   }
   const home = os4.homedir();
-  const nvmDir = path8.join(home, ".nvm", "versions", "node");
+  const nvmDir = path10.join(home, ".nvm", "versions", "node");
   try {
     if (fs10.existsSync(nvmDir)) {
       const versions = fs10.readdirSync(nvmDir).filter((v) => v.startsWith("v")).sort((a, b) => b.localeCompare(a, void 0, { numeric: true }));
       for (const ver of versions) {
-        candidates.push(path8.join(nvmDir, ver, "bin", "clawhub"));
+        candidates.push(path10.join(nvmDir, ver, "bin", "clawhub"));
       }
     }
   } catch {
   }
   const binNames = process.platform === "win32" ? ["clawhub.cmd", "clawhub.exe", "clawhub"] : ["clawhub"];
   for (const bin of binNames) {
-    candidates.push(path8.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", ".bin", bin));
+    candidates.push(path10.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", ".bin", bin));
   }
   candidates.push(
     "/usr/local/bin/clawhub",
@@ -2118,7 +2113,7 @@ function findClawHubCli() {
   );
   const seen = /* @__PURE__ */ new Set();
   for (const p of candidates) {
-    const resolved = path8.resolve(p);
+    const resolved = path10.resolve(p);
     if (seen.has(resolved)) continue;
     seen.add(resolved);
     if (fs10.existsSync(p)) return p;
@@ -2396,7 +2391,7 @@ function registerSkillsHandlers(getGatewayHandle) {
 
 // src/ipc/cron-ipc.ts
 var crypto7 = __toESM(require("crypto"));
-var import_axios8 = __toESM(require("axios"));
+var import_axios9 = __toESM(require("axios"));
 var import_electron11 = require("electron");
 function wsRpc(port, token, method, params = {}) {
   return new Promise((resolve5, reject) => {
@@ -2546,7 +2541,7 @@ function registerCronHandlers(getGatewayHandle) {
         '  "message": "the prompt message to send to the agent when the job runs"',
         "}"
       ].join("\n");
-      const response = await import_axios8.default.post(`http://127.0.0.1:${port}/v1/chat/completions`, {
+      const response = await import_axios9.default.post(`http://127.0.0.1:${port}/v1/chat/completions`, {
         model: "openclaw:main",
         messages: [
           { role: "system", content: systemPrompt },
@@ -2578,14 +2573,14 @@ function registerCronHandlers(getGatewayHandle) {
 
 // src/ipc/pairing-ipc.ts
 var fs11 = __toESM(require("fs"));
-var path9 = __toESM(require("path"));
+var path11 = __toESM(require("path"));
 var import_electron12 = require("electron");
-var CREDENTIALS_DIR = path9.join(OPENCLAW_CONFIG_DIR, "credentials");
+var CREDENTIALS_DIR = path11.join(OPENCLAW_CONFIG_DIR, "credentials");
 function getPairingFilePath(channel) {
-  return path9.join(CREDENTIALS_DIR, `${channel}-pairing.json`);
+  return path11.join(CREDENTIALS_DIR, `${channel}-pairing.json`);
 }
 function getAllowFromFilePath(channel, accountId) {
-  return path9.join(CREDENTIALS_DIR, `${channel}-${accountId}-allowFrom.json`);
+  return path11.join(CREDENTIALS_DIR, `${channel}-${accountId}-allowFrom.json`);
 }
 function readPairingFile(channel) {
   const filePath = getPairingFilePath(channel);
@@ -2600,7 +2595,7 @@ function readPairingFile(channel) {
 }
 function writePairingFile(channel, data) {
   const filePath = getPairingFilePath(channel);
-  fs11.mkdirSync(path9.dirname(filePath), { recursive: true });
+  fs11.mkdirSync(path11.dirname(filePath), { recursive: true });
   fs11.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
 }
 function readAllowFromFile(channel, accountId) {
@@ -2616,7 +2611,7 @@ function readAllowFromFile(channel, accountId) {
 }
 function writeAllowFromFile(channel, accountId, data) {
   const filePath = getAllowFromFilePath(channel, accountId);
-  fs11.mkdirSync(path9.dirname(filePath), { recursive: true });
+  fs11.mkdirSync(path11.dirname(filePath), { recursive: true });
   fs11.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
 }
 function registerPairingHandlers() {
@@ -2748,7 +2743,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path10.join(__dirname, "preload.js"),
+      preload: path12.join(__dirname, "preload.js"),
       webviewTag: true
     }
   });
@@ -2797,8 +2792,8 @@ function createWindow() {
             console.log("[startup] No CLI found, running onboard via node entry point...");
             const runtimeDir = findRuntimeDir();
             const nodeBin = findNodeBinary();
-            const entryMjs = path10.join(runtimeDir, "openclaw-deps", "openclaw", "openclaw.mjs");
-            const entryJs = path10.join(runtimeDir, "openclaw-deps", "openclaw", "dist", "entry.js");
+            const entryMjs = path12.join(runtimeDir, "openclaw-deps", "openclaw", "openclaw.mjs");
+            const entryJs = path12.join(runtimeDir, "openclaw-deps", "openclaw", "dist", "entry.js");
             const entryFile = fs12.existsSync(entryMjs) ? entryMjs : entryJs;
             await runOpenClawOnboard(nodeBin, [entryFile], runtimeDir);
           } catch (onboardErr) {
@@ -2849,7 +2844,7 @@ process.stderr?.on("error", () => {
 });
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
-    import_electron14.app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path11.resolve(process.argv[1])]);
+    import_electron14.app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path13.resolve(process.argv[1])]);
   }
 } else {
   import_electron14.app.setAsDefaultProtocolClient(PROTOCOL);

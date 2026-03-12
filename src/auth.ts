@@ -1,5 +1,6 @@
 import * as fs from 'fs';
-import { AUTH_PROFILES_DIR, AUTH_PROFILES_FILE, CONFIG_FILE, RELAY_BASE_URL } from './constants';
+import * as path from 'path';
+import { AUTH_PROFILES_DIR, AUTH_PROFILES_FILE, CONFIG_FILE, OPENCLAW_CONFIG_DIR, RELAY_BASE_URL } from './constants';
 import { loadEmbeddedConfig, loadAppState, getUserProviderConfig } from './config-store';
 
 export function syncAuthProfileForProvider(providerId: string, apiKey: string, api: string = ''): void {
@@ -65,24 +66,43 @@ export function ensureGatewayProviderOrRelay(): void {
     // Prefer signed token; fall back to unsigned for initial registration
     const relayApiKey = deviceToken || `device:${deviceId}`;
 
-    // Write auth-profiles.json with relay key for anthropic provider
-    syncAuthProfileForProvider('anthropic', relayApiKey);
+    // Use 'relay' provider name — gateway hardcodes Anthropic Messages API
+    // for provider named 'anthropic', ignoring the api field
+    const RELAY_PROVIDER = 'relay';
+    const RELAY_MODEL = 'claude-opus-4-6';
 
-    // Ensure openclaw.json has the relay as the anthropic provider base URL
+    syncAuthProfileForProvider(RELAY_PROVIDER, relayApiKey);
+
     const ocCfg: any = fs.existsSync(CONFIG_FILE)
       ? JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8').replace(/^\uFEFF/, ''))
       : {};
     ocCfg.models = ocCfg.models || {};
     ocCfg.models.mode = ocCfg.models.mode || 'merge';
     ocCfg.models.providers = ocCfg.models.providers || {};
-    ocCfg.models.providers['anthropic'] = {
-      ...(ocCfg.models.providers['anthropic'] || {}),
+
+    // Clean up old 'anthropic' entry that pointed to relay (from previous versions)
+    const oldAnthropic = ocCfg.models.providers['anthropic'];
+    if (oldAnthropic?.baseUrl?.includes('myopenclaw-relay-service')) {
+      delete ocCfg.models.providers['anthropic'];
+    }
+
+    ocCfg.models.providers[RELAY_PROVIDER] = {
+      ...(ocCfg.models.providers[RELAY_PROVIDER] || {}),
       baseUrl: relayUrl,
       api: 'openai-completions',
-      models: (ocCfg.models.providers['anthropic']?.models?.length)
-        ? ocCfg.models.providers['anthropic'].models
-        : [{ id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', contextWindow: 180000, maxTokens: 8192 }],
+      models: (ocCfg.models.providers[RELAY_PROVIDER]?.models?.length)
+        ? ocCfg.models.providers[RELAY_PROVIDER].models
+        : [{ id: RELAY_MODEL, name: 'Claude Opus 4.6', contextWindow: 180000, maxTokens: 8192 }],
     };
+
+    // Set default model and workspace — always use MyOpenClaw's own paths
+    ocCfg.agents = ocCfg.agents || {};
+    ocCfg.agents.defaults = ocCfg.agents.defaults || {};
+    ocCfg.agents.defaults.model = {
+      ...(ocCfg.agents.defaults.model || {}),
+      primary: `${RELAY_PROVIDER}/${RELAY_MODEL}`,
+    };
+    ocCfg.agents.defaults.workspace = path.join(OPENCLAW_CONFIG_DIR, 'workspace');
 
     // Remove tools.profile to prevent upstream providers rejecting the tools parameter
     if (ocCfg.tools?.profile) {
@@ -90,7 +110,7 @@ export function ensureGatewayProviderOrRelay(): void {
     }
 
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(ocCfg, null, 2), 'utf8');
-    console.log('[auth] Configured relay as anthropic provider fallback:', relayUrl);
+    console.log('[auth] Configured relay provider fallback:', relayUrl);
   } catch (e: any) {
     console.error('[auth] ensureGatewayProviderOrRelay failed:', e.message);
   }

@@ -108,11 +108,14 @@ export async function ensureEmbeddedRuntime(updateLoadingStatus: LoadingStatusCa
   } else {
     execFileSync('unzip', ['-o', zipPath, '-d', DOWNLOADED_RUNTIME_DIR], { stdio: 'inherit' });
     // Fix permissions on extracted binaries (unzip may strip execute bits)
+    // Also remove macOS quarantine attributes that block execution
     const binDir = path.join(DOWNLOADED_RUNTIME_DIR, 'openclaw-deps', '.bin');
     const nodeDir = path.join(DOWNLOADED_RUNTIME_DIR, 'node');
     for (const dir of [binDir, nodeDir]) {
       if (fs.existsSync(dir)) {
         execFileSync('chmod', ['-R', '+x', dir], { stdio: 'inherit' });
+        try { execFileSync('xattr', ['-rd', 'com.apple.quarantine', dir], { stdio: 'pipe' }); } catch { /* ok */ }
+        try { execFileSync('xattr', ['-rd', 'com.apple.provenance', dir], { stdio: 'pipe' }); } catch { /* ok */ }
         console.log(`[runtime] Fixed permissions: ${dir}`);
       }
     }
@@ -163,7 +166,12 @@ export function verifyOpenClawCli(binPath: string): boolean {
       encoding: 'utf8',
       timeout: 10000,
       stdio: 'pipe',
-      env: { ...process.env, PATH: buildNodeEnhancedPath() },
+      env: {
+        ...process.env,
+        PATH: buildNodeEnhancedPath(),
+        OPENCLAW_STATE_DIR: OPENCLAW_CONFIG_DIR,
+        OPENCLAW_CONFIG_PATH: CONFIG_FILE,
+      },
       shell: useShell,
       windowsHide: true,
     });
@@ -175,19 +183,47 @@ export function verifyOpenClawCli(binPath: string): boolean {
 }
 
 export function findOpenClawCli(): string | null {
-  const candidates: string[] = [];
+  // --- Priority 1: MyOpenClaw's own embedded/downloaded runtime ---
+  // This ensures full isolation from any global OpenClaw installation.
+  const binNames = process.platform === 'win32'
+    ? ['openclaw.cmd', 'openclaw.exe', 'openclaw']
+    : ['openclaw'];
+
+  const ownCandidates: string[] = [];
+  for (const bin of binNames) {
+    const embeddedBin = path.join(__dirname, 'resources', 'openclaw-deps', '.bin', bin);
+    if (!embeddedBin.includes('.asar')) {
+      ownCandidates.push(embeddedBin);
+    }
+    ownCandidates.push(path.join(DOWNLOADED_RUNTIME_DIR, 'openclaw-deps', '.bin', bin));
+  }
+
+  const seen = new Set<string>();
+  for (const p of ownCandidates) {
+    const resolved = path.resolve(p);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    if (!fs.existsSync(p)) continue;
+    console.log(`[cli] Found own runtime: ${p}, verifying...`);
+    if (verifyOpenClawCli(p)) {
+      console.log(`[cli] Verified own openclaw CLI: ${p}`);
+      return p;
+    }
+  }
+
+  // --- Priority 2: System-wide CLI (fallback for dev / full-installer) ---
+  const systemCandidates: string[] = [];
 
   try {
     const cmd = process.platform === 'win32' ? 'where' : 'which';
     const result = execFileSync(cmd, ['openclaw'], { encoding: 'utf8', timeout: 3000 }).trim();
-    if (result) candidates.push(result.split(/\r?\n/)[0]);
+    if (result) systemCandidates.push(result.split(/\r?\n/)[0]);
   } catch { /* not in PATH */ }
 
   const home = os.homedir();
-  candidates.push(
+  systemCandidates.push(
     path.join(home, '.local', 'bin', 'openclaw'),
     '/usr/local/bin/openclaw',
-    path.join(home, '.openclaw', 'bin', 'openclaw'),
   );
 
   const nvmDir = path.join(home, '.nvm', 'versions', 'node');
@@ -197,34 +233,19 @@ export function findOpenClawCli(): string | null {
         .filter(v => v.startsWith('v'))
         .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
       for (const ver of versions) {
-        candidates.push(path.join(nvmDir, ver, 'bin', 'openclaw'));
+        systemCandidates.push(path.join(nvmDir, ver, 'bin', 'openclaw'));
       }
     }
   } catch { /* ignore */ }
 
-  // Add candidates with and without Windows extensions
-  const binNames = process.platform === 'win32'
-    ? ['openclaw.cmd', 'openclaw.exe', 'openclaw']
-    : ['openclaw'];
-
-  for (const bin of binNames) {
-    // Skip asar-packed paths — files inside .asar cannot be executed
-    const embeddedBin = path.join(__dirname, 'resources', 'openclaw-deps', '.bin', bin);
-    if (!embeddedBin.includes('.asar')) {
-      candidates.push(embeddedBin);
-    }
-    candidates.push(path.join(DOWNLOADED_RUNTIME_DIR, 'openclaw-deps', '.bin', bin));
-  }
-
-  const seen = new Set<string>();
-  for (const p of candidates) {
+  for (const p of systemCandidates) {
     const resolved = path.resolve(p);
     if (seen.has(resolved)) continue;
     seen.add(resolved);
     if (!fs.existsSync(p)) continue;
-    console.log(`[cli] Found candidate: ${p}, verifying...`);
+    console.log(`[cli] Found system candidate: ${p}, verifying...`);
     if (verifyOpenClawCli(p)) {
-      console.log(`[cli] Verified openclaw CLI: ${p}`);
+      console.log(`[cli] Using system openclaw CLI: ${p}`);
       return p;
     }
   }
@@ -268,109 +289,17 @@ export function findNodeBinary(): string {
 export function ensureOpenClawInPath(openclawBin: string): void {
   if (!openclawBin) return;
 
+  // Only add to THIS process's PATH — never modify global PATH, symlinks,
+  // or shell profiles.  MyOpenClaw must not affect the global OpenClaw install.
   try {
-    if (process.platform === 'win32') {
-      ensureOpenClawInPathWindows(openclawBin);
-      return;
-    }
-
-    const resolved = fs.realpathSync(openclawBin);
-    const standardDirs = ['/usr/local/bin', '/usr/bin', path.join(os.homedir(), '.local', 'bin')];
-    const binDir = path.dirname(resolved);
-
-    if (standardDirs.includes(binDir)) {
-      console.log('[path] openclaw already in standard PATH:', resolved);
-      return;
-    }
-
-    // Skip symlinking npm .bin scripts — they use relative paths that break via symlink
-    if (binDir.includes('.bin')) {
-      console.log('[path] Skipping symlink for npm .bin script:', resolved);
-      // Just add the .bin dir to PATH for this process
-      if (!process.env.PATH!.includes(binDir)) {
-        process.env.PATH = `${binDir}:${process.env.PATH}`;
-      }
-      return;
-    }
-
-    const localBinDir = path.join(os.homedir(), '.local', 'bin');
-    const symlinkTarget = path.join(localBinDir, 'openclaw');
-    fs.mkdirSync(localBinDir, { recursive: true });
-
-    try { fs.unlinkSync(symlinkTarget); } catch { /* doesn't exist */ }
-    fs.symlinkSync(resolved, symlinkTarget);
-    fs.chmodSync(symlinkTarget, 0o755);
-    console.log(`[path] Created symlink: ${symlinkTarget} -> ${resolved}`);
-
-    const home = os.homedir();
-    const exportLine = 'export PATH="$HOME/.local/bin:$PATH"';
-    const profiles = ['.zshrc', '.bashrc'].map(f => path.join(home, f));
-
-    for (const profile of profiles) {
-      try {
-        const content = fs.existsSync(profile) ? fs.readFileSync(profile, 'utf8') : '';
-        if (!content.includes('.local/bin')) {
-          fs.appendFileSync(profile, `\n# Added by MyOpenClaw\n${exportLine}\n`);
-          console.log(`[path] Added ~/.local/bin to ${profile}`);
-        }
-      } catch (e: any) {
-        console.log(`[path] Could not update ${profile}:`, e.message);
-      }
-    }
-
-    if (!process.env.PATH!.includes(localBinDir)) {
-      process.env.PATH = `${localBinDir}:${process.env.PATH}`;
+    const binDir = path.dirname(fs.realpathSync(openclawBin));
+    if (!process.env.PATH!.includes(binDir)) {
+      const sep = process.platform === 'win32' ? ';' : ':';
+      process.env.PATH = `${binDir}${sep}${process.env.PATH}`;
+      console.log(`[path] Added to process PATH: ${binDir}`);
     }
   } catch (e: any) {
     console.error('[path] ensureOpenClawInPath failed:', e.message);
-  }
-}
-
-function ensureOpenClawInPathWindows(openclawBin: string): void {
-  try {
-    const binDir = path.dirname(openclawBin);
-
-    // Add to current process PATH immediately
-    if (!process.env.PATH!.includes(binDir)) {
-      process.env.PATH = `${binDir};${process.env.PATH}`;
-      console.log(`[path] Added to process PATH: ${binDir}`);
-    }
-
-    // Check if already in user PATH (registry)
-    const currentUserPath = execFileSync('reg', [
-      'query', 'HKCU\\Environment', '/v', 'Path',
-    ], { encoding: 'utf8', timeout: 5000, windowsHide: true, stdio: 'pipe' });
-
-    if (currentUserPath.includes(binDir)) {
-      console.log('[path] openclaw already in user PATH:', binDir);
-      return;
-    }
-
-    // Extract current user PATH value
-    const match = currentUserPath.match(/Path\s+REG_(?:EXPAND_)?SZ\s+(.+)/i);
-    const existingPath = match ? match[1].trim() : '';
-    const newPath = existingPath ? `${existingPath};${binDir}` : binDir;
-
-    // Persist to user PATH via setx
-    execFileSync('setx', ['Path', newPath], {
-      encoding: 'utf8', timeout: 5000, windowsHide: true, stdio: 'pipe',
-    });
-    console.log(`[path] Added to user PATH via setx: ${binDir}`);
-  } catch (e: any) {
-    // reg query fails if Path key doesn't exist yet — create it
-    if (e.message?.includes('unable to find')) {
-      try {
-        const binDir = path.dirname(openclawBin);
-        execFileSync('setx', ['Path', binDir], {
-          encoding: 'utf8', timeout: 5000, windowsHide: true, stdio: 'pipe',
-        });
-        console.log(`[path] Created user PATH with: ${binDir}`);
-      } catch (e2: any) {
-        console.error('[path] Failed to create user PATH:', e2.message);
-      }
-    } else {
-      console.error('[path] ensureOpenClawInPathWindows failed:', e.message);
-    }
   }
 }
 

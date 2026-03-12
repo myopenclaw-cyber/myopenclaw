@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Channel config
   saveAgentChannelConfig: (payload: Record<string, unknown>) => ipcRenderer.invoke('save-agent-channel-config', payload),
+  getChannelStatus: () => ipcRenderer.invoke('get-channel-status'),
 
   // Channel pairing
   pairingList: (payload: Record<string, unknown>) => ipcRenderer.invoke('pairing-list', payload),
