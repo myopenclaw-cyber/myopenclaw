@@ -83,6 +83,12 @@ export function ensureGatewayProviderOrRelay(): void {
         ? ocCfg.models.providers['anthropic'].models
         : [{ id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', contextWindow: 180000, maxTokens: 8192 }],
     };
+
+    // Remove tools.profile to prevent upstream providers rejecting the tools parameter
+    if (ocCfg.tools?.profile) {
+      delete ocCfg.tools.profile;
+    }
+
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(ocCfg, null, 2), 'utf8');
     console.log('[auth] Configured relay as anthropic provider fallback:', relayUrl);
   } catch (e: any) {

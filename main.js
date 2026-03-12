@@ -736,6 +736,9 @@ function ensureGatewayProviderOrRelay() {
       api: "openai-completions",
       models: ocCfg.models.providers["anthropic"]?.models?.length ? ocCfg.models.providers["anthropic"].models : [{ id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", contextWindow: 18e4, maxTokens: 8192 }]
     };
+    if (ocCfg.tools?.profile) {
+      delete ocCfg.tools.profile;
+    }
     fs3.writeFileSync(CONFIG_FILE, JSON.stringify(ocCfg, null, 2), "utf8");
     console.log("[auth] Configured relay as anthropic provider fallback:", relayUrl);
   } catch (e) {
@@ -2168,28 +2171,24 @@ function registerSkillsHandlers(getGatewayHandle) {
   });
   import_electron10.ipcMain.handle("marketplace-install", async (_event, payload) => {
     try {
+      const gw = getGatewayHandle();
+      if (!gw?.baseUrl) return { success: false, error: "Gateway not running" };
       const { slug } = payload || {};
       if (!slug || !/^[a-zA-Z0-9_-]+$/.test(slug)) return { success: false, error: "Invalid slug" };
-      return new Promise((resolve3) => {
-        (0, import_child_process3.execFile)("clawhub", ["install", slug, "--no-input"], { timeout: 12e4 }, (err, stdout, stderr) => {
-          if (err) resolve3({ success: false, error: stderr || err.message });
-          else resolve3({ success: true, output: stdout });
-        });
-      });
+      await gatewayRpc(gw, "skills.install", { name: slug, installId: slug, timeoutMs: 12e4 });
+      return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
     }
   });
   import_electron10.ipcMain.handle("marketplace-uninstall", async (_event, payload) => {
     try {
+      const gw = getGatewayHandle();
+      if (!gw?.baseUrl) return { success: false, error: "Gateway not running" };
       const { slug } = payload || {};
       if (!slug || !/^[a-zA-Z0-9_-]+$/.test(slug)) return { success: false, error: "Invalid slug" };
-      return new Promise((resolve3) => {
-        (0, import_child_process3.execFile)("clawhub", ["uninstall", slug, "--yes"], { timeout: 3e4 }, (err, stdout, stderr) => {
-          if (err) resolve3({ success: false, error: stderr || err.message });
-          else resolve3({ success: true, output: stdout });
-        });
-      });
+      await gatewayRpc(gw, "skills.uninstall", { name: slug });
+      return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
     }
