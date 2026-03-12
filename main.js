@@ -1038,16 +1038,6 @@ function getRawPublicKey(pem) {
 function deriveDeviceId(rawPubKey) {
   return crypto3.createHash("sha256").update(rawPubKey).digest("hex");
 }
-function loadDeviceAuthToken() {
-  try {
-    if (fs5.existsSync(DEVICE_AUTH_FILE)) {
-      const data = JSON.parse(fs5.readFileSync(DEVICE_AUTH_FILE, "utf8"));
-      return data.deviceToken || null;
-    }
-  } catch {
-  }
-  return null;
-}
 function saveDeviceAuthToken(token) {
   ensureIdentityDir();
   fs5.writeFileSync(
@@ -1078,7 +1068,6 @@ function buildConnectParams(gatewayToken, challengeNonce) {
   const payload = `v2|${deviceId}|${CLIENT_ID}|${CLIENT_MODE}|${ROLE}|${scopesCsv}|${signedAt}|${tokenStr}|${challengeNonce}`;
   const privateKey = crypto3.createPrivateKey(kp.privateKey);
   const signature = crypto3.sign(null, Buffer.from(payload, "utf8"), privateKey);
-  const deviceToken = loadDeviceAuthToken();
   return {
     minProtocol: 3,
     maxProtocol: 3,
@@ -1099,8 +1088,7 @@ function buildConnectParams(gatewayToken, challengeNonce) {
       nonce: challengeNonce
     },
     auth: {
-      token: gatewayToken,
-      ...deviceToken ? { deviceToken } : {}
+      token: gatewayToken
     }
   };
 }
