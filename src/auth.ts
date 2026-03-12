@@ -95,7 +95,9 @@ export async function refreshJwtIfNeeded(relayBaseUrl?: string): Promise<string>
     console.log('[auth] JWT refreshed successfully');
     return tokens.accessToken;
   } catch (e: any) {
-    console.error('[auth] JWT refresh failed:', e.message);
+    const status = e?.response?.status;
+    const detail = e?.response?.data ? JSON.stringify(e.response.data) : e.message;
+    console.error(`[auth] JWT refresh failed: ${status || ''} ${detail}`);
     return '';
   }
 }
@@ -125,6 +127,8 @@ export async function ensureGatewayProviderOrRelay(): Promise<void> {
 
     // Prefer user JWT (logged in) > signed device token > unsigned device ID
     const relayApiKey = jwt || deviceToken || `device:${deviceId}`;
+    const authType = jwt ? 'jwt' : deviceToken ? 'deviceToken' : 'deviceId';
+    console.log(`[auth] Using ${authType} for relay auth (key length: ${relayApiKey.length})`);
 
     const RELAY_PROVIDER = 'relay';
 

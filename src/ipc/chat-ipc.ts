@@ -133,7 +133,14 @@ export function registerChatHandlers(
       if (status === 500 && /internal error/i.test(msg)) {
         msg = 'Gateway provider error. Please verify API Keys (Base URL / API Key / Model) in API Keys page.';
       }
-      return { success: false, error: msg, status };
+      console.error('[chat] send-message failed:', JSON.stringify({
+        status,
+        msg,
+        url: error?.config?.url,
+        responseData: error?.response?.data,
+        stack: error.stack?.split('\n').slice(0, 3).join(' | '),
+      }));
+      return { success: false, error: `${status ? status + ' ' : ''}${msg}`, status };
     }
   });
 }

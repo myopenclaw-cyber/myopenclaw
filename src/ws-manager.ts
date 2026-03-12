@@ -292,6 +292,7 @@ export class WsManager {
           if (cb) {
             this.pending.delete(this.activeStreamId);
             const err = payload.state === 'error' ? new Error(payload.errorMessage || payload.error || 'Stream error') : null;
+            if (err) console.error('[WsManager] Chat stream error:', err.message);
             cb(err);
           }
           this.activeStreamId = null;

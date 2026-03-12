@@ -311,7 +311,9 @@ async function refreshJwtIfNeeded(relayBaseUrl) {
     console.log("[auth] JWT refreshed successfully");
     return tokens.accessToken;
   } catch (e) {
-    console.error("[auth] JWT refresh failed:", e.message);
+    const status = e?.response?.status;
+    const detail = e?.response?.data ? JSON.stringify(e.response.data) : e.message;
+    console.error(`[auth] JWT refresh failed: ${status || ""} ${detail}`);
     return "";
   }
 }
@@ -327,6 +329,8 @@ async function ensureGatewayProviderOrRelay() {
     const jwt = await refreshJwtIfNeeded(rawRelayUrl);
     if (!relayUrl || !jwt && !deviceToken && !deviceId) return;
     const relayApiKey = jwt || deviceToken || `device:${deviceId}`;
+    const authType = jwt ? "jwt" : deviceToken ? "deviceToken" : "deviceId";
+    console.log(`[auth] Using ${authType} for relay auth (key length: ${relayApiKey.length})`);
     const RELAY_PROVIDER = "relay";
     syncAuthProfileForProvider(RELAY_PROVIDER, relayApiKey);
     const headers = {};
@@ -1390,6 +1394,7 @@ var WsManager = class {
           if (cb) {
             this.pending.delete(this.activeStreamId);
             const err = payload.state === "error" ? new Error(payload.errorMessage || payload.error || "Stream error") : null;
+            if (err) console.error("[WsManager] Chat stream error:", err.message);
             cb(err);
           }
           this.activeStreamId = null;
@@ -1514,7 +1519,14 @@ function registerChatHandlers(getGatewayHandle, getMainWindow2) {
       if (status === 500 && /internal error/i.test(msg)) {
         msg = "Gateway provider error. Please verify API Keys (Base URL / API Key / Model) in API Keys page.";
       }
-      return { success: false, error: msg, status };
+      console.error("[chat] send-message failed:", JSON.stringify({
+        status,
+        msg,
+        url: error?.config?.url,
+        responseData: error?.response?.data,
+        stack: error.stack?.split("\n").slice(0, 3).join(" | ")
+      }));
+      return { success: false, error: `${status ? status + " " : ""}${msg}`, status };
     }
   });
 }
