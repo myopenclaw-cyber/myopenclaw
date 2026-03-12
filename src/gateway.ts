@@ -28,6 +28,9 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
     }
   } catch { /* no leftover process — fine */ }
 
+  // Stop any existing gateway holding a lock (e.g. leftover from crash or previous session)
+  stopExistingGateway();
+
   const gatewayPort = await findAvailablePort(DEFAULT_PORT);
   const gatewayBaseUrl = `http://127.0.0.1:${gatewayPort}`;
 
@@ -120,7 +123,7 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
     throw new Error(`Gateway process exited immediately with code ${gatewayExitCode}. Check logs above for details.`);
   }
 
-  await waitForGateway(gatewayBaseUrl);
+  await waitForGateway(gatewayBaseUrl, 90, () => gatewayExited);
 
   updateLoadingStatus('Startup complete. Opening workspace...', 100);
   console.log(`[startGateway] Gateway started successfully on ${gatewayBaseUrl}`);
@@ -133,9 +136,17 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
   };
 }
 
-export async function waitForGateway(gatewayBaseUrl: string, maxRetries: number = 90): Promise<boolean> {
+export async function waitForGateway(
+  gatewayBaseUrl: string,
+  maxRetries: number = 90,
+  hasProcessExited?: () => boolean,
+): Promise<boolean> {
   console.log(`[waitForGateway] Checking ${gatewayBaseUrl}/health...`);
   for (let i = 0; i < maxRetries; i++) {
+    if (hasProcessExited?.()) {
+      console.error('[waitForGateway] Gateway process exited, aborting health checks');
+      throw new Error('Gateway process exited unexpectedly. Check logs above for details.');
+    }
     try {
       console.log(`[waitForGateway] Attempt ${i + 1}/${maxRetries}...`);
       const response = await axios.get(`${gatewayBaseUrl}/health`, { timeout: 2000 });
@@ -147,7 +158,28 @@ export async function waitForGateway(gatewayBaseUrl: string, maxRetries: number 
     }
   }
   console.error('[waitForGateway] Max retries reached, gateway failed to start');
-  throw new Error('Gateway failed to start after 30 attempts. Please check your configuration and try again.');
+  throw new Error('Gateway failed to start after max retries. Please check your configuration and try again.');
+}
+
+function stopExistingGateway(): void {
+  try {
+    const cli = findOpenClawCli();
+    if (!cli) return;
+    const env = {
+      ...process.env,
+      PATH: buildNodeEnhancedPath(),
+      OPENCLAW_STATE_DIR: OPENCLAW_CONFIG_DIR,
+      OPENCLAW_CONFIG_PATH: CONFIG_FILE,
+    };
+    const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(cli);
+    execFileSync(cli, ['gateway', 'stop'], {
+      encoding: 'utf8', timeout: 10000, stdio: 'pipe', env, shell: useShell,
+      ...(process.platform === 'win32' ? { windowsHide: true } : {}),
+    });
+    console.log('[startGateway] Stopped existing gateway');
+  } catch {
+    // No gateway running or stop failed — fine, proceed
+  }
 }
 
 function tryDoctorFix(): void {
