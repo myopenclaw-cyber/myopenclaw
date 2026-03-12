@@ -72,8 +72,8 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
 
   updateLoadingStatus('Launching openclaw gateway...', 90);
 
-  // Remove lock file immediately before spawn so nothing can recreate it in between
-  removeGatewayLockFile();
+  // Kill any process holding our lock and remove the lock file right before spawn
+  forceCleanGatewayLock();
 
   const gatewayEnv = {
     ...process.env,
@@ -187,19 +187,48 @@ function stopExistingGateway(): void {
   }
 }
 
-/** Remove the gateway lock file scoped to our CONFIG_FILE. */
-function removeGatewayLockFile(): void {
+/** Resolve the gateway lock file path scoped to our CONFIG_FILE. */
+function resolveGatewayLockFile(): string {
+  const hash = crypto.createHash('sha256').update(path.resolve(CONFIG_FILE)).digest('hex').slice(0, 8);
+  const uid = process.getuid?.();
+  const lockDir = path.join(os.tmpdir(), uid != null ? `openclaw-${uid}` : 'openclaw');
+  return path.join(lockDir, `gateway.${hash}.lock`);
+}
+
+/**
+ * Kill the process holding our gateway lock, then remove the lock file.
+ * The lock file is JSON: { pid, createdAt, configPath }
+ */
+function forceCleanGatewayLock(): void {
   try {
-    const hash = crypto.createHash('sha256').update(path.resolve(CONFIG_FILE)).digest('hex').slice(0, 8);
-    const uid = process.getuid?.();
-    const lockDir = path.join(os.tmpdir(), uid != null ? `openclaw-${uid}` : 'openclaw');
-    const lockFile = path.join(lockDir, `gateway.${hash}.lock`);
-    if (fs.existsSync(lockFile)) {
-      fs.unlinkSync(lockFile);
-      console.log(`[startGateway] Removed lock file: ${lockFile}`);
+    const lockFile = resolveGatewayLockFile();
+    if (!fs.existsSync(lockFile)) return;
+
+    // Read lock to get PID
+    try {
+      const lock = JSON.parse(fs.readFileSync(lockFile, 'utf8'));
+      const pid = lock?.pid;
+      if (pid && typeof pid === 'number') {
+        console.log(`[startGateway] Lock held by PID ${pid}, force-killing...`);
+        try {
+          if (process.platform === 'win32') {
+            execSync(`taskkill /F /PID ${pid}`, { timeout: 5000, stdio: 'pipe' });
+          } else {
+            process.kill(pid, 'SIGKILL');
+          }
+          console.log(`[startGateway] Killed PID ${pid}`);
+        } catch {
+          console.log(`[startGateway] PID ${pid} already dead or inaccessible`);
+        }
+      }
+    } catch {
+      // Lock file unreadable — just delete it
     }
+
+    fs.unlinkSync(lockFile);
+    console.log(`[startGateway] Removed lock file: ${lockFile}`);
   } catch (e: any) {
-    console.log('[startGateway] Lock file cleanup skipped:', e.message);
+    console.log('[startGateway] Lock cleanup failed:', e.message);
   }
 }
 
