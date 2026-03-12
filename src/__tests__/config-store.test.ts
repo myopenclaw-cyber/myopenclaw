@@ -73,6 +73,7 @@ describe('checkPremiumGate', () => {
     const result = checkPremiumGate(makeState({
       premiumTier: 'free',
       freeQuotaUsed: 2,
+      deviceId: 'test-device-id',
     }));
     expect(result.allow).toBe(true);
     if (result.allow) expect(result.tier).toBe('anonymous');
