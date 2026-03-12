@@ -133,7 +133,7 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
   };
 }
 
-export async function waitForGateway(gatewayBaseUrl: string, maxRetries: number = 30): Promise<boolean> {
+export async function waitForGateway(gatewayBaseUrl: string, maxRetries: number = 90): Promise<boolean> {
   console.log(`[waitForGateway] Checking ${gatewayBaseUrl}/health...`);
   for (let i = 0; i < maxRetries; i++) {
     try {

@@ -216,7 +216,11 @@ export function findOpenClawCli(): string | null {
     candidates.push(path.join(DOWNLOADED_RUNTIME_DIR, 'openclaw-deps', '.bin', bin));
   }
 
+  const seen = new Set<string>();
   for (const p of candidates) {
+    const resolved = path.resolve(p);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
     if (!fs.existsSync(p)) continue;
     console.log(`[cli] Found candidate: ${p}, verifying...`);
     if (verifyOpenClawCli(p)) {

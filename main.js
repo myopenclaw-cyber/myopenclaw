@@ -261,10 +261,12 @@ function handleDeepLink(url, getMainWindow2) {
         const mainWindow2 = getMainWindow2();
         if (mainWindow2 && !mainWindow2.isDestroyed()) {
           mainWindow2.webContents.executeJavaScript(`
-            if (typeof loadRelayConfig === 'function') loadRelayConfig();
-            if (typeof loadDeviceInfo === 'function') loadDeviceInfo();
-            if (typeof refreshQuota === 'function') refreshQuota();
-            if (typeof refreshState === 'function') refreshState();
+            (async () => {
+              if (typeof refreshState === 'function') await refreshState();
+              if (typeof loadRelayConfig === 'function') loadRelayConfig();
+              if (typeof loadDeviceInfo === 'function') loadDeviceInfo();
+              if (typeof refreshQuota === 'function') refreshQuota();
+            })();
           `).catch(() => {
           });
           mainWindow2.show();
@@ -305,8 +307,8 @@ async function downloadFile(url, outputPath, onProgress) {
     }
   });
   response.data.pipe(writer);
-  return new Promise((resolve2, reject) => {
-    writer.on("finish", resolve2);
+  return new Promise((resolve3, reject) => {
+    writer.on("finish", resolve3);
     writer.on("error", reject);
   });
 }
@@ -471,7 +473,11 @@ function findOpenClawCli() {
     }
     candidates.push(path3.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", ".bin", bin));
   }
+  const seen = /* @__PURE__ */ new Set();
   for (const p of candidates) {
+    const resolved = path3.resolve(p);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
     if (!fs2.existsSync(p)) continue;
     console.log(`[cli] Found candidate: ${p}, verifying...`);
     if (verifyOpenClawCli(p)) {
@@ -611,7 +617,7 @@ function ensureOpenClawInPathWindows(openclawBin) {
   }
 }
 function runOpenClawOnboard(cmd, prependArgs = [], cwd) {
-  return new Promise((resolve2, _reject) => {
+  return new Promise((resolve3, _reject) => {
     const args = [
       ...prependArgs,
       "onboard",
@@ -648,15 +654,15 @@ function runOpenClawOnboard(cmd, prependArgs = [], cwd) {
     proc.on("close", (code) => {
       if (code === 0) {
         console.log("[onboard] Setup complete");
-        resolve2(output);
+        resolve3(output);
       } else {
         console.error(`[onboard] Exited with code ${code}`);
-        resolve2(output);
+        resolve3(output);
       }
     });
     proc.on("error", (err) => {
       console.error("[onboard] Error:", err.message);
-      resolve2("");
+      resolve3("");
     });
   });
 }
@@ -728,7 +734,7 @@ function ensureGatewayProviderOrRelay() {
       ...ocCfg.models.providers["anthropic"] || {},
       baseUrl: relayUrl,
       api: "openai-completions",
-      models: ocCfg.models.providers["anthropic"]?.models?.length ? ocCfg.models.providers["anthropic"].models : [{ id: "claude-sonnet-4-20250514", name: "claude-sonnet-4-20250514" }]
+      models: ocCfg.models.providers["anthropic"]?.models?.length ? ocCfg.models.providers["anthropic"].models : [{ id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", contextWindow: 18e4, maxTokens: 8192 }]
     };
     fs3.writeFileSync(CONFIG_FILE, JSON.stringify(ocCfg, null, 2), "utf8");
     console.log("[auth] Configured relay as anthropic provider fallback:", relayUrl);
@@ -747,12 +753,12 @@ async function findAvailablePort(startPort = DEFAULT_PORT) {
   throw new Error("No available port found");
 }
 function isPortAvailable(port) {
-  return new Promise((resolve2) => {
+  return new Promise((resolve3) => {
     const server = net.createServer();
-    server.once("error", () => resolve2(false));
+    server.once("error", () => resolve3(false));
     server.once("listening", () => {
       server.close();
-      resolve2(true);
+      resolve3(true);
     });
     server.listen(port, "127.0.0.1");
   });
@@ -840,7 +846,7 @@ async function startGateway(updateLoadingStatus2) {
   gatewayProcess.on("error", (err) => console.error("[Gateway] Process error:", err));
   console.log("[startGateway] Waiting for gateway to start...");
   updateLoadingStatus2("Checking gateway health...", 94);
-  await new Promise((resolve2) => setTimeout(resolve2, 5e3));
+  await new Promise((resolve3) => setTimeout(resolve3, 5e3));
   if (gatewayExited) {
     throw new Error(`Gateway process exited immediately with code ${gatewayExitCode}. Check logs above for details.`);
   }
@@ -854,7 +860,7 @@ async function startGateway(updateLoadingStatus2) {
     token: readGatewayTokenFromConfig()
   };
 }
-async function waitForGateway(gatewayBaseUrl, maxRetries = 30) {
+async function waitForGateway(gatewayBaseUrl, maxRetries = 90) {
   console.log(`[waitForGateway] Checking ${gatewayBaseUrl}/health...`);
   for (let i = 0; i < maxRetries; i++) {
     try {
@@ -864,7 +870,7 @@ async function waitForGateway(gatewayBaseUrl, maxRetries = 30) {
       return true;
     } catch (error) {
       console.log(`[waitForGateway] Attempt ${i + 1} failed:`, error.message);
-      await new Promise((resolve2) => setTimeout(resolve2, 1e3));
+      await new Promise((resolve3) => setTimeout(resolve3, 1e3));
     }
   }
   console.error("[waitForGateway] Max retries reached, gateway failed to start");
@@ -1135,7 +1141,7 @@ var WsManager = class {
       return Promise.resolve();
     }
     const wsUrl = baseUrl.replace(/^http/, "ws") + "/ws";
-    return new Promise((resolve2, reject) => {
+    return new Promise((resolve3, reject) => {
       const ws = new import_ws.WebSocket(wsUrl, {
         headers: {
           Authorization: `Bearer ${token}`
@@ -1172,7 +1178,7 @@ var WsManager = class {
               handleConnectResponse(msg.payload);
               connected = true;
               this.ws = ws;
-              resolve2();
+              resolve3();
               return;
             }
             if (msg.type === "res" && msg.id === connectId && !msg.ok) {
@@ -1245,13 +1251,13 @@ var WsManager = class {
         idempotencyKey: id
       }
     };
-    return new Promise((resolve2, reject) => {
+    return new Promise((resolve3, reject) => {
       this.pending.set(id, (err) => {
         this.streamCallbacks.delete(onPayload);
         if (err) {
           reject(err);
         } else {
-          resolve2(assembledText || "Response received.");
+          resolve3(assembledText || "Response received.");
         }
       });
       if (!this.ws || this.ws.readyState !== import_ws.WebSocket.OPEN) {
@@ -1991,7 +1997,7 @@ async function gatewayRpc(gw, method, params = {}) {
   const id = crypto5.randomUUID();
   const token = readGatewayTokenFromConfig();
   const wsUrl = gw.baseUrl.replace(/^http/, "ws") + "/ws";
-  return new Promise((resolve2, reject) => {
+  return new Promise((resolve3, reject) => {
     let WS;
     try {
       WS = global.WebSocket || require("ws");
@@ -2040,7 +2046,7 @@ async function gatewayRpc(gw, method, params = {}) {
         clearTimeout(timer);
         socket.close();
         if (msg.ok) {
-          resolve2(msg.payload);
+          resolve3(msg.payload);
         } else {
           const errMsg = typeof msg.error === "object" ? msg.error?.message : msg.error;
           reject(new Error(errMsg || `Gateway RPC error for "${method}"`));
@@ -2117,10 +2123,10 @@ function registerSkillsHandlers(getGatewayHandle) {
     const results = [];
     for (const bin of safeBins) {
       try {
-        await new Promise((resolve2, reject) => {
+        await new Promise((resolve3, reject) => {
           (0, import_child_process3.execFile)("brew", ["install", bin], { timeout: 12e4 }, (err, _stdout, stderr) => {
             if (err) reject(new Error(stderr || err.message));
-            else resolve2();
+            else resolve3();
           });
         });
         results.push({ bin, ok: true });
@@ -2176,10 +2182,10 @@ function registerSkillsHandlers(getGatewayHandle) {
     try {
       const { slug } = payload || {};
       if (!slug || !/^[a-zA-Z0-9_-]+$/.test(slug)) return { success: false, error: "Invalid slug" };
-      return new Promise((resolve2) => {
+      return new Promise((resolve3) => {
         (0, import_child_process3.execFile)("clawhub", ["install", slug, "--no-input"], { timeout: 12e4 }, (err, stdout, stderr) => {
-          if (err) resolve2({ success: false, error: stderr || err.message });
-          else resolve2({ success: true, output: stdout });
+          if (err) resolve3({ success: false, error: stderr || err.message });
+          else resolve3({ success: true, output: stdout });
         });
       });
     } catch (e) {
@@ -2190,10 +2196,10 @@ function registerSkillsHandlers(getGatewayHandle) {
     try {
       const { slug } = payload || {};
       if (!slug || !/^[a-zA-Z0-9_-]+$/.test(slug)) return { success: false, error: "Invalid slug" };
-      return new Promise((resolve2) => {
+      return new Promise((resolve3) => {
         (0, import_child_process3.execFile)("clawhub", ["uninstall", slug, "--yes"], { timeout: 3e4 }, (err, stdout, stderr) => {
-          if (err) resolve2({ success: false, error: stderr || err.message });
-          else resolve2({ success: true, output: stdout });
+          if (err) resolve3({ success: false, error: stderr || err.message });
+          else resolve3({ success: true, output: stdout });
         });
       });
     } catch (e) {
@@ -2222,7 +2228,7 @@ var crypto6 = __toESM(require("crypto"));
 var import_axios8 = __toESM(require("axios"));
 var import_electron11 = require("electron");
 function wsRpc(port, token, method, params = {}) {
-  return new Promise((resolve2, reject) => {
+  return new Promise((resolve3, reject) => {
     const id = crypto6.randomUUID();
     const reqMsg = JSON.stringify({ type: "req", id, method, params });
     let ws;
@@ -2273,7 +2279,7 @@ function wsRpc(port, token, method, params = {}) {
         clearTimeout(timer);
         ws.close();
         if (msg.ok) {
-          resolve2(msg.payload);
+          resolve3(msg.payload);
         } else {
           const errMsg = typeof msg.error === "object" ? msg.error?.message : msg.error;
           reject(new Error(errMsg || `RPC error: ${method}`));
