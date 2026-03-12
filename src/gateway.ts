@@ -75,6 +75,28 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
   // Kill any process holding our lock and remove the lock file right before spawn
   forceCleanGatewayLock();
 
+  // Diagnostic: dump lock directory state before gateway spawn
+  try {
+    const lockFile = resolveGatewayLockFile();
+    const lockDir = path.dirname(lockFile);
+    console.log(`[lock-diag] Expected lock file: ${lockFile}`);
+    console.log(`[lock-diag] CONFIG_FILE resolved: ${path.resolve(CONFIG_FILE)}`);
+    console.log(`[lock-diag] Lock dir exists: ${fs.existsSync(lockDir)}`);
+    if (fs.existsSync(lockDir)) {
+      const files = fs.readdirSync(lockDir);
+      console.log(`[lock-diag] Lock dir contents (${files.length}): ${files.join(', ')}`);
+      for (const f of files) {
+        try {
+          const content = fs.readFileSync(path.join(lockDir, f), 'utf8');
+          console.log(`[lock-diag] ${f}: ${content.slice(0, 200)}`);
+        } catch { /* locked file */ }
+      }
+    }
+    console.log(`[lock-diag] Lock file exists: ${fs.existsSync(lockFile)}`);
+  } catch (e: any) {
+    console.log(`[lock-diag] Error: ${e.message}`);
+  }
+
   const gatewayEnv = {
     ...process.env,
     PATH: buildNodeEnhancedPath(),
