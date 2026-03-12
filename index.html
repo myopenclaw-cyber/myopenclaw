@@ -8,8 +8,8 @@
 /* Font loaded async to prevent blocking render in offline/VM environments */
 * { box-sizing: border-box; }
 body { margin: 0; font-family: Inter, sans-serif; background: #FFFFFF; color: #161835; min-height: 100vh; }
-.shell { display: grid; grid-template-columns: 308px 1fr; min-height: 100vh; }
-.side { padding: 25px 18px; border-right: 1px solid rgba(107,70,255,0.2); background: #FFFFFF; display: flex; flex-direction: column; min-height: 100vh; box-shadow: 0px 10px 40px 0px rgba(0,0,0,0.04); position: relative; z-index: 1; }
+.shell { display: grid; grid-template-columns: 308px 1fr; height: 100vh; overflow: hidden; }
+.side { padding: 25px 18px; border-right: 1px solid rgba(107,70,255,0.2); background: #FFFFFF; display: flex; flex-direction: column; height: 100vh; overflow-y: auto; box-shadow: 0px 10px 40px 0px rgba(0,0,0,0.04); position: relative; z-index: 1; }
 .brand { display: flex; align-items: center; gap: 12px; font-size: 20px; font-weight: 800; margin-bottom: 16px; color: #161835; }
 .brand img { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; background: linear-gradient(-11deg, rgba(233,224,255,1) 13%, rgba(255,255,255,1) 100%); }
 .gateway { display: flex; align-items: center; gap: 12px; font-size: 14px; padding: 10px 16px; border: 1px solid rgba(107,70,255,0.2); background: rgba(241,159,73,0.1); border-radius: 20px; margin-bottom: 24px; color: rgba(0,0,0,0.6); }
@@ -22,12 +22,14 @@ body { margin: 0; font-family: Inter, sans-serif; background: #FFFFFF; color: #1
 .menu button .icon-act { display: none; }
 .menu button.active .icon-def { display: none; }
 .menu button.active .icon-act { display: block; }
-.main { padding: 25px 20px; background: linear-gradient(180deg, rgba(221,220,255,1) 0%, rgba(255,255,255,1) 100%); min-height: 100vh; overflow: auto; }
-.hero { padding: 20px; border-radius: 20px; border: 1px solid rgba(107,70,255,0.2); background: rgba(255,255,255,0.4); backdrop-filter: blur(4px); box-shadow: 0px 10px 40px 0px rgba(0,0,0,0.04); margin-bottom: 16px; }
+.main { padding: 25px 20px; background: linear-gradient(180deg, rgba(221,220,255,1) 0%, rgba(255,255,255,1) 100%); height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+.hero { padding: 20px; border-radius: 20px; border: 1px solid rgba(107,70,255,0.2); background: rgba(255,255,255,0.4); backdrop-filter: blur(4px); box-shadow: 0px 10px 40px 0px rgba(0,0,0,0.04); margin-bottom: 16px; flex-shrink: 0; }
 .hero h1 { margin: 0 0 6px; font-size: 20px; font-weight: 700; color: #161835; }
 .hero p { margin: 0; color: rgba(0,0,0,0.4); font-size: 14px; }
 .page { display: none; }
-.page.active { display: block; }
+.page.active { display: block; overflow-y: auto; flex: 1; min-height: 0; }
+#chat.active { display: flex; flex-direction: column; }
+#chat .card { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .card { padding: 20px; border-radius: 20px; border: 1px solid rgba(107,70,255,0.2); background: rgba(255,255,255,0.4); backdrop-filter: blur(4px); box-shadow: 0px 10px 40px 0px rgba(0,0,0,0.04); margin-bottom: 16px; }
 .card h3 { color: #161835; font-size: 20px; font-weight: 700; margin: 0 0 12px; }
 .row { display: flex; gap: 8px; align-items: center; margin: 10px 0; }
@@ -39,7 +41,7 @@ button:hover { opacity: 0.9; }
 button.alt { background: rgba(0,0,0,0.04); color: #070707; border: none; }
 button.danger { background: #FF6092; color: #fff; border: none; }
 button:disabled { opacity: .45; cursor: not-allowed; }
-.chat { height: 400px; overflow: auto; padding: 12px; border-radius: 12px; border: 1px solid rgba(107,70,255,0.2); background: rgba(255,255,255,0.5); backdrop-filter: blur(4px); }
+.chat { flex: 1; min-height: 200px; overflow: auto; padding: 12px; border-radius: 12px; border: 1px solid rgba(107,70,255,0.2); background: rgba(255,255,255,0.5); backdrop-filter: blur(4px); }
 .m { max-width: 78%; padding: 10px 12px; border-radius: 12px; margin: 8px 0; line-height: 1.5; word-break: break-word; font-size: 14px; color: #161835; }
 .u { margin-left: auto; background: linear-gradient(90deg, rgba(93,104,255,1) 0%, rgba(140,70,252,1) 100%); color: #FFFFFF; }
 .a { background: rgba(107,70,255,0.06); border: 1px solid rgba(107,70,255,0.1); }
@@ -253,14 +255,14 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
     <!-- Chat Page -->
     <section id="chat" class="page active">
       <div class="card">
-        <div class="row" style="margin-bottom:6px">
+        <div class="row" style="margin-bottom:6px;flex-shrink:0">
           <label style="width:90px;flex-shrink:0">Agent</label>
           <select id="agentSelect"></select>
           <button class="alt" onclick="openDashboardChat()" title="Open full chat in Dashboard" style="white-space:nowrap;font-size:12px;padding:8px 12px">Dashboard Chat</button>
         </div>
         <div id="chatBox" class="chat"></div>
-        <div id="filePreview" style="display:none"></div>
-        <div class="row">
+        <div id="filePreview" style="display:none;flex-shrink:0"></div>
+        <div class="row" style="flex-shrink:0;margin-bottom:0">
           <button onclick="pickFile()" title="Attach file" style="min-width:36px;padding:8px;font-size:16px">&#128206;</button>
           <textarea id="msg" rows="2" placeholder="Type your message... (Enter to send, Shift+Enter for new line)" style="max-height:160px"></textarea>
           <button onclick="sendMsg()">Send</button>
@@ -988,6 +990,7 @@ async function refreshState() {
   currentAgent = appState.activeAgentId || 'main';
   updateAccountUI();
   updateAuthUI();
+  updateRelayUI();
 }
 
 function updateAccountUI() {

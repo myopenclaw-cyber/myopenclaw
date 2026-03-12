@@ -65,7 +65,7 @@ export function ensureGatewayProviderOrRelay(): void {
     // Prefer signed token; fall back to unsigned for initial registration
     const relayApiKey = deviceToken || `device:${deviceId}`;
 
-    // Write auth-profiles.json with relay key for anthropic
+    // Write auth-profiles.json with relay key for anthropic provider
     syncAuthProfileForProvider('anthropic', relayApiKey);
 
     // Ensure openclaw.json has the relay as the anthropic provider base URL
@@ -81,7 +81,7 @@ export function ensureGatewayProviderOrRelay(): void {
       api: 'openai-completions',
       models: (ocCfg.models.providers['anthropic']?.models?.length)
         ? ocCfg.models.providers['anthropic'].models
-        : [{ id: 'claude-sonnet-4-20250514', name: 'claude-sonnet-4-20250514' }],
+        : [{ id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', contextWindow: 180000, maxTokens: 8192 }],
     };
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(ocCfg, null, 2), 'utf8');
     console.log('[auth] Configured relay as anthropic provider fallback:', relayUrl);

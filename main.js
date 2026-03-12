@@ -633,8 +633,9 @@ function runOpenClawOnboard(cmd, prependArgs = [], cwd) {
       OPENCLAW_STATE_DIR: OPENCLAW_CONFIG_DIR,
       OPENCLAW_CONFIG_PATH: CONFIG_FILE
     };
+    const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(cmd);
     console.log(`[onboard] Running: ${cmd} ${args.join(" ")}`);
-    const proc = (0, import_child_process.spawn)(cmd, args, { stdio: "pipe", env, ...cwd ? { cwd } : {} });
+    const proc = (0, import_child_process.spawn)(cmd, args, { stdio: "pipe", env, shell: useShell, windowsHide: true, ...cwd ? { cwd } : {} });
     let output = "";
     proc.stdout.on("data", (d) => {
       output += d;
