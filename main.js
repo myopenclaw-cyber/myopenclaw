@@ -1326,7 +1326,7 @@ var WsManager = class {
           const cb = this.pending.get(this.activeStreamId);
           if (cb) {
             this.pending.delete(this.activeStreamId);
-            const err = payload.state === "error" ? new Error(payload.error || "Stream error") : null;
+            const err = payload.state === "error" ? new Error(payload.errorMessage || payload.error || "Stream error") : null;
             cb(err);
           }
           this.activeStreamId = null;

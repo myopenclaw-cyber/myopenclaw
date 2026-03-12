@@ -34,6 +34,7 @@ export interface ChatPayload {
     content: ContentItem[];
   };
   error?: string;
+  errorMessage?: string;
 }
 
 export interface ContentItem {
@@ -288,7 +289,7 @@ export class WsManager {
           const cb = this.pending.get(this.activeStreamId);
           if (cb) {
             this.pending.delete(this.activeStreamId);
-            const err = payload.state === 'error' ? new Error(payload.error || 'Stream error') : null;
+            const err = payload.state === 'error' ? new Error(payload.errorMessage || payload.error || 'Stream error') : null;
             cb(err);
           }
           this.activeStreamId = null;
