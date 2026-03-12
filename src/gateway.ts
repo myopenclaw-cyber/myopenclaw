@@ -1,5 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
+import * as crypto from 'crypto';
 import { spawn, execSync, execFileSync } from 'child_process';
 import axios from 'axios';
 import {
@@ -162,23 +164,40 @@ export async function waitForGateway(
 }
 
 function stopExistingGateway(): void {
+  // 1. Try graceful stop via CLI
   try {
     const cli = findOpenClawCli();
-    if (!cli) return;
-    const env = {
-      ...process.env,
-      PATH: buildNodeEnhancedPath(),
-      OPENCLAW_STATE_DIR: OPENCLAW_CONFIG_DIR,
-      OPENCLAW_CONFIG_PATH: CONFIG_FILE,
-    };
-    const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(cli);
-    execFileSync(cli, ['gateway', 'stop'], {
-      encoding: 'utf8', timeout: 10000, stdio: 'pipe', env, shell: useShell,
-      ...(process.platform === 'win32' ? { windowsHide: true } : {}),
-    });
-    console.log('[startGateway] Stopped existing gateway');
+    if (cli) {
+      const env = {
+        ...process.env,
+        PATH: buildNodeEnhancedPath(),
+        OPENCLAW_STATE_DIR: OPENCLAW_CONFIG_DIR,
+        OPENCLAW_CONFIG_PATH: CONFIG_FILE,
+      };
+      const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(cli);
+      execFileSync(cli, ['gateway', 'stop'], {
+        encoding: 'utf8', timeout: 10000, stdio: 'pipe', env, shell: useShell,
+        ...(process.platform === 'win32' ? { windowsHide: true } : {}),
+      });
+      console.log('[startGateway] Stopped existing gateway via CLI');
+    }
   } catch {
-    // No gateway running or stop failed — fine, proceed
+    // No gateway running or stop failed — continue to lock cleanup
+  }
+
+  // 2. Remove stale lock file directly
+  // Lock path: <tmpdir>/openclaw[-<uid>]/gateway.<sha256(configPath).slice(0,8)>.lock
+  try {
+    const hash = crypto.createHash('sha256').update(path.resolve(CONFIG_FILE)).digest('hex').slice(0, 8);
+    const uid = process.getuid?.();
+    const lockDir = path.join(os.tmpdir(), uid != null ? `openclaw-${uid}` : 'openclaw');
+    const lockFile = path.join(lockDir, `gateway.${hash}.lock`);
+    if (fs.existsSync(lockFile)) {
+      fs.unlinkSync(lockFile);
+      console.log(`[startGateway] Removed stale lock file: ${lockFile}`);
+    }
+  } catch (e: any) {
+    console.log('[startGateway] Lock file cleanup skipped:', e.message);
   }
 }
 
