@@ -2360,13 +2360,22 @@ function registerSkillsHandlers(getGatewayHandle) {
         } catch {
         }
       }
-      await runClawHubCli([
-        "uninstall",
-        slug,
-        "--workdir",
-        OPENCLAW_CONFIG_DIR,
-        "--no-input"
-      ]);
+      try {
+        await runClawHubCli([
+          "uninstall",
+          slug,
+          "--workdir",
+          OPENCLAW_CONFIG_DIR,
+          "--no-input"
+        ]);
+      } catch (clawErr) {
+        const msg = clawErr.message || "";
+        if (msg.includes("Not installed") || msg.includes("not found")) {
+          console.log(`[marketplace] ${slug} not a clawhub package, disabled via gateway only`);
+        } else {
+          throw clawErr;
+        }
+      }
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };

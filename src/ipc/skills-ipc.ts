@@ -346,11 +346,22 @@ export function registerSkillsHandlers(
         } catch { /* best effort */ }
       }
 
-      await runClawHubCli([
-        'uninstall', slug,
-        '--workdir', OPENCLAW_CONFIG_DIR,
-        '--no-input',
-      ]);
+      // Try clawhub uninstall — if the skill was not installed via clawhub
+      // (e.g. built-in gateway skill), disabling above is sufficient
+      try {
+        await runClawHubCli([
+          'uninstall', slug,
+          '--workdir', OPENCLAW_CONFIG_DIR,
+          '--no-input',
+        ]);
+      } catch (clawErr: any) {
+        const msg = clawErr.message || '';
+        if (msg.includes('Not installed') || msg.includes('not found')) {
+          console.log(`[marketplace] ${slug} not a clawhub package, disabled via gateway only`);
+        } else {
+          throw clawErr;
+        }
+      }
 
       return { success: true };
     } catch (e: any) {
