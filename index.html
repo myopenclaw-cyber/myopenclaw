@@ -67,6 +67,19 @@ li { padding: 10px; border: 1px solid rgba(107,70,255,0.15); background: rgba(25
 hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; }
 .chat-title {color: #161835;font-size: 20px;font-weight: 600;margin-bottom:12px;}
 .chat-select {border-radius: 20px;border: 1px solid rgba(107, 70, 255, 0.20);background: rgba(255, 255, 255, 0.40);box-shadow: 0 10px 40px 0 rgba(0, 0, 0, 0.04);backdrop-filter: blur(2px);height:48px; appearance: none;-webkit-appearance: none;-moz-appearance: none; padding-right: 20px;background-image: url("./build/assets/arrow-down.png");background-repeat: no-repeat;background-position: right 10px center;background-size: 24px;}
+.chat-input-wrap { position: relative; }
+.model-tag-row { padding: 4px 0 0 42px; }
+.model-tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; font-size: 11px; font-weight: 500; color: #6b46ff; background: rgba(107,70,255,.08); border-radius: 10px; cursor: pointer; user-select: none; transition: background .15s; }
+.model-tag:hover { background: rgba(107,70,255,.16); }
+.model-tag::after { content: '\25BE'; font-size: 10px; opacity: .6; }
+.model-picker { display: none; position: absolute; bottom: 100%; left: 42px; margin-bottom: 6px; min-width: 220px; background: #1e2235; border: 1px solid rgba(255,255,255,.12); border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,.4); padding: 6px; z-index: 100; }
+.model-picker.open { display: block; }
+.model-picker-group { padding: 4px 0; }
+.model-picker-label { font-size: 10px; font-weight: 700; color: rgba(255,255,255,.35); text-transform: uppercase; letter-spacing: .5px; padding: 4px 10px 2px; }
+.model-picker-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; cursor: pointer; font-size: 12px; color: #cbd5e1; }
+.model-picker-item:hover { background: rgba(255,255,255,.08); }
+.model-picker-item.active { background: rgba(107,70,255,.18); color: #a78bfa; }
+.model-picker-item .mp-check { width: 14px; text-align: center; font-size: 11px; color: #a78bfa; }
 /* Modals */
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.2); display: none; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(4px); }
 .modal.show { display: flex; }
@@ -314,16 +327,24 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
     <section id="chat" class="page active">
       <div class="card">
         <div class="chat-title">Agent</div>
-        <div class="row" style="margin-bottom:6px">
-          <select id="agentSelect" class="chat-select"></select>
+        <div class="row" style="margin-bottom:6px;gap:8px">
+          <select id="agentSelect" class="chat-select" style="flex:1"></select>
           <button class="alt" onclick="openDashboardChat()" title="Open full chat in Dashboard" style="white-space:nowrap;font-size:12px;padding:8px 12px;height:48px;">Dashboard Chat</button>
         </div>
         <div id="chatBox" class="chat"></div>
         <div id="filePreview" style="display:none"></div>
-        <div class="row">
-          <button onclick="pickFile()" title="Attach file" style="min-width:38px;padding:8px;font-size:16px;height: 38px;">&#128206;</button>
-          <textarea id="msg" rows="2" placeholder="Type your message... (Enter to send, Shift+Enter for new line)" style="max-height:48px"></textarea>
-          <button onclick="sendMsg()" style="height: 48px; width: 180px;">Send</button>
+        <div class="chat-input-wrap">
+          <div class="row">
+            <button onclick="pickFile()" title="Attach file" style="min-width:38px;padding:8px;font-size:16px;height: 38px;">&#128206;</button>
+            <textarea id="msg" rows="2" placeholder="Type your message... (Enter to send, Shift+Enter for new line)" style="max-height:48px"></textarea>
+            <button onclick="sendMsg()" style="height: 48px; width: 180px;">Send</button>
+          </div>
+          <div class="model-tag-row">
+            <span id="modelTag" class="model-tag" onclick="toggleModelPicker()"></span>
+          </div>
+          <div id="modelPicker" class="model-picker">
+            <div class="model-picker-section" id="modelPickerList"></div>
+          </div>
         </div>
       </div>
     </section>
@@ -712,6 +733,91 @@ function showPage(id) {
   if (tab) tab.classList.add('active');
   if (id === 'agents') checkPairingRequests();
 }
+
+// ---------------------------------------------------------------------------
+// Model selector (popup picker)
+// ---------------------------------------------------------------------------
+let selectedModel = 'claude-opus-4-6';
+
+const modelFamilies = [
+  {
+    label: 'Claude',
+    models: [
+      { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
+      { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
+      { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
+    ],
+  },
+  {
+    label: 'GPT',
+    models: [
+      { id: 'gpt-4o', name: 'GPT-4o' },
+      { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
+      { id: 'gpt-4-turbo', name: 'GPT-4 Turbo' },
+    ],
+  },
+  {
+    label: 'Gemini',
+    models: [
+      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
+      { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+    ],
+  },
+];
+
+function getModelName(id) {
+  for (const f of modelFamilies) {
+    for (const m of f.models) {
+      if (m.id === id) return m.name;
+    }
+  }
+  return id;
+}
+
+function renderModelSelect() {
+  const tag = document.getElementById('modelTag');
+  if (tag) tag.textContent = getModelName(selectedModel);
+  buildModelPickerList();
+}
+
+function buildModelPickerList() {
+  const container = document.getElementById('modelPickerList');
+  if (!container) return;
+  container.innerHTML = '';
+  for (const f of modelFamilies) {
+    const group = document.createElement('div');
+    group.className = 'model-picker-group';
+    group.innerHTML = '<div class="model-picker-label">' + f.label + '</div>';
+    for (const m of f.models) {
+      const item = document.createElement('div');
+      item.className = 'model-picker-item' + (m.id === selectedModel ? ' active' : '');
+      item.innerHTML = '<span class="mp-check">' + (m.id === selectedModel ? '\u2713' : '') + '</span>' + escHtml(m.name);
+      item.onclick = () => selectModel(m.id);
+      group.appendChild(item);
+    }
+    container.appendChild(group);
+  }
+}
+
+function selectModel(id) {
+  selectedModel = id;
+  document.getElementById('modelTag').textContent = getModelName(id);
+  document.getElementById('modelPicker').classList.remove('open');
+  buildModelPickerList();
+}
+
+function toggleModelPicker() {
+  document.getElementById('modelPicker').classList.toggle('open');
+}
+
+// Close picker on outside click
+document.addEventListener('click', (e) => {
+  const picker = document.getElementById('modelPicker');
+  const tag = document.getElementById('modelTag');
+  if (picker && !picker.contains(e.target) && e.target !== tag) {
+    picker.classList.remove('open');
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Toast
@@ -1234,6 +1340,9 @@ async function refreshAgents() {
     currentAgent = sel.value;
     renderConversation();
   };
+
+  // Populate model selector
+  renderModelSelect();
 
   // Update agents limit info
   const limitInfo = document.getElementById('agentLimitInfo');
