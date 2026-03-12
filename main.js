@@ -23,8 +23,8 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 
 // src/main.ts
-var path10 = __toESM(require("path"));
-var os3 = __toESM(require("os"));
+var path11 = __toESM(require("path"));
+var os5 = __toESM(require("os"));
 var import_electron14 = require("electron");
 var import_child_process4 = require("child_process");
 
@@ -280,7 +280,7 @@ function handleDeepLink(url, getMainWindow2) {
 }
 
 // src/window.ts
-var path9 = __toESM(require("path"));
+var path10 = __toESM(require("path"));
 var fs12 = __toESM(require("fs"));
 var import_electron13 = require("electron");
 
@@ -307,8 +307,8 @@ async function downloadFile(url, outputPath, onProgress) {
     }
   });
   response.data.pipe(writer);
-  return new Promise((resolve3, reject) => {
-    writer.on("finish", resolve3);
+  return new Promise((resolve5, reject) => {
+    writer.on("finish", resolve5);
     writer.on("error", reject);
   });
 }
@@ -617,7 +617,7 @@ function ensureOpenClawInPathWindows(openclawBin) {
   }
 }
 function runOpenClawOnboard(cmd, prependArgs = [], cwd) {
-  return new Promise((resolve3, _reject) => {
+  return new Promise((resolve5, _reject) => {
     const args = [
       ...prependArgs,
       "onboard",
@@ -654,15 +654,15 @@ function runOpenClawOnboard(cmd, prependArgs = [], cwd) {
     proc.on("close", (code) => {
       if (code === 0) {
         console.log("[onboard] Setup complete");
-        resolve3(output);
+        resolve5(output);
       } else {
         console.error(`[onboard] Exited with code ${code}`);
-        resolve3(output);
+        resolve5(output);
       }
     });
     proc.on("error", (err) => {
       console.error("[onboard] Error:", err.message);
-      resolve3("");
+      resolve5("");
     });
   });
 }
@@ -670,6 +670,8 @@ function runOpenClawOnboard(cmd, prependArgs = [], cwd) {
 // src/gateway.ts
 var path4 = __toESM(require("path"));
 var fs4 = __toESM(require("fs"));
+var os3 = __toESM(require("os"));
+var crypto3 = __toESM(require("crypto"));
 var import_child_process2 = require("child_process");
 var import_axios5 = __toESM(require("axios"));
 
@@ -756,12 +758,12 @@ async function findAvailablePort(startPort = DEFAULT_PORT) {
   throw new Error("No available port found");
 }
 function isPortAvailable(port) {
-  return new Promise((resolve3) => {
+  return new Promise((resolve5) => {
     const server = net.createServer();
-    server.once("error", () => resolve3(false));
+    server.once("error", () => resolve5(false));
     server.once("listening", () => {
       server.close();
-      resolve3(true);
+      resolve5(true);
     });
     server.listen(port, "127.0.0.1");
   });
@@ -771,12 +773,30 @@ function isPortAvailable(port) {
 async function startGateway(updateLoadingStatus2) {
   try {
     if (process.platform === "win32") {
-      (0, import_child_process2.execSync)(`wmic process where "CommandLine like '%OPENCLAW_SERVICE_MARKER=myopenclaw%' and name like '%node%'" call terminate`, { timeout: 5e3, stdio: "pipe" });
+      const killed = (0, import_child_process2.execFileSync)("powershell.exe", [
+        "-NoProfile",
+        "-Command",
+        `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*myopenclaw*' -and $_.CommandLine -like '*gateway*' } | ForEach-Object { Write-Host "Killing PID $($_.ProcessId): $($_.CommandLine.Substring(0, [Math]::Min(80, $_.CommandLine.Length)))"; Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`
+      ], { encoding: "utf8", timeout: 15e3, stdio: "pipe", windowsHide: true });
+      if (killed.trim()) console.log("[startGateway] Killed leftover processes:", killed.trim());
     } else {
-      (0, import_child_process2.execSync)("ps -eo pid,command | grep 'OPENCLAW_SERVICE_MARKER=myopenclaw' | grep -v grep | awk '{print $1}' | xargs kill -9 2>/dev/null", { timeout: 5e3, stdio: "pipe" });
+      (0, import_child_process2.execSync)("ps -eo pid,command | grep 'myopenclaw' | grep 'gateway' | grep -v grep | awk '{print $1}' | xargs kill -9 2>/dev/null", { timeout: 5e3, stdio: "pipe" });
     }
-  } catch {
+  } catch (e) {
+    console.log("[startGateway] Process cleanup:", e.message?.slice(0, 100));
   }
+  if (process.platform === "win32") {
+    const start = Date.now();
+    while (Date.now() - start < 3e3) {
+      try {
+        const lf = resolveGatewayLockFile();
+        if (!fs4.existsSync(lf) || fs4.readFileSync(lf, "utf8")) break;
+      } catch {
+      }
+      (0, import_child_process2.execSync)("timeout /t 1 /nobreak >nul 2>&1", { timeout: 3e3, stdio: "pipe" });
+    }
+  }
+  stopExistingGateway();
   const gatewayPort = await findAvailablePort(DEFAULT_PORT);
   const gatewayBaseUrl = `http://127.0.0.1:${gatewayPort}`;
   console.log(`[startGateway] Starting gateway on port ${gatewayPort}...`);
@@ -802,6 +822,28 @@ async function startGateway(updateLoadingStatus2) {
   }
   tryDoctorFix();
   updateLoadingStatus2("Launching openclaw gateway...", 90);
+  forceCleanGatewayLock();
+  try {
+    const lockFile = resolveGatewayLockFile();
+    const lockDir = path4.dirname(lockFile);
+    console.log(`[lock-diag] Expected lock file: ${lockFile}`);
+    console.log(`[lock-diag] CONFIG_FILE resolved: ${path4.resolve(CONFIG_FILE)}`);
+    console.log(`[lock-diag] Lock dir exists: ${fs4.existsSync(lockDir)}`);
+    if (fs4.existsSync(lockDir)) {
+      const files = fs4.readdirSync(lockDir);
+      console.log(`[lock-diag] Lock dir contents (${files.length}): ${files.join(", ")}`);
+      for (const f of files) {
+        try {
+          const content = fs4.readFileSync(path4.join(lockDir, f), "utf8");
+          console.log(`[lock-diag] ${f}: ${content.slice(0, 200)}`);
+        } catch {
+        }
+      }
+    }
+    console.log(`[lock-diag] Lock file exists: ${fs4.existsSync(lockFile)}`);
+  } catch (e) {
+    console.log(`[lock-diag] Error: ${e.message}`);
+  }
   const gatewayEnv = {
     ...process.env,
     PATH: buildNodeEnhancedPath(),
@@ -849,11 +891,11 @@ async function startGateway(updateLoadingStatus2) {
   gatewayProcess.on("error", (err) => console.error("[Gateway] Process error:", err));
   console.log("[startGateway] Waiting for gateway to start...");
   updateLoadingStatus2("Checking gateway health...", 94);
-  await new Promise((resolve3) => setTimeout(resolve3, 5e3));
+  await new Promise((resolve5) => setTimeout(resolve5, 5e3));
   if (gatewayExited) {
     throw new Error(`Gateway process exited immediately with code ${gatewayExitCode}. Check logs above for details.`);
   }
-  await waitForGateway(gatewayBaseUrl);
+  await waitForGateway(gatewayBaseUrl, 90, () => gatewayExited);
   updateLoadingStatus2("Startup complete. Opening workspace...", 100);
   console.log(`[startGateway] Gateway started successfully on ${gatewayBaseUrl}`);
   return {
@@ -863,9 +905,13 @@ async function startGateway(updateLoadingStatus2) {
     token: readGatewayTokenFromConfig()
   };
 }
-async function waitForGateway(gatewayBaseUrl, maxRetries = 90) {
+async function waitForGateway(gatewayBaseUrl, maxRetries = 90, hasProcessExited) {
   console.log(`[waitForGateway] Checking ${gatewayBaseUrl}/health...`);
   for (let i = 0; i < maxRetries; i++) {
+    if (hasProcessExited?.()) {
+      console.error("[waitForGateway] Gateway process exited, aborting health checks");
+      throw new Error("Gateway process exited unexpectedly. Check logs above for details.");
+    }
     try {
       console.log(`[waitForGateway] Attempt ${i + 1}/${maxRetries}...`);
       const response = await import_axios5.default.get(`${gatewayBaseUrl}/health`, { timeout: 2e3 });
@@ -873,11 +919,68 @@ async function waitForGateway(gatewayBaseUrl, maxRetries = 90) {
       return true;
     } catch (error) {
       console.log(`[waitForGateway] Attempt ${i + 1} failed:`, error.message);
-      await new Promise((resolve3) => setTimeout(resolve3, 1e3));
+      await new Promise((resolve5) => setTimeout(resolve5, 1e3));
     }
   }
   console.error("[waitForGateway] Max retries reached, gateway failed to start");
-  throw new Error("Gateway failed to start after 30 attempts. Please check your configuration and try again.");
+  throw new Error("Gateway failed to start after max retries. Please check your configuration and try again.");
+}
+function stopExistingGateway() {
+  try {
+    const cli = findOpenClawCli();
+    if (!cli) return;
+    const env = {
+      ...process.env,
+      PATH: buildNodeEnhancedPath(),
+      OPENCLAW_STATE_DIR: OPENCLAW_CONFIG_DIR,
+      OPENCLAW_CONFIG_PATH: CONFIG_FILE
+    };
+    const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(cli);
+    (0, import_child_process2.execFileSync)(cli, ["gateway", "stop"], {
+      encoding: "utf8",
+      timeout: 1e4,
+      stdio: "pipe",
+      env,
+      shell: useShell,
+      ...process.platform === "win32" ? { windowsHide: true } : {}
+    });
+    console.log("[startGateway] Stopped existing gateway via CLI");
+  } catch {
+  }
+}
+function resolveGatewayLockFile() {
+  const hash = crypto3.createHash("sha256").update(path4.resolve(CONFIG_FILE)).digest("hex").slice(0, 8);
+  const uid = process.getuid?.();
+  const lockDir = path4.join(os3.tmpdir(), uid != null ? `openclaw-${uid}` : "openclaw");
+  return path4.join(lockDir, `gateway.${hash}.lock`);
+}
+function forceCleanGatewayLock() {
+  try {
+    const lockFile = resolveGatewayLockFile();
+    if (!fs4.existsSync(lockFile)) return;
+    try {
+      const lock = JSON.parse(fs4.readFileSync(lockFile, "utf8"));
+      const pid = lock?.pid;
+      if (pid && typeof pid === "number") {
+        console.log(`[startGateway] Lock held by PID ${pid}, force-killing...`);
+        try {
+          if (process.platform === "win32") {
+            (0, import_child_process2.execSync)(`taskkill /F /PID ${pid}`, { timeout: 5e3, stdio: "pipe" });
+          } else {
+            process.kill(pid, "SIGKILL");
+          }
+          console.log(`[startGateway] Killed PID ${pid}`);
+        } catch {
+          console.log(`[startGateway] PID ${pid} already dead or inaccessible`);
+        }
+      }
+    } catch {
+    }
+    fs4.unlinkSync(lockFile);
+    console.log(`[startGateway] Removed lock file: ${lockFile}`);
+  } catch (e) {
+    console.log("[startGateway] Lock cleanup failed:", e.message);
+  }
 }
 function tryDoctorFix() {
   try {
@@ -999,7 +1102,7 @@ var import_ws = require("ws");
 var import_crypto = require("crypto");
 
 // src/device-identity.ts
-var crypto3 = __toESM(require("crypto"));
+var crypto4 = __toESM(require("crypto"));
 var fs5 = __toESM(require("fs"));
 var path5 = __toESM(require("path"));
 var IDENTITY_DIR = path5.join(OPENCLAW_CONFIG_DIR, "identity");
@@ -1023,7 +1126,7 @@ function ensureKeypair() {
   const existing = loadKeypair();
   if (existing) return existing;
   ensureIdentityDir();
-  const { publicKey, privateKey } = crypto3.generateKeyPairSync("ed25519");
+  const { publicKey, privateKey } = crypto4.generateKeyPairSync("ed25519");
   const stored = {
     publicKey: publicKey.export({ type: "spki", format: "pem" }),
     privateKey: privateKey.export({ type: "pkcs8", format: "pem" })
@@ -1034,12 +1137,12 @@ function ensureKeypair() {
   return stored;
 }
 function getRawPublicKey(pem) {
-  const keyObj = crypto3.createPublicKey(pem);
+  const keyObj = crypto4.createPublicKey(pem);
   const spki = keyObj.export({ type: "spki", format: "der" });
   return Buffer.from(spki).subarray(12);
 }
 function deriveDeviceId(rawPubKey) {
-  return crypto3.createHash("sha256").update(rawPubKey).digest("hex");
+  return crypto4.createHash("sha256").update(rawPubKey).digest("hex");
 }
 function saveDeviceAuthToken(token) {
   ensureIdentityDir();
@@ -1069,8 +1172,8 @@ function buildConnectParams(gatewayToken, challengeNonce) {
   const scopesCsv = [...SCOPES].sort().join(",");
   const tokenStr = gatewayToken || "";
   const payload = `v2|${deviceId}|${CLIENT_ID}|${CLIENT_MODE}|${ROLE}|${scopesCsv}|${signedAt}|${tokenStr}|${challengeNonce}`;
-  const privateKey = crypto3.createPrivateKey(kp.privateKey);
-  const signature = crypto3.sign(null, Buffer.from(payload, "utf8"), privateKey);
+  const privateKey = crypto4.createPrivateKey(kp.privateKey);
+  const signature = crypto4.sign(null, Buffer.from(payload, "utf8"), privateKey);
   return {
     minProtocol: 3,
     maxProtocol: 3,
@@ -1132,7 +1235,7 @@ var WsManager = class {
       return Promise.resolve();
     }
     const wsUrl = baseUrl.replace(/^http/, "ws") + "/ws";
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve5, reject) => {
       const ws = new import_ws.WebSocket(wsUrl, {
         headers: {
           Authorization: `Bearer ${token}`
@@ -1169,7 +1272,7 @@ var WsManager = class {
               handleConnectResponse(msg.payload);
               connected = true;
               this.ws = ws;
-              resolve3();
+              resolve5();
               return;
             }
             if (msg.type === "res" && msg.id === connectId && !msg.ok) {
@@ -1242,13 +1345,13 @@ var WsManager = class {
         idempotencyKey: id
       }
     };
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve5, reject) => {
       this.pending.set(id, (err) => {
         this.streamCallbacks.delete(onPayload);
         if (err) {
           reject(err);
         } else {
-          resolve3(assembledText || "Response received.");
+          resolve5(assembledText || "Response received.");
         }
       });
       if (!this.ws || this.ws.readyState !== import_ws.WebSocket.OPEN) {
@@ -1634,7 +1737,7 @@ function registerSubscriptionHandlers() {
 }
 
 // src/ipc/agent-ipc.ts
-var crypto4 = __toESM(require("crypto"));
+var crypto5 = __toESM(require("crypto"));
 var import_electron5 = require("electron");
 function registerAgentHandlers() {
   import_electron5.ipcMain.handle("list-agents", async () => {
@@ -1650,7 +1753,7 @@ function registerAgentHandlers() {
       return { error: "upgrade_required", message: "Upgrade to add more agents" };
     }
     const name = (typeof data === "string" ? data : data?.name) || `Agent ${state.agents.length + 1}`;
-    const newAgent = { id: crypto4.randomUUID(), name, channels: [] };
+    const newAgent = { id: crypto5.randomUUID(), name, channels: [] };
     state.agents.push(newAgent);
     saveAppState(state);
     return newAgent;
@@ -1980,15 +2083,69 @@ function registerChannelHandlers() {
 }
 
 // src/ipc/skills-ipc.ts
-var crypto5 = __toESM(require("crypto"));
+var crypto6 = __toESM(require("crypto"));
 var fs10 = __toESM(require("fs"));
+var os4 = __toESM(require("os"));
+var path8 = __toESM(require("path"));
 var import_child_process3 = require("child_process");
 var import_electron10 = require("electron");
+function findClawHubCli() {
+  const candidates = [];
+  try {
+    const cmd = process.platform === "win32" ? "where" : "which";
+    const result = (0, import_child_process3.execFileSync)(cmd, ["clawhub"], { encoding: "utf8", timeout: 3e3 }).trim();
+    if (result) candidates.push(result.split(/\r?\n/)[0]);
+  } catch {
+  }
+  const home = os4.homedir();
+  const nvmDir = path8.join(home, ".nvm", "versions", "node");
+  try {
+    if (fs10.existsSync(nvmDir)) {
+      const versions = fs10.readdirSync(nvmDir).filter((v) => v.startsWith("v")).sort((a, b) => b.localeCompare(a, void 0, { numeric: true }));
+      for (const ver of versions) {
+        candidates.push(path8.join(nvmDir, ver, "bin", "clawhub"));
+      }
+    }
+  } catch {
+  }
+  const binNames = process.platform === "win32" ? ["clawhub.cmd", "clawhub.exe", "clawhub"] : ["clawhub"];
+  for (const bin of binNames) {
+    candidates.push(path8.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", ".bin", bin));
+  }
+  candidates.push(
+    "/usr/local/bin/clawhub",
+    "/opt/homebrew/bin/clawhub"
+  );
+  const seen = /* @__PURE__ */ new Set();
+  for (const p of candidates) {
+    const resolved = path8.resolve(p);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    if (fs10.existsSync(p)) return p;
+  }
+  return null;
+}
+function runClawHubCli(args) {
+  const bin = findClawHubCli();
+  if (!bin) return Promise.reject(new Error("clawhub CLI not found. Install with: npm i -g clawhub"));
+  const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(bin);
+  return new Promise((resolve5, reject) => {
+    (0, import_child_process3.execFile)(bin, args, {
+      timeout: 12e4,
+      encoding: "utf8",
+      shell: useShell ? true : void 0,
+      windowsHide: true
+    }, (err, stdout, stderr) => {
+      if (err) reject(new Error(stderr || stdout || err.message));
+      else resolve5(stdout);
+    });
+  });
+}
 async function gatewayRpc(gw, method, params = {}) {
-  const id = crypto5.randomUUID();
+  const id = crypto6.randomUUID();
   const token = readGatewayTokenFromConfig();
   const wsUrl = gw.baseUrl.replace(/^http/, "ws") + "/ws";
-  return new Promise((resolve3, reject) => {
+  return new Promise((resolve5, reject) => {
     let WS;
     try {
       WS = global.WebSocket || require("ws");
@@ -2009,7 +2166,7 @@ async function gatewayRpc(gw, method, params = {}) {
     }, 15e3);
     let connected = false;
     let challengeNonce = null;
-    const connectId = crypto5.randomUUID();
+    const connectId = crypto6.randomUUID();
     const reqMsg = JSON.stringify({ type: "req", id, method, params });
     socket.onmessage = (event) => {
       try {
@@ -2037,7 +2194,7 @@ async function gatewayRpc(gw, method, params = {}) {
         clearTimeout(timer);
         socket.close();
         if (msg.ok) {
-          resolve3(msg.payload);
+          resolve5(msg.payload);
         } else {
           const errMsg = typeof msg.error === "object" ? msg.error?.message : msg.error;
           reject(new Error(errMsg || `Gateway RPC error for "${method}"`));
@@ -2114,10 +2271,10 @@ function registerSkillsHandlers(getGatewayHandle) {
     const results = [];
     for (const bin of safeBins) {
       try {
-        await new Promise((resolve3, reject) => {
+        await new Promise((resolve5, reject) => {
           (0, import_child_process3.execFile)("brew", ["install", bin], { timeout: 12e4 }, (err, _stdout, stderr) => {
             if (err) reject(new Error(stderr || err.message));
-            else resolve3();
+            else resolve5();
           });
         });
         results.push({ bin, ok: true });
@@ -2171,11 +2328,27 @@ function registerSkillsHandlers(getGatewayHandle) {
   });
   import_electron10.ipcMain.handle("marketplace-install", async (_event, payload) => {
     try {
-      const gw = getGatewayHandle();
-      if (!gw?.baseUrl) return { success: false, error: "Gateway not running" };
       const { slug } = payload || {};
       if (!slug || !/^[a-zA-Z0-9_-]+$/.test(slug)) return { success: false, error: "Invalid slug" };
-      await gatewayRpc(gw, "skills.install", { name: slug, installId: slug, timeoutMs: 12e4 });
+      await runClawHubCli([
+        "install",
+        slug,
+        "--workdir",
+        OPENCLAW_CONFIG_DIR,
+        "--no-input",
+        "--force"
+      ]);
+      const gw = getGatewayHandle();
+      if (gw?.baseUrl) {
+        try {
+          await gatewayRpc(gw, "skills.install", { name: slug, installId: slug, timeoutMs: 6e4 });
+        } catch {
+        }
+        try {
+          await gatewayRpc(gw, "skills.update", { skillKey: slug, enabled: true });
+        } catch {
+        }
+      }
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
@@ -2183,11 +2356,22 @@ function registerSkillsHandlers(getGatewayHandle) {
   });
   import_electron10.ipcMain.handle("marketplace-uninstall", async (_event, payload) => {
     try {
-      const gw = getGatewayHandle();
-      if (!gw?.baseUrl) return { success: false, error: "Gateway not running" };
       const { slug } = payload || {};
       if (!slug || !/^[a-zA-Z0-9_-]+$/.test(slug)) return { success: false, error: "Invalid slug" };
-      await gatewayRpc(gw, "skills.uninstall", { name: slug });
+      const gw = getGatewayHandle();
+      if (gw?.baseUrl) {
+        try {
+          await gatewayRpc(gw, "skills.update", { skillKey: slug, enabled: false });
+        } catch {
+        }
+      }
+      await runClawHubCli([
+        "uninstall",
+        slug,
+        "--workdir",
+        OPENCLAW_CONFIG_DIR,
+        "--no-input"
+      ]);
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
@@ -2211,12 +2395,12 @@ function registerSkillsHandlers(getGatewayHandle) {
 }
 
 // src/ipc/cron-ipc.ts
-var crypto6 = __toESM(require("crypto"));
+var crypto7 = __toESM(require("crypto"));
 var import_axios8 = __toESM(require("axios"));
 var import_electron11 = require("electron");
 function wsRpc(port, token, method, params = {}) {
-  return new Promise((resolve3, reject) => {
-    const id = crypto6.randomUUID();
+  return new Promise((resolve5, reject) => {
+    const id = crypto7.randomUUID();
     const reqMsg = JSON.stringify({ type: "req", id, method, params });
     let ws;
     try {
@@ -2239,7 +2423,7 @@ function wsRpc(port, token, method, params = {}) {
     }, 1e4);
     let connected = false;
     let challengeNonce = null;
-    const connectId = crypto6.randomUUID();
+    const connectId = crypto7.randomUUID();
     ws.on("message", (data) => {
       try {
         const msg = JSON.parse(typeof data === "string" ? data : data.toString("utf8"));
@@ -2266,7 +2450,7 @@ function wsRpc(port, token, method, params = {}) {
         clearTimeout(timer);
         ws.close();
         if (msg.ok) {
-          resolve3(msg.payload);
+          resolve5(msg.payload);
         } else {
           const errMsg = typeof msg.error === "object" ? msg.error?.message : msg.error;
           reject(new Error(errMsg || `RPC error: ${method}`));
@@ -2394,14 +2578,14 @@ function registerCronHandlers(getGatewayHandle) {
 
 // src/ipc/pairing-ipc.ts
 var fs11 = __toESM(require("fs"));
-var path8 = __toESM(require("path"));
+var path9 = __toESM(require("path"));
 var import_electron12 = require("electron");
-var CREDENTIALS_DIR = path8.join(OPENCLAW_CONFIG_DIR, "credentials");
+var CREDENTIALS_DIR = path9.join(OPENCLAW_CONFIG_DIR, "credentials");
 function getPairingFilePath(channel) {
-  return path8.join(CREDENTIALS_DIR, `${channel}-pairing.json`);
+  return path9.join(CREDENTIALS_DIR, `${channel}-pairing.json`);
 }
 function getAllowFromFilePath(channel, accountId) {
-  return path8.join(CREDENTIALS_DIR, `${channel}-${accountId}-allowFrom.json`);
+  return path9.join(CREDENTIALS_DIR, `${channel}-${accountId}-allowFrom.json`);
 }
 function readPairingFile(channel) {
   const filePath = getPairingFilePath(channel);
@@ -2416,7 +2600,7 @@ function readPairingFile(channel) {
 }
 function writePairingFile(channel, data) {
   const filePath = getPairingFilePath(channel);
-  fs11.mkdirSync(path8.dirname(filePath), { recursive: true });
+  fs11.mkdirSync(path9.dirname(filePath), { recursive: true });
   fs11.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
 }
 function readAllowFromFile(channel, accountId) {
@@ -2432,7 +2616,7 @@ function readAllowFromFile(channel, accountId) {
 }
 function writeAllowFromFile(channel, accountId, data) {
   const filePath = getAllowFromFilePath(channel, accountId);
-  fs11.mkdirSync(path8.dirname(filePath), { recursive: true });
+  fs11.mkdirSync(path9.dirname(filePath), { recursive: true });
   fs11.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
 }
 function registerPairingHandlers() {
@@ -2564,7 +2748,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path9.join(__dirname, "preload.js"),
+      preload: path10.join(__dirname, "preload.js"),
       webviewTag: true
     }
   });
@@ -2613,8 +2797,8 @@ function createWindow() {
             console.log("[startup] No CLI found, running onboard via node entry point...");
             const runtimeDir = findRuntimeDir();
             const nodeBin = findNodeBinary();
-            const entryMjs = path9.join(runtimeDir, "openclaw-deps", "openclaw", "openclaw.mjs");
-            const entryJs = path9.join(runtimeDir, "openclaw-deps", "openclaw", "dist", "entry.js");
+            const entryMjs = path10.join(runtimeDir, "openclaw-deps", "openclaw", "openclaw.mjs");
+            const entryJs = path10.join(runtimeDir, "openclaw-deps", "openclaw", "dist", "entry.js");
             const entryFile = fs12.existsSync(entryMjs) ? entryMjs : entryJs;
             await runOpenClawOnboard(nodeBin, [entryFile], runtimeDir);
           } catch (onboardErr) {
@@ -2649,7 +2833,7 @@ var isVM = (() => {
       const model = (0, import_child_process4.execFileSync)("sysctl", ["-n", "machdep.cpu.brand_string"], { encoding: "utf8", timeout: 2e3 }).trim();
       return /virtual|Apple Virtual/i.test(model);
     }
-    const cpuModel = os3.cpus()?.[0]?.model || "";
+    const cpuModel = os5.cpus()?.[0]?.model || "";
     return /virtual|QEMU|KVM|VirtualBox|VMware/i.test(cpuModel);
   } catch {
     return false;
@@ -2665,7 +2849,7 @@ process.stderr?.on("error", () => {
 });
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
-    import_electron14.app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path10.resolve(process.argv[1])]);
+    import_electron14.app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path11.resolve(process.argv[1])]);
   }
 } else {
   import_electron14.app.setAsDefaultProtocolClient(PROTOCOL);
