@@ -257,7 +257,11 @@ function syncAuthProfileForProvider(providerId, apiKey, api = "") {
     };
     bind(providerId);
     if (String(api).trim() === "anthropic-messages") bind("anthropic");
-    fs2.writeFileSync(AUTH_PROFILES_FILE, JSON.stringify(auth, null, 2), "utf8");
+    const newContent = JSON.stringify(auth, null, 2);
+    const oldContent = fs2.existsSync(AUTH_PROFILES_FILE) ? fs2.readFileSync(AUTH_PROFILES_FILE, "utf8") : "";
+    if (newContent !== oldContent) {
+      fs2.writeFileSync(AUTH_PROFILES_FILE, newContent, "utf8");
+    }
   } catch (e) {
     console.error("[auth-profile-sync] failed:", e.message);
   }
@@ -376,8 +380,12 @@ async function ensureGatewayProviderOrRelay() {
     if (ocCfg.tools?.profile) {
       delete ocCfg.tools.profile;
     }
-    fs2.writeFileSync(CONFIG_FILE, JSON.stringify(ocCfg, null, 2), "utf8");
-    console.log("[auth] Configured relay provider fallback:", relayUrl);
+    const newContent = JSON.stringify(ocCfg, null, 2);
+    const oldContent = fs2.existsSync(CONFIG_FILE) ? fs2.readFileSync(CONFIG_FILE, "utf8") : "";
+    if (newContent !== oldContent) {
+      fs2.writeFileSync(CONFIG_FILE, newContent, "utf8");
+      console.log("[auth] Configured relay provider fallback:", relayUrl);
+    }
   } catch (e) {
     console.error("[auth] ensureGatewayProviderOrRelay failed:", e.message);
   }

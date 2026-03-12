@@ -24,7 +24,11 @@ export function syncAuthProfileForProvider(providerId: string, apiKey: string, a
     };
     bind(providerId);
     if (String(api).trim() === 'anthropic-messages') bind('anthropic');
-    fs.writeFileSync(AUTH_PROFILES_FILE, JSON.stringify(auth, null, 2), 'utf8');
+    const newContent = JSON.stringify(auth, null, 2);
+    const oldContent = fs.existsSync(AUTH_PROFILES_FILE) ? fs.readFileSync(AUTH_PROFILES_FILE, 'utf8') : '';
+    if (newContent !== oldContent) {
+      fs.writeFileSync(AUTH_PROFILES_FILE, newContent, 'utf8');
+    }
   } catch (e: any) {
     console.error('[auth-profile-sync] failed:', e.message);
   }
@@ -198,8 +202,13 @@ export async function ensureGatewayProviderOrRelay(): Promise<void> {
       delete ocCfg.tools.profile;
     }
 
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(ocCfg, null, 2), 'utf8');
-    console.log('[auth] Configured relay provider fallback:', relayUrl);
+    // Only write if config actually changed — avoids triggering gateway reload
+    const newContent = JSON.stringify(ocCfg, null, 2);
+    const oldContent = fs.existsSync(CONFIG_FILE) ? fs.readFileSync(CONFIG_FILE, 'utf8') : '';
+    if (newContent !== oldContent) {
+      fs.writeFileSync(CONFIG_FILE, newContent, 'utf8');
+      console.log('[auth] Configured relay provider fallback:', relayUrl);
+    }
   } catch (e: any) {
     console.error('[auth] ensureGatewayProviderOrRelay failed:', e.message);
   }
