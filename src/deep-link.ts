@@ -2,6 +2,7 @@ import axios from 'axios';
 import type { BrowserWindow } from 'electron';
 import { RELAY_BASE_URL, PROTOCOL } from './constants';
 import { loadAppState, saveAppState } from './config-store';
+import { ensureGatewayProviderOrRelay } from './auth';
 
 export function handleDeepLink(
   url: string,
@@ -25,6 +26,11 @@ export function handleDeepLink(
         saveAppState(state);
         console.log('[DeepLink] Auth tokens saved from web login');
 
+        // Refresh gateway auth config to use JWT instead of device token
+        ensureGatewayProviderOrRelay().catch((err) => {
+          console.log('[DeepLink] Gateway auth refresh failed (non-fatal):', err.message);
+        });
+
         const deviceId = state.deviceId;
         if (deviceId) {
           axios.post(`${RELAY_BASE_URL}/v1/devices/${encodeURIComponent(deviceId)}/link`, {}, {
@@ -45,6 +51,7 @@ export function handleDeepLink(
               if (typeof loadRelayConfig === 'function') loadRelayConfig();
               if (typeof loadDeviceInfo === 'function') loadDeviceInfo();
               if (typeof refreshQuota === 'function') refreshQuota();
+              if (typeof fetchModels === 'function') fetchModels();
             })();
           `).catch(() => {});
           mainWindow.show();

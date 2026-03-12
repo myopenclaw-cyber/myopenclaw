@@ -10,16 +10,22 @@ describe('getPlanFeatures', () => {
     expect(features.modelTier).toBe('basic');
   });
 
-  it('returns premium tier features', () => {
-    const features = getPlanFeatures('premium');
-    expect(features.maxAgents).toBe(5);
-    expect(features.modelTier).toBe('sonnet');
+  it('returns plus tier features', () => {
+    const features = getPlanFeatures('plus');
+    expect(features.maxAgents).toBe(3);
+    expect(features.modelTier).toBe('major');
   });
 
-  it('returns pro tier features with unlimited agents', () => {
+  it('returns premium as legacy alias for plus', () => {
+    const features = getPlanFeatures('premium');
+    expect(features.maxAgents).toBe(3);
+    expect(features.modelTier).toBe('major');
+  });
+
+  it('returns pro tier features', () => {
     const features = getPlanFeatures('pro');
-    expect(features.maxAgents).toBe(-1);
-    expect(features.modelTier).toBe('opus');
+    expect(features.maxAgents).toBe(10);
+    expect(features.modelTier).toBe('latest');
   });
 
   it('returns free tier for unknown plan', () => {

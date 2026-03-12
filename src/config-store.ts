@@ -88,8 +88,9 @@ export function getDefaultAppState(): AppState {
 export function getPlanFeatures(plan: string): PlanFeatures {
   const features: Record<string, PlanFeatures> = {
     free: { maxAgents: 1, canUseRelay: true, modelTier: 'basic' },
-    premium: { maxAgents: 5, canUseRelay: true, modelTier: 'sonnet' },
-    pro: { maxAgents: -1, canUseRelay: true, modelTier: 'opus' },
+    plus: { maxAgents: 3, canUseRelay: true, modelTier: 'major' },
+    premium: { maxAgents: 3, canUseRelay: true, modelTier: 'major' }, // legacy alias
+    pro: { maxAgents: 10, canUseRelay: true, modelTier: 'latest' },
   };
   return features[plan] || features.free;
 }
@@ -137,13 +138,14 @@ export function checkPremiumGate(state: AppState): PremiumGateResult {
   if (state.userApiKey) {
     return { allow: true, tier: 'user_api_key' };
   }
-  if (state.freeQuotaUsed < ANONYMOUS_FREE_LIMIT) {
+  // Anonymous users with a deviceId can use relay — quota enforced server-side
+  if (state.deviceId) {
     return { allow: true, tier: 'anonymous' };
   }
   return {
     allow: false,
     reason: 'login_required',
-    message: "You've used your 3 free messages. Sign in to continue chatting.",
+    message: "You've used your free credits. Sign in to continue chatting.",
     loginRequired: true,
   };
 }

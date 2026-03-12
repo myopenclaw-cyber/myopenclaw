@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import axios from 'axios';
 import { AUTH_PROFILES_DIR, AUTH_PROFILES_FILE, CONFIG_FILE, OPENCLAW_CONFIG_DIR, RELAY_BASE_URL } from './constants';
 import { loadEmbeddedConfig, loadAppState, getUserProviderConfig } from './config-store';
 
@@ -49,29 +50,49 @@ export function ensureAuthProfilesFromEmbeddedConfig(): void {
  * If no direct API key is set, configure the relay as a fallback provider
  * using `device:<deviceId>` as the auth token.
  */
-export function ensureGatewayProviderOrRelay(): void {
+export async function ensureGatewayProviderOrRelay(): Promise<void> {
   try {
     // If user already has a provider key, nothing to do
     const userProvider = getUserProviderConfig();
     if (userProvider) return;
 
-    // Check relay + deviceToken (signed) or deviceId (fallback)
+    // Check relay credentials: JWT > deviceToken > deviceId
     const state = loadAppState();
     const rawRelayUrl = state.relay?.baseUrl || RELAY_BASE_URL;
     const relayUrl = rawRelayUrl.replace(/\/+$/, '') + '/v1';
+    const jwt = state.relay?.accessToken || '';
     const deviceToken = state.deviceToken || '';
     const deviceId = state.deviceId || '';
-    if (!relayUrl || (!deviceToken && !deviceId)) return;
+    if (!relayUrl || (!jwt && !deviceToken && !deviceId)) return;
 
-    // Prefer signed token; fall back to unsigned for initial registration
-    const relayApiKey = deviceToken || `device:${deviceId}`;
+    // Prefer user JWT (logged in) > signed device token > unsigned device ID
+    const relayApiKey = jwt || deviceToken || `device:${deviceId}`;
 
-    // Use 'relay' provider name — gateway hardcodes Anthropic Messages API
-    // for provider named 'anthropic', ignoring the api field
     const RELAY_PROVIDER = 'relay';
-    const RELAY_MODEL = 'claude-opus-4-6';
 
     syncAuthProfileForProvider(RELAY_PROVIDER, relayApiKey);
+
+    // Fetch available models from relay API
+    const headers: Record<string, string> = {};
+    if (jwt) headers['Authorization'] = `Bearer ${jwt}`;
+    if (deviceId) headers['X-Device-Id'] = deviceId;
+
+    let relayModels: Array<{ id: string; name: string; available?: boolean }> = [];
+    try {
+      const res = await axios.get(`${relayUrl}/models`, { headers, timeout: 10000 });
+      relayModels = res.data?.data || [];
+    } catch (e: any) {
+      console.log('[auth] Failed to fetch relay models, using fallback:', e.message);
+    }
+
+    // Build gateway model list from relay models
+    const gatewayModels = relayModels.length
+      ? relayModels.map(m => ({ id: m.id, name: m.name || m.id, contextWindow: 180000, maxTokens: 8192 }))
+      : [{ id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', contextWindow: 180000, maxTokens: 8192 }];
+
+    // Default to first available model
+    const firstAvailable = relayModels.find(m => m.available !== false);
+    const defaultModel = firstAvailable?.id || gatewayModels[0].id;
 
     const ocCfg: any = fs.existsSync(CONFIG_FILE)
       ? JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8').replace(/^\uFEFF/, ''))
@@ -90,9 +111,7 @@ export function ensureGatewayProviderOrRelay(): void {
       ...(ocCfg.models.providers[RELAY_PROVIDER] || {}),
       baseUrl: relayUrl,
       api: 'openai-completions',
-      models: (ocCfg.models.providers[RELAY_PROVIDER]?.models?.length)
-        ? ocCfg.models.providers[RELAY_PROVIDER].models
-        : [{ id: RELAY_MODEL, name: 'Claude Opus 4.6', contextWindow: 180000, maxTokens: 8192 }],
+      models: gatewayModels,
     };
 
     // Set default model and workspace — always use MyOpenClaw's own paths
@@ -100,7 +119,7 @@ export function ensureGatewayProviderOrRelay(): void {
     ocCfg.agents.defaults = ocCfg.agents.defaults || {};
     ocCfg.agents.defaults.model = {
       ...(ocCfg.agents.defaults.model || {}),
-      primary: `${RELAY_PROVIDER}/${RELAY_MODEL}`,
+      primary: `${RELAY_PROVIDER}/${defaultModel}`,
     };
     ocCfg.agents.defaults.workspace = path.join(OPENCLAW_CONFIG_DIR, 'workspace');
 

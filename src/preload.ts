@@ -49,6 +49,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   testRelayConnection: () => ipcRenderer.invoke('test-relay-connection'),
   saveRelayAuth: (tokens: Record<string, unknown>) => ipcRenderer.invoke('save-relay-auth', tokens),
 
+  // Models
+  getModels: () => ipcRenderer.invoke('get-models'),
+
   // Device / quota
   getDeviceId: () => ipcRenderer.invoke('get-device-id'),
   checkQuota: () => ipcRenderer.invoke('check-quota'),

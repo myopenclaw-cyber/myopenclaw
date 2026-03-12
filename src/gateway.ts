@@ -54,7 +54,7 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
   updateLoadingStatus('Establishing secure connections...', 48);
 
   ensureAuthProfilesFromEmbeddedConfig();
-  ensureGatewayProviderOrRelay();
+  await ensureGatewayProviderOrRelay();
 
   const gatewayToken = ensureRandomGatewayToken();
 

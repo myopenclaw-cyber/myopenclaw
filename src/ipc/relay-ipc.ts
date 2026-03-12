@@ -1,7 +1,9 @@
 import { ipcMain, shell } from 'electron';
+import axios from 'axios';
 import { RELAY_BASE_URL } from '../constants';
 import { loadAppState, saveAppState, getDefaultAppState } from '../config-store';
 import { checkRelayHealth } from '../messaging';
+import { ensureGatewayProviderOrRelay } from '../auth';
 
 export function registerRelayHandlers(): void {
   ipcMain.handle('save-relay-config', async (_event, config: { baseUrl?: string; authToken?: string }) => {
@@ -62,9 +64,29 @@ export function registerRelayHandlers(): void {
       state.relay.accessToken = accessToken || '';
       state.relay.refreshToken = refreshToken || '';
       saveAppState(state);
+      // Refresh gateway auth config to use new JWT
+      await ensureGatewayProviderOrRelay();
       return { success: true };
     } catch (e: any) {
       return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('get-models', async () => {
+    try {
+      const state = loadAppState();
+      const baseUrl = (state.relay?.baseUrl || RELAY_BASE_URL).replace(/\/+$/, '');
+      const headers: Record<string, string> = {};
+      const jwt = state.relay?.accessToken || state.relay?.authToken;
+      if (jwt) headers['Authorization'] = `Bearer ${jwt}`;
+      if (state.deviceId) headers['X-Device-Id'] = state.deviceId;
+
+      const res = await axios.get(`${baseUrl}/v1/models`, { headers, timeout: 10000 });
+      const models = res.data?.data || [];
+      return { success: true, models };
+    } catch (e: any) {
+      const msg = e?.response?.data?.error?.message || e?.response?.data?.message || e.message;
+      return { success: false, error: msg, models: [] };
     }
   });
 
@@ -75,6 +97,8 @@ export function registerRelayHandlers(): void {
       state.relay.refreshToken = '';
       state.relay.userEmail = '';
       saveAppState(state);
+      // Refresh gateway auth config to revert to device token
+      await ensureGatewayProviderOrRelay();
       return { success: true };
     } catch (e: any) {
       return { success: false, error: e.message };

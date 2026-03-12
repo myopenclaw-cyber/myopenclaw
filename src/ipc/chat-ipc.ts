@@ -71,6 +71,7 @@ export function registerChatHandlers(
     try {
       const message = typeof payload === 'string' ? payload : payload?.message;
       const agentId = payload?.agentId || 'main';
+      const model = payload?.model || '';
 
       const state = loadAppState();
       const gate = checkPremiumGate(state);
@@ -99,15 +100,16 @@ export function registerChatHandlers(
 
       let content: string;
 
-      // Always prefer gateway when running — it has the full agent pipeline (skills, tools)
+      // Prefer gateway when running — it has the full agent pipeline (skills, tools)
+      // Gateway's provider is configured to route to relay for model capability
       if (gatewayBaseUrl) {
         const win = getMainWindow();
         if (win) wsManager.setWindow(win);
         content = await wsManager.sendChatMessageStreaming(gatewayBaseUrl, gatewayToken, agentId, message);
       } else if (hasRelay) {
-        content = await sendViaRelay(relay.baseUrl, relayAuthToken, messages, deviceId);
+        content = await sendViaRelay(relay.baseUrl, relayAuthToken, messages, deviceId, model);
       } else if (deviceId && (relay.baseUrl || RELAY_BASE_URL)) {
-        content = await sendViaRelay(relay.baseUrl || RELAY_BASE_URL, '', messages, deviceId);
+        content = await sendViaRelay(relay.baseUrl || RELAY_BASE_URL, '', messages, deviceId, model);
       } else {
         throw new Error('No AI provider configured. Please login to use Cloud Relay.');
       }

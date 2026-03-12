@@ -80,6 +80,11 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
 .model-picker-item:hover { background: rgba(255,255,255,.08); }
 .model-picker-item.active { background: rgba(107,70,255,.18); color: #a78bfa; }
 .model-picker-item .mp-check { width: 14px; text-align: center; font-size: 11px; color: #a78bfa; }
+.model-picker-item.locked { opacity: .45; cursor: not-allowed; }
+.model-picker-item.locked:hover { background: transparent; }
+.model-picker-item.locked .mp-lock { font-size: 10px; margin-left: auto; color: #94a3b8; }
+.model-picker-item .mp-name { flex: 1; }
+.model-picker-item .mp-credits { font-size: 10px; color: #94a3b8; margin-left: auto; padding: 1px 6px; background: rgba(255,255,255,.06); border-radius: 6px; }
 /* Modals */
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.2); display: none; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(4px); }
 .modal.show { display: flex; }
@@ -89,10 +94,12 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
 /* Plan badges */
 .plan-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 700; }
 .plan-free { background: rgba(107,70,255,0.08); color: #6B46FF; border: 1px solid rgba(107,70,255,0.2); }
+.plan-plus { background: rgba(107,70,255,0.1); color: #6B46FF; border: 1px solid rgba(107,70,255,0.25); }
 .plan-premium { background: rgba(107,70,255,0.1); color: #6B46FF; border: 1px solid rgba(107,70,255,0.25); }
 .plan-pro { background: linear-gradient(90deg, rgba(223,93,255,0.1) 0%, rgba(140,70,252,0.1) 100%); color: #8C46FC; border: 1px solid rgba(140,70,252,0.3); }
 .plan-dot { width: 8px; height: 8px; border-radius: 50%; }
 .plan-free .plan-dot { background: #6B46FF; }
+.plan-plus .plan-dot { background: #6B46FF; box-shadow: 0 0 6px rgba(107,70,255,0.5); }
 .plan-premium .plan-dot { background: #6B46FF; box-shadow: 0 0 6px rgba(107,70,255,0.5); }
 .plan-pro .plan-dot { background: #8C46FC; box-shadow: 0 0 6px rgba(140,70,252,0.5); }
 /* Feature list */
@@ -105,6 +112,7 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
 .plan-table th:first-child, .plan-table td:first-child { text-align: left; color: rgba(0,0,0,0.5); }
 .plan-table thead th { font-size: 14px; font-weight: 700; padding-bottom: 14px; }
 .plan-col-free { color: #6B46FF; }
+.plan-col-plus { color: #6B46FF; }
 .plan-col-premium { color: #6B46FF; }
 .plan-col-pro { color: #8C46FC; }
 .check { color: #04C83E; }
@@ -482,33 +490,33 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
           <div class="plan-wrap-title">
             <span>Feature</span>
             <span>Free</span>
-            <span>Premium</span>
+            <span>Plus</span>
             <span>Pro</span>
           </div>
           <div class="plan-wrap-content">
-            <div class="plan-wrap-item"> 
+            <div class="plan-wrap-item">
                <span>Feature</span>
-                <span>Max Agents</span>
-                <span>Relay Access</span>
-                <span>Model Tier</span>
+                <span>Credits</span>
+                <span>Models</span>
+                <span>Agents</span>
             </div>
-            <div class="plan-wrap-item"> 
+            <div class="plan-wrap-item">
                <span>$0</span>
-              <span>1</span>
-              <span>Yes (15/mo)</span>
+              <span>50</span>
               <span>Basic</span>
+              <span>1</span>
             </div>
-             <div class="plan-wrap-item"> 
+             <div class="plan-wrap-item">
                <span>$9.9/mo</span>
-              <span>5</span>
-              <span>Yes</span>
-              <span>Sonnet</span>
+              <span>1,000</span>
+              <span>All Major</span>
+              <span>3</span>
             </div>
-             <div class="plan-wrap-item"> 
+             <div class="plan-wrap-item">
                <span>$29.9/mo</span>
-              <span>Unlimited</span>
-              <span>Yes</span>
-              <span>Opus</span>
+              <span>5,000</span>
+              <span>All + Latest</span>
+              <span>10</span>
             </div>
           </div>
 
@@ -551,7 +559,7 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
         </table> -->
         <div class="row" style="margin-top:14px;flex-wrap:wrap;gap:10px;justify-content: flex-end;">
           <button id="upgradeFreeBtnAccount" class="alt upgrade-btn" onclick="upgradePlan('free')" style="background:rgba(0,0,0,0.04);color:#000000;">Use Free</button>
-          <button id="upgradePremiumBtnAccount" class="alt upgrade-btn" onclick="upgradePlan('premium')" style="background:#6B46FF;color:#FFFFFF;">Upgrade to Premium</button>
+          <button id="upgradePlusBtnAccount" class="alt upgrade-btn" onclick="upgradePlan('plus')" style="background:#6B46FF;color:#FFFFFF;">Upgrade to Plus</button>
           <button id="upgradeProBtnAccount" class="alt upgrade-btn" onclick="upgradePlan('pro')" style="background:linear-gradient(90deg, #DF5DFF 0%, #8C46FC 100%);color:#FFFFFF;">Upgrade to Pro</button>
         </div>
       </div>
@@ -638,25 +646,25 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
       <thead>
         <tr>
           <th>Plan</th>
+          <th>Credits</th>
+          <th>Models</th>
           <th>Agents</th>
-          <th>Relay</th>
-          <th>Model</th>
           <th></th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td class="plan-col-premium">Premium</td>
-          <td>5</td>
-          <td><span class="check">Yes</span></td>
-          <td>Sonnet</td>
-          <td><button class="upgrade-btn" onclick="upgradePlan('premium');closePremium()">Upgrade</button></td>
+          <td class="plan-col-plus">Plus $9.9/mo</td>
+          <td>1,000</td>
+          <td>All Major</td>
+          <td>3</td>
+          <td><button class="upgrade-btn" onclick="upgradePlan('plus');closePremium()">Upgrade</button></td>
         </tr>
         <tr>
-          <td class="plan-col-pro">Pro</td>
-          <td>Unlimited</td>
-          <td><span class="check">Yes</span></td>
-          <td>Opus</td>
+          <td class="plan-col-pro">Pro $29.9/mo</td>
+          <td>5,000</td>
+          <td>All + Latest</td>
+          <td>10</td>
           <td><button class="upgrade-btn" onclick="upgradePlan('pro');closePremium()">Upgrade</button></td>
         </tr>
       </tbody>
@@ -672,7 +680,7 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
 <div id="loginRequiredModal" class="modal" onclick="if(event.target===this) closeLoginRequired()">
   <div class="box">
     <h3>Sign In to Continue</h3>
-    <p id="loginRequiredMsg">You've used your 3 free messages. Sign in to continue chatting.</p>
+    <p id="loginRequiredMsg">You've used your free credits. Sign in to continue chatting.</p>
     <div class="row" style="justify-content:flex-end;margin-top:14px">
       <button onclick="openLogin();closeLoginRequired()">Sign In</button>
       <button class="alt" onclick="closeLoginRequired()">Cancel</button>
@@ -735,48 +743,50 @@ function showPage(id) {
 }
 
 // ---------------------------------------------------------------------------
-// Model selector (popup picker)
+// Model selector (popup picker, API-driven)
 // ---------------------------------------------------------------------------
-let selectedModel = 'claude-opus-4-6';
+let selectedModel = '';
+let modelList = [];
+let cachedQuota = null;
 
-const modelFamilies = [
-  {
-    label: 'Claude',
-    models: [
-      { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
-      { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
-      { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
-    ],
-  },
-  {
-    label: 'GPT',
-    models: [
-      { id: 'gpt-4o', name: 'GPT-4o' },
-      { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
-      { id: 'gpt-4-turbo', name: 'GPT-4 Turbo' },
-    ],
-  },
-  {
-    label: 'Gemini',
-    models: [
-      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
-      { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
-    ],
-  },
-];
+function groupModels(models) {
+  const groups = {};
+  for (const m of models) {
+    let family = 'Other';
+    const id = (m.id || '').toLowerCase();
+    if (id.startsWith('claude')) family = 'Claude';
+    else if (id.startsWith('gpt')) family = 'GPT';
+    else if (id.startsWith('gemini')) family = 'Gemini';
+    else if (id.startsWith('deepseek')) family = 'DeepSeek';
+    if (!groups[family]) groups[family] = [];
+    groups[family].push(m);
+  }
+  return groups;
+}
 
 function getModelName(id) {
-  for (const f of modelFamilies) {
-    for (const m of f.models) {
-      if (m.id === id) return m.name;
+  const m = modelList.find(m => m.id === id);
+  return m ? (m.name || m.id) : id;
+}
+
+async function fetchModels() {
+  try {
+    const r = await window.electronAPI.getModels();
+    if (r && r.success && r.models.length) {
+      modelList = r.models;
+      const currentAvail = modelList.find(m => m.id === selectedModel && m.available !== false);
+      if (!selectedModel || !currentAvail) {
+        const first = modelList.find(m => m.available !== false);
+        selectedModel = first ? first.id : modelList[0].id;
+      }
     }
-  }
-  return id;
+  } catch { /* ignore */ }
+  renderModelSelect();
 }
 
 function renderModelSelect() {
   const tag = document.getElementById('modelTag');
-  if (tag) tag.textContent = getModelName(selectedModel);
+  if (tag) tag.textContent = modelList.length ? getModelName(selectedModel) : 'Loading models...';
   buildModelPickerList();
 }
 
@@ -784,14 +794,19 @@ function buildModelPickerList() {
   const container = document.getElementById('modelPickerList');
   if (!container) return;
   container.innerHTML = '';
-  for (const f of modelFamilies) {
+  const groups = groupModels(modelList);
+  for (const [label, models] of Object.entries(groups)) {
     const group = document.createElement('div');
     group.className = 'model-picker-group';
-    group.innerHTML = '<div class="model-picker-label">' + f.label + '</div>';
-    for (const m of f.models) {
+    group.innerHTML = '<div class="model-picker-label">' + escHtml(label) + '</div>';
+    for (const m of models) {
+      const locked = m.available === false;
       const item = document.createElement('div');
-      item.className = 'model-picker-item' + (m.id === selectedModel ? ' active' : '');
-      item.innerHTML = '<span class="mp-check">' + (m.id === selectedModel ? '\u2713' : '') + '</span>' + escHtml(m.name);
+      item.className = 'model-picker-item' + (m.id === selectedModel ? ' active' : '') + (locked ? ' locked' : '');
+      const check = locked ? '' : (m.id === selectedModel ? '\u2713' : '');
+      const credits = m.credits_per_message != null ? '<span class="mp-credits">' + m.credits_per_message + ' cr</span>' : '';
+      const tierLabel = locked && m.requires ? '<span class="mp-lock">\uD83D\uDD12 ' + m.requires + '</span>' : '';
+      item.innerHTML = '<span class="mp-check">' + check + '</span><span class="mp-name">' + escHtml(m.name || m.id) + '</span>' + credits + tierLabel;
       item.onclick = () => selectModel(m.id);
       group.appendChild(item);
     }
@@ -800,6 +815,12 @@ function buildModelPickerList() {
 }
 
 function selectModel(id) {
+  const m = modelList.find(x => x.id === id);
+  if (m && m.available === false) {
+    const tier = m.requires || 'premium';
+    openPremium('Upgrade to ' + tier.charAt(0).toUpperCase() + tier.slice(1) + ' to use ' + (m.name || id));
+    return;
+  }
   selectedModel = id;
   document.getElementById('modelTag').textContent = getModelName(id);
   document.getElementById('modelPicker').classList.remove('open');
@@ -851,7 +872,7 @@ function closeLoginRequired() {
 }
 
 function openLoginRequired(msg) {
-  document.getElementById('loginRequiredMsg').textContent = msg || "You've used your 3 free messages. Sign in to continue chatting.";
+  document.getElementById('loginRequiredMsg').textContent = msg || "You've used your free credits. Sign in to continue chatting.";
   document.getElementById('loginRequiredModal').classList.add('show');
 }
 
@@ -1258,10 +1279,10 @@ function updateAccountUI() {
     '</ul>';
 
   const freeBtn = document.getElementById('upgradeFreeBtnAccount');
-  const premiumBtn = document.getElementById('upgradePremiumBtnAccount');
+  const plusBtn = document.getElementById('upgradePlusBtnAccount');
   const proBtn = document.getElementById('upgradeProBtnAccount');
   if (freeBtn) freeBtn.disabled = plan === 'free';
-  if (premiumBtn) premiumBtn.disabled = plan === 'premium';
+  if (plusBtn) plusBtn.disabled = plan === 'plus' || plan === 'premium';
   if (proBtn) proBtn.disabled = plan === 'pro';
 }
 
@@ -1295,6 +1316,7 @@ async function logout() {
   await refreshState();
   await loadRelayConfig();
   await refreshQuota();
+  fetchModels();
   showToast('Logged out');
 }
 
@@ -1341,8 +1363,8 @@ async function refreshAgents() {
     renderConversation();
   };
 
-  // Populate model selector
-  renderModelSelect();
+  // Populate model selector (fetch from API)
+  fetchModels();
 
   // Update agents limit info
   const limitInfo = document.getElementById('agentLimitInfo');
@@ -1537,6 +1559,16 @@ async function sendMsg() {
   const rawText = document.getElementById('msg').value.trim();
   if (!rawText && !pendingFiles.length) return;
 
+  // Check cached credits before sending
+  if (cachedQuota && !cachedQuota.unlimited && cachedQuota.total != null && cachedQuota.used >= cachedQuota.total) {
+    if (cachedQuota.plan === 'anonymous') {
+      openLoginRequired('You\'ve used all ' + cachedQuota.total + ' credits. Sign in to get more credits.');
+    } else {
+      openPremium('You\'ve used all ' + cachedQuota.total + ' credits. Upgrade your plan for more credits.');
+    }
+    return;
+  }
+
   const sendBtn = document.querySelector('#chat button[onclick="sendMsg()"]');
   if (sendBtn) sendBtn.disabled = true;
 
@@ -1588,7 +1620,7 @@ async function sendMsg() {
     streamingBubble = createThinkingBubble();
   }
 
-  const r = await window.electronAPI.sendMessage({ message: text, agentId: currentAgent });
+  const r = await window.electronAPI.sendMessage({ message: text, agentId: currentAgent, model: selectedModel });
 
   if (window.electronAPI.removeChatStreamListeners) {
     window.electronAPI.removeChatStreamListeners();
@@ -1607,6 +1639,7 @@ async function sendMsg() {
       chat(finalText, 'a');
     }
     await refreshState();
+    refreshQuota();
   } else {
     if (streamingBubble) { streamingBubble.remove(); streamingBubble = null; }
     if (r.loginRequired) {
@@ -1692,7 +1725,7 @@ function updateRelayUI() {
   } else {
     row.innerHTML =
       '<button onclick="openLogin()">Login to Activate</button>' +
-      '<span class="small" style="opacity:.6;margin-left:10px">Free tier: 15 messages/month</span>';
+      '<span class="small" style="opacity:.6;margin-left:10px">Free tier: 50 credits/month</span>';
   }
 }
 
@@ -1748,9 +1781,18 @@ async function refreshQuota() {
   } else if (r && r.success === false) {
     quotaEl.textContent = 'Error: ' + (r.error || 'unknown');
   } else if (r && r.usage) {
-    const used = r.usage.messageCount !== undefined ? r.usage.messageCount : '?';
-    const limit = r.usage.limit !== undefined ? r.usage.limit : '?';
-    quotaEl.textContent = used + ' / ' + limit + ' messages used this month';
+    const used = r.usage.used != null ? r.usage.used : (r.usage.messageCount != null ? r.usage.messageCount : 0);
+    const total = r.usage.total != null ? r.usage.total : r.usage.limit;
+    const unlimited = r.usage.unlimited === true;
+    const plan = r.usage.plan || 'free';
+    cachedQuota = { used, total, unlimited, plan };
+    const planNames = { anonymous: 'Guest', free: 'Free', user: 'Free', premium: 'Plus', pro: 'Pro' };
+    const planLabel = planNames[plan] || plan.charAt(0).toUpperCase() + plan.slice(1);
+    if (unlimited) {
+      quotaEl.textContent = '\u221E credits \u2014 ' + planLabel;
+    } else {
+      quotaEl.textContent = used + ' / ' + total + ' credits \u2014 ' + planLabel;
+    }
   } else {
     quotaEl.textContent = 'No quota data';
   }
@@ -1768,6 +1810,7 @@ async function saveRelayJwt() {
   if (r && r.success) {
     document.getElementById('relayAccessToken').value = '';
     await loadRelayConfig();
+    fetchModels();
     showToast('JWT token saved');
   } else {
     showToast('Failed: ' + (r && r.error || 'unknown'));
@@ -2565,6 +2608,7 @@ function initKeyboard() {
     await refreshQuota();
     renderConversation();
     startPairingPolling();
+    setInterval(() => refreshQuota(), 5 * 60 * 1000);
     const ver = await window.electronAPI.getAppVersion();
     if (ver) document.getElementById('appVersionLabel').textContent = 'MyOpenClaw Desktop \u2014 v' + ver;
   } catch (err) {

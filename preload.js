@@ -42,6 +42,8 @@ import_electron.contextBridge.exposeInMainWorld("electronAPI", {
   getRelayConfig: () => import_electron.ipcRenderer.invoke("get-relay-config"),
   testRelayConnection: () => import_electron.ipcRenderer.invoke("test-relay-connection"),
   saveRelayAuth: (tokens) => import_electron.ipcRenderer.invoke("save-relay-auth", tokens),
+  // Models
+  getModels: () => import_electron.ipcRenderer.invoke("get-models"),
   // Device / quota
   getDeviceId: () => import_electron.ipcRenderer.invoke("get-device-id"),
   checkQuota: () => import_electron.ipcRenderer.invoke("check-quota"),

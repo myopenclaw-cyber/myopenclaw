@@ -64,7 +64,7 @@ export function registerChannelHandlers(): void {
       syncChannelsToGatewayConfig(cfg.channels);
 
       // Ensure gateway has a provider (relay fallback if no API key)
-      ensureGatewayProviderOrRelay();
+      await ensureGatewayProviderOrRelay();
 
       return { success: true };
     } catch (e: any) {

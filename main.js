@@ -107,8 +107,10 @@ function getDefaultAppState() {
 function getPlanFeatures(plan) {
   const features = {
     free: { maxAgents: 1, canUseRelay: true, modelTier: "basic" },
-    premium: { maxAgents: 5, canUseRelay: true, modelTier: "sonnet" },
-    pro: { maxAgents: -1, canUseRelay: true, modelTier: "opus" }
+    plus: { maxAgents: 3, canUseRelay: true, modelTier: "major" },
+    premium: { maxAgents: 3, canUseRelay: true, modelTier: "major" },
+    // legacy alias
+    pro: { maxAgents: 10, canUseRelay: true, modelTier: "latest" }
   };
   return features[plan] || features.free;
 }
@@ -135,7 +137,6 @@ function saveAppState(state) {
   }
   fs.writeFileSync(APP_STATE_FILE, JSON.stringify(state, null, 2), "utf8");
 }
-var ANONYMOUS_FREE_LIMIT = 3;
 function checkPremiumGate(state) {
   if (state.premiumTier === "premium" || state.premiumTier === "pro") {
     return { allow: true, tier: state.premiumTier };
@@ -148,13 +149,13 @@ function checkPremiumGate(state) {
   if (state.userApiKey) {
     return { allow: true, tier: "user_api_key" };
   }
-  if (state.freeQuotaUsed < ANONYMOUS_FREE_LIMIT) {
+  if (state.deviceId) {
     return { allow: true, tier: "anonymous" };
   }
   return {
     allow: false,
     reason: "login_required",
-    message: "You've used your 3 free messages. Sign in to continue chatting.",
+    message: "You've used your free credits. Sign in to continue chatting.",
     loginRequired: true
   };
 }
@@ -230,7 +231,110 @@ async function registerDevice(deviceId, appVersion) {
 }
 
 // src/deep-link.ts
+var import_axios3 = __toESM(require("axios"));
+
+// src/auth.ts
+var fs2 = __toESM(require("fs"));
+var path3 = __toESM(require("path"));
 var import_axios2 = __toESM(require("axios"));
+function syncAuthProfileForProvider(providerId, apiKey, api = "") {
+  try {
+    const key = String(apiKey || "").trim();
+    if (!providerId || !key) return;
+    fs2.mkdirSync(AUTH_PROFILES_DIR, { recursive: true });
+    let auth = { version: 1, profiles: {}, lastGood: {}, usageStats: {} };
+    if (fs2.existsSync(AUTH_PROFILES_FILE)) {
+      auth = JSON.parse(fs2.readFileSync(AUTH_PROFILES_FILE, "utf8").replace(/^\uFEFF/, ""));
+      auth.version = auth.version || 1;
+      auth.profiles = auth.profiles || {};
+      auth.lastGood = auth.lastGood || {};
+      auth.usageStats = auth.usageStats || {};
+    }
+    const bind = (pid) => {
+      const profileId = `${pid}:default`;
+      auth.profiles[profileId] = { type: "api_key", provider: pid, key };
+      auth.lastGood[pid] = profileId;
+    };
+    bind(providerId);
+    if (String(api).trim() === "anthropic-messages") bind("anthropic");
+    fs2.writeFileSync(AUTH_PROFILES_FILE, JSON.stringify(auth, null, 2), "utf8");
+  } catch (e) {
+    console.error("[auth-profile-sync] failed:", e.message);
+  }
+}
+function ensureAuthProfilesFromEmbeddedConfig() {
+  try {
+    const cfg = loadEmbeddedConfig();
+    const providers = cfg?.models?.providers || {};
+    for (const [providerId, p] of Object.entries(providers)) {
+      const key = String(p?.apiKey || "").trim();
+      if (!key) continue;
+      syncAuthProfileForProvider(providerId, key, p?.api || "");
+      break;
+    }
+  } catch (e) {
+    console.error("[auth-profile-sync-bootstrap] failed:", e.message);
+  }
+}
+async function ensureGatewayProviderOrRelay() {
+  try {
+    const userProvider = getUserProviderConfig();
+    if (userProvider) return;
+    const state = loadAppState();
+    const rawRelayUrl = state.relay?.baseUrl || RELAY_BASE_URL;
+    const relayUrl = rawRelayUrl.replace(/\/+$/, "") + "/v1";
+    const jwt = state.relay?.accessToken || "";
+    const deviceToken = state.deviceToken || "";
+    const deviceId = state.deviceId || "";
+    if (!relayUrl || !jwt && !deviceToken && !deviceId) return;
+    const relayApiKey = jwt || deviceToken || `device:${deviceId}`;
+    const RELAY_PROVIDER = "relay";
+    syncAuthProfileForProvider(RELAY_PROVIDER, relayApiKey);
+    const headers = {};
+    if (jwt) headers["Authorization"] = `Bearer ${jwt}`;
+    if (deviceId) headers["X-Device-Id"] = deviceId;
+    let relayModels = [];
+    try {
+      const res = await import_axios2.default.get(`${relayUrl}/models`, { headers, timeout: 1e4 });
+      relayModels = res.data?.data || [];
+    } catch (e) {
+      console.log("[auth] Failed to fetch relay models, using fallback:", e.message);
+    }
+    const gatewayModels = relayModels.length ? relayModels.map((m) => ({ id: m.id, name: m.name || m.id, contextWindow: 18e4, maxTokens: 8192 })) : [{ id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", contextWindow: 18e4, maxTokens: 8192 }];
+    const firstAvailable = relayModels.find((m) => m.available !== false);
+    const defaultModel = firstAvailable?.id || gatewayModels[0].id;
+    const ocCfg = fs2.existsSync(CONFIG_FILE) ? JSON.parse(fs2.readFileSync(CONFIG_FILE, "utf8").replace(/^\uFEFF/, "")) : {};
+    ocCfg.models = ocCfg.models || {};
+    ocCfg.models.mode = ocCfg.models.mode || "merge";
+    ocCfg.models.providers = ocCfg.models.providers || {};
+    const oldAnthropic = ocCfg.models.providers["anthropic"];
+    if (oldAnthropic?.baseUrl?.includes("myopenclaw-relay-service")) {
+      delete ocCfg.models.providers["anthropic"];
+    }
+    ocCfg.models.providers[RELAY_PROVIDER] = {
+      ...ocCfg.models.providers[RELAY_PROVIDER] || {},
+      baseUrl: relayUrl,
+      api: "openai-completions",
+      models: gatewayModels
+    };
+    ocCfg.agents = ocCfg.agents || {};
+    ocCfg.agents.defaults = ocCfg.agents.defaults || {};
+    ocCfg.agents.defaults.model = {
+      ...ocCfg.agents.defaults.model || {},
+      primary: `${RELAY_PROVIDER}/${defaultModel}`
+    };
+    ocCfg.agents.defaults.workspace = path3.join(OPENCLAW_CONFIG_DIR, "workspace");
+    if (ocCfg.tools?.profile) {
+      delete ocCfg.tools.profile;
+    }
+    fs2.writeFileSync(CONFIG_FILE, JSON.stringify(ocCfg, null, 2), "utf8");
+    console.log("[auth] Configured relay provider fallback:", relayUrl);
+  } catch (e) {
+    console.error("[auth] ensureGatewayProviderOrRelay failed:", e.message);
+  }
+}
+
+// src/deep-link.ts
 function handleDeepLink(url, getMainWindow2) {
   try {
     const parsed = new URL(url);
@@ -247,9 +351,12 @@ function handleDeepLink(url, getMainWindow2) {
         state.relay.userEmail = email || "";
         saveAppState(state);
         console.log("[DeepLink] Auth tokens saved from web login");
+        ensureGatewayProviderOrRelay().catch((err) => {
+          console.log("[DeepLink] Gateway auth refresh failed (non-fatal):", err.message);
+        });
         const deviceId = state.deviceId;
         if (deviceId) {
-          import_axios2.default.post(`${RELAY_BASE_URL}/v1/devices/${encodeURIComponent(deviceId)}/link`, {}, {
+          import_axios3.default.post(`${RELAY_BASE_URL}/v1/devices/${encodeURIComponent(deviceId)}/link`, {}, {
             headers: { "Authorization": `Bearer ${accessToken}` },
             timeout: 2e4
           }).then(() => {
@@ -266,6 +373,7 @@ function handleDeepLink(url, getMainWindow2) {
               if (typeof loadRelayConfig === 'function') loadRelayConfig();
               if (typeof loadDeviceInfo === 'function') loadDeviceInfo();
               if (typeof refreshQuota === 'function') refreshQuota();
+              if (typeof fetchModels === 'function') fetchModels();
             })();
           `).catch(() => {
           });
@@ -285,10 +393,10 @@ var fs12 = __toESM(require("fs"));
 var import_electron13 = require("electron");
 
 // src/runtime.ts
-var path3 = __toESM(require("path"));
-var fs2 = __toESM(require("fs"));
+var path4 = __toESM(require("path"));
+var fs3 = __toESM(require("fs"));
 var os2 = __toESM(require("os"));
-var import_axios3 = __toESM(require("axios"));
+var import_axios4 = __toESM(require("axios"));
 var import_child_process = require("child_process");
 function getRuntimeTargetLabel() {
   if (process.platform === "win32") return "windows";
@@ -296,8 +404,8 @@ function getRuntimeTargetLabel() {
   return "linux";
 }
 async function downloadFile(url, outputPath, onProgress) {
-  const writer = fs2.createWriteStream(outputPath);
-  const response = await (0, import_axios3.default)({ method: "get", url, responseType: "stream", timeout: 0, maxRedirects: 10 });
+  const writer = fs3.createWriteStream(outputPath);
+  const response = await (0, import_axios4.default)({ method: "get", url, responseType: "stream", timeout: 0, maxRedirects: 10 });
   const total = Number(response.headers["content-length"] || 0);
   let loaded = 0;
   response.data.on("data", (chunk) => {
@@ -324,7 +432,7 @@ async function downloadWithFallback(urls, outputPath, onProgress) {
     } catch (err) {
       console.error(`[runtime] Download failed from ${label}: ${err.message}`);
       try {
-        fs2.unlinkSync(outputPath);
+        fs3.unlinkSync(outputPath);
       } catch {
       }
       if (i === urls.length - 1) {
@@ -335,15 +443,15 @@ async function downloadWithFallback(urls, outputPath, onProgress) {
   }
 }
 function findRuntimeDir() {
-  const embeddedBase = path3.join(__dirname, "resources");
+  const embeddedBase = path4.join(__dirname, "resources");
   if (!embeddedBase.includes(".asar")) {
-    const embeddedDir = path3.join(embeddedBase, "openclaw-deps", "openclaw", "dist");
-    if (fs2.existsSync(path3.join(embeddedDir, "entry.js")) || fs2.existsSync(path3.join(embeddedDir, "entry.mjs"))) {
+    const embeddedDir = path4.join(embeddedBase, "openclaw-deps", "openclaw", "dist");
+    if (fs3.existsSync(path4.join(embeddedDir, "entry.js")) || fs3.existsSync(path4.join(embeddedDir, "entry.mjs"))) {
       return embeddedBase;
     }
   }
-  const dlDir = path3.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", "openclaw", "dist");
-  if (fs2.existsSync(path3.join(dlDir, "entry.js")) || fs2.existsSync(path3.join(dlDir, "entry.mjs"))) {
+  const dlDir = path4.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", "openclaw", "dist");
+  if (fs3.existsSync(path4.join(dlDir, "entry.js")) || fs3.existsSync(path4.join(dlDir, "entry.mjs"))) {
     return DOWNLOADED_RUNTIME_DIR;
   }
   return null;
@@ -354,17 +462,17 @@ async function ensureEmbeddedRuntime(updateLoadingStatus2) {
     updateLoadingStatus2("Runtime ready", 72);
     return;
   }
-  const manifestPath = path3.join(__dirname, "resources", "runtime-manifest.json");
-  if (!fs2.existsSync(manifestPath)) {
+  const manifestPath = path4.join(__dirname, "resources", "runtime-manifest.json");
+  if (!fs3.existsSync(manifestPath)) {
     throw new Error("Missing runtime-manifest.json. Cannot download runtime automatically.");
   }
-  const manifest = JSON.parse(fs2.readFileSync(manifestPath, "utf8"));
+  const manifest = JSON.parse(fs3.readFileSync(manifestPath, "utf8"));
   const target = getRuntimeTargetLabel();
   const urls = manifest?.[target]?.urls || (manifest?.[target]?.url ? [manifest[target].url] : []);
   if (!urls.length) {
     throw new Error(`No runtime download URL configured for platform "${target}". Please download the runtime manually or use the full installer.`);
   }
-  const zipPath = path3.join(os2.tmpdir(), `myopenclaw-runtime-${target}.zip`);
+  const zipPath = path4.join(os2.tmpdir(), `myopenclaw-runtime-${target}.zip`);
   console.log(`[runtime] Downloading runtime for ${target}...`);
   updateLoadingStatus2("Downloading openclaw ...", 52);
   await downloadWithFallback(urls, zipPath, (p) => {
@@ -372,15 +480,15 @@ async function ensureEmbeddedRuntime(updateLoadingStatus2) {
   });
   console.log("[runtime] Extracting runtime...");
   updateLoadingStatus2("Extracting openclaw runtime...", 84);
-  fs2.mkdirSync(DOWNLOADED_RUNTIME_DIR, { recursive: true });
+  fs3.mkdirSync(DOWNLOADED_RUNTIME_DIR, { recursive: true });
   if (process.platform === "win32") {
     (0, import_child_process.execFileSync)("tar", ["-xf", zipPath, "-C", DOWNLOADED_RUNTIME_DIR], { stdio: "pipe", windowsHide: true });
   } else {
     (0, import_child_process.execFileSync)("unzip", ["-o", zipPath, "-d", DOWNLOADED_RUNTIME_DIR], { stdio: "inherit" });
-    const binDir = path3.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", ".bin");
-    const nodeDir = path3.join(DOWNLOADED_RUNTIME_DIR, "node");
+    const binDir = path4.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", ".bin");
+    const nodeDir = path4.join(DOWNLOADED_RUNTIME_DIR, "node");
     for (const dir of [binDir, nodeDir]) {
-      if (fs2.existsSync(dir)) {
+      if (fs3.existsSync(dir)) {
         (0, import_child_process.execFileSync)("chmod", ["-R", "+x", dir], { stdio: "inherit" });
         try {
           (0, import_child_process.execFileSync)("xattr", ["-rd", "com.apple.quarantine", dir], { stdio: "pipe" });
@@ -398,13 +506,13 @@ async function ensureEmbeddedRuntime(updateLoadingStatus2) {
     throw new Error("Runtime extracted but dist/entry.(m)js not found. The runtime package may be incomplete.");
   }
   if (process.platform === "win32") {
-    addWindowsFirewallRule(path3.join(DOWNLOADED_RUNTIME_DIR, "node", "node.exe"));
+    addWindowsFirewallRule(path4.join(DOWNLOADED_RUNTIME_DIR, "node", "node.exe"));
   }
   console.log("[runtime] Runtime ready");
   updateLoadingStatus2("Runtime installed", 88);
 }
 function addWindowsFirewallRule(nodeExePath) {
-  if (!fs2.existsSync(nodeExePath)) return;
+  if (!fs3.existsSync(nodeExePath)) return;
   try {
     (0, import_child_process.execFileSync)("netsh", [
       "advfirewall",
@@ -426,11 +534,11 @@ function addWindowsFirewallRule(nodeExePath) {
 function buildNodeEnhancedPath() {
   const nodeExe = process.platform === "win32" ? "node.exe" : "node";
   const nodeDirs = [
-    path3.join(__dirname, "resources", "node"),
-    path3.join(DOWNLOADED_RUNTIME_DIR, "node")
+    path4.join(__dirname, "resources", "node"),
+    path4.join(DOWNLOADED_RUNTIME_DIR, "node")
   ];
-  const extra = nodeDirs.filter((d) => fs2.existsSync(path3.join(d, nodeExe)));
-  return extra.length > 0 ? `${extra.join(path3.delimiter)}${path3.delimiter}${process.env.PATH}` : process.env.PATH;
+  const extra = nodeDirs.filter((d) => fs3.existsSync(path4.join(d, nodeExe)));
+  return extra.length > 0 ? `${extra.join(path4.delimiter)}${path4.delimiter}${process.env.PATH}` : process.env.PATH;
 }
 function verifyOpenClawCli(binPath) {
   try {
@@ -458,18 +566,18 @@ function findOpenClawCli() {
   const binNames = process.platform === "win32" ? ["openclaw.cmd", "openclaw.exe", "openclaw"] : ["openclaw"];
   const ownCandidates = [];
   for (const bin of binNames) {
-    const embeddedBin = path3.join(__dirname, "resources", "openclaw-deps", ".bin", bin);
+    const embeddedBin = path4.join(__dirname, "resources", "openclaw-deps", ".bin", bin);
     if (!embeddedBin.includes(".asar")) {
       ownCandidates.push(embeddedBin);
     }
-    ownCandidates.push(path3.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", ".bin", bin));
+    ownCandidates.push(path4.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", ".bin", bin));
   }
   const seen = /* @__PURE__ */ new Set();
   for (const p of ownCandidates) {
-    const resolved = path3.resolve(p);
+    const resolved = path4.resolve(p);
     if (seen.has(resolved)) continue;
     seen.add(resolved);
-    if (!fs2.existsSync(p)) continue;
+    if (!fs3.existsSync(p)) continue;
     console.log(`[cli] Found own runtime: ${p}, verifying...`);
     if (verifyOpenClawCli(p)) {
       console.log(`[cli] Verified own openclaw CLI: ${p}`);
@@ -485,24 +593,24 @@ function findOpenClawCli() {
   }
   const home = os2.homedir();
   systemCandidates.push(
-    path3.join(home, ".local", "bin", "openclaw"),
+    path4.join(home, ".local", "bin", "openclaw"),
     "/usr/local/bin/openclaw"
   );
-  const nvmDir = path3.join(home, ".nvm", "versions", "node");
+  const nvmDir = path4.join(home, ".nvm", "versions", "node");
   try {
-    if (fs2.existsSync(nvmDir)) {
-      const versions = fs2.readdirSync(nvmDir).filter((v) => v.startsWith("v")).sort((a, b) => b.localeCompare(a, void 0, { numeric: true }));
+    if (fs3.existsSync(nvmDir)) {
+      const versions = fs3.readdirSync(nvmDir).filter((v) => v.startsWith("v")).sort((a, b) => b.localeCompare(a, void 0, { numeric: true }));
       for (const ver of versions) {
-        systemCandidates.push(path3.join(nvmDir, ver, "bin", "openclaw"));
+        systemCandidates.push(path4.join(nvmDir, ver, "bin", "openclaw"));
       }
     }
   } catch {
   }
   for (const p of systemCandidates) {
-    const resolved = path3.resolve(p);
+    const resolved = path4.resolve(p);
     if (seen.has(resolved)) continue;
     seen.add(resolved);
-    if (!fs2.existsSync(p)) continue;
+    if (!fs3.existsSync(p)) continue;
     console.log(`[cli] Found system candidate: ${p}, verifying...`);
     if (verifyOpenClawCli(p)) {
       console.log(`[cli] Using system openclaw CLI: ${p}`);
@@ -528,11 +636,11 @@ function findNodeBinary() {
   } catch {
   }
   const candidates = [
-    path3.join(__dirname, "resources", "node", nodeExe),
-    path3.join(DOWNLOADED_RUNTIME_DIR, "node", nodeExe)
+    path4.join(__dirname, "resources", "node", nodeExe),
+    path4.join(DOWNLOADED_RUNTIME_DIR, "node", nodeExe)
   ];
   for (const p of candidates) {
-    if (fs2.existsSync(p)) {
+    if (fs3.existsSync(p)) {
       console.log(`[node] Using bundled node: ${p}`);
       return p;
     }
@@ -542,7 +650,7 @@ function findNodeBinary() {
 function ensureOpenClawInPath(openclawBin) {
   if (!openclawBin) return;
   try {
-    const binDir = path3.dirname(fs2.realpathSync(openclawBin));
+    const binDir = path4.dirname(fs3.realpathSync(openclawBin));
     if (!process.env.PATH.includes(binDir)) {
       const sep = process.platform === "win32" ? ";" : ":";
       process.env.PATH = `${binDir}${sep}${process.env.PATH}`;
@@ -609,98 +717,11 @@ var fs4 = __toESM(require("fs"));
 var os3 = __toESM(require("os"));
 var crypto3 = __toESM(require("crypto"));
 var import_child_process2 = require("child_process");
-var import_axios5 = __toESM(require("axios"));
-
-// src/auth.ts
-var fs3 = __toESM(require("fs"));
-var path4 = __toESM(require("path"));
-function syncAuthProfileForProvider(providerId, apiKey, api = "") {
-  try {
-    const key = String(apiKey || "").trim();
-    if (!providerId || !key) return;
-    fs3.mkdirSync(AUTH_PROFILES_DIR, { recursive: true });
-    let auth = { version: 1, profiles: {}, lastGood: {}, usageStats: {} };
-    if (fs3.existsSync(AUTH_PROFILES_FILE)) {
-      auth = JSON.parse(fs3.readFileSync(AUTH_PROFILES_FILE, "utf8").replace(/^\uFEFF/, ""));
-      auth.version = auth.version || 1;
-      auth.profiles = auth.profiles || {};
-      auth.lastGood = auth.lastGood || {};
-      auth.usageStats = auth.usageStats || {};
-    }
-    const bind = (pid) => {
-      const profileId = `${pid}:default`;
-      auth.profiles[profileId] = { type: "api_key", provider: pid, key };
-      auth.lastGood[pid] = profileId;
-    };
-    bind(providerId);
-    if (String(api).trim() === "anthropic-messages") bind("anthropic");
-    fs3.writeFileSync(AUTH_PROFILES_FILE, JSON.stringify(auth, null, 2), "utf8");
-  } catch (e) {
-    console.error("[auth-profile-sync] failed:", e.message);
-  }
-}
-function ensureAuthProfilesFromEmbeddedConfig() {
-  try {
-    const cfg = loadEmbeddedConfig();
-    const providers = cfg?.models?.providers || {};
-    for (const [providerId, p] of Object.entries(providers)) {
-      const key = String(p?.apiKey || "").trim();
-      if (!key) continue;
-      syncAuthProfileForProvider(providerId, key, p?.api || "");
-      break;
-    }
-  } catch (e) {
-    console.error("[auth-profile-sync-bootstrap] failed:", e.message);
-  }
-}
-function ensureGatewayProviderOrRelay() {
-  try {
-    const userProvider = getUserProviderConfig();
-    if (userProvider) return;
-    const state = loadAppState();
-    const rawRelayUrl = state.relay?.baseUrl || RELAY_BASE_URL;
-    const relayUrl = rawRelayUrl.replace(/\/+$/, "") + "/v1";
-    const deviceToken = state.deviceToken || "";
-    const deviceId = state.deviceId || "";
-    if (!relayUrl || !deviceToken && !deviceId) return;
-    const relayApiKey = deviceToken || `device:${deviceId}`;
-    const RELAY_PROVIDER = "relay";
-    const RELAY_MODEL = "claude-opus-4-6";
-    syncAuthProfileForProvider(RELAY_PROVIDER, relayApiKey);
-    const ocCfg = fs3.existsSync(CONFIG_FILE) ? JSON.parse(fs3.readFileSync(CONFIG_FILE, "utf8").replace(/^\uFEFF/, "")) : {};
-    ocCfg.models = ocCfg.models || {};
-    ocCfg.models.mode = ocCfg.models.mode || "merge";
-    ocCfg.models.providers = ocCfg.models.providers || {};
-    const oldAnthropic = ocCfg.models.providers["anthropic"];
-    if (oldAnthropic?.baseUrl?.includes("myopenclaw-relay-service")) {
-      delete ocCfg.models.providers["anthropic"];
-    }
-    ocCfg.models.providers[RELAY_PROVIDER] = {
-      ...ocCfg.models.providers[RELAY_PROVIDER] || {},
-      baseUrl: relayUrl,
-      api: "openai-completions",
-      models: ocCfg.models.providers[RELAY_PROVIDER]?.models?.length ? ocCfg.models.providers[RELAY_PROVIDER].models : [{ id: RELAY_MODEL, name: "Claude Opus 4.6", contextWindow: 18e4, maxTokens: 8192 }]
-    };
-    ocCfg.agents = ocCfg.agents || {};
-    ocCfg.agents.defaults = ocCfg.agents.defaults || {};
-    ocCfg.agents.defaults.model = {
-      ...ocCfg.agents.defaults.model || {},
-      primary: `${RELAY_PROVIDER}/${RELAY_MODEL}`
-    };
-    ocCfg.agents.defaults.workspace = path4.join(OPENCLAW_CONFIG_DIR, "workspace");
-    if (ocCfg.tools?.profile) {
-      delete ocCfg.tools.profile;
-    }
-    fs3.writeFileSync(CONFIG_FILE, JSON.stringify(ocCfg, null, 2), "utf8");
-    console.log("[auth] Configured relay provider fallback:", relayUrl);
-  } catch (e) {
-    console.error("[auth] ensureGatewayProviderOrRelay failed:", e.message);
-  }
-}
+var import_axios6 = __toESM(require("axios"));
 
 // src/network.ts
 var net = __toESM(require("net"));
-var import_axios4 = __toESM(require("axios"));
+var import_axios5 = __toESM(require("axios"));
 async function findAvailablePort(startPort = DEFAULT_PORT) {
   for (let port = startPort; port < startPort + 100; port++) {
     if (await isPortAvailable(port)) return port;
@@ -752,7 +773,7 @@ async function startGateway(updateLoadingStatus2) {
   console.log(`[startGateway] Starting gateway on port ${gatewayPort}...`);
   updateLoadingStatus2("Establishing secure connections...", 48);
   ensureAuthProfilesFromEmbeddedConfig();
-  ensureGatewayProviderOrRelay();
+  await ensureGatewayProviderOrRelay();
   const gatewayToken = ensureRandomGatewayToken();
   try {
     const ocCfg = fs4.existsSync(CONFIG_FILE) ? JSON.parse(fs4.readFileSync(CONFIG_FILE, "utf8").replace(/^\uFEFF/, "")) : {};
@@ -843,7 +864,7 @@ async function waitForGateway(gatewayBaseUrl, maxRetries = 90, hasProcessExited)
     }
     try {
       console.log(`[waitForGateway] Attempt ${i + 1}/${maxRetries}...`);
-      const response = await import_axios5.default.get(`${gatewayBaseUrl}/health`, { timeout: 2e3 });
+      const response = await import_axios6.default.get(`${gatewayBaseUrl}/health`, { timeout: 2e3 });
       console.log(`[waitForGateway] Success! Response:`, response.data);
       return true;
     } catch (error) {
@@ -998,15 +1019,15 @@ var import_electron2 = require("electron");
 var import_fs = require("fs");
 
 // src/messaging.ts
-var import_axios6 = __toESM(require("axios"));
+var import_axios7 = __toESM(require("axios"));
 async function checkRelayHealth(baseUrl, token) {
-  const response = await import_axios6.default.get(`${baseUrl}/health`, {
+  const response = await import_axios7.default.get(`${baseUrl}/health`, {
     headers: { "Authorization": `Bearer ${token}` },
     timeout: 2e4
   });
   return response.data;
 }
-async function sendViaRelay(relayBaseUrl, relayAuthToken, messages, deviceId) {
+async function sendViaRelay(relayBaseUrl, relayAuthToken, messages, deviceId, model) {
   const headers = {
     "Content-Type": "application/json"
   };
@@ -1016,8 +1037,8 @@ async function sendViaRelay(relayBaseUrl, relayAuthToken, messages, deviceId) {
   if (deviceId) {
     headers["X-Device-Id"] = deviceId;
   }
-  const response = await import_axios6.default.post(`${relayBaseUrl}/v1/chat/completions`, {
-    model: "openclaw:main",
+  const response = await import_axios7.default.post(`${relayBaseUrl}/v1/chat/completions`, {
+    model: model || "openclaw:main",
     messages
   }, {
     headers,
@@ -1241,7 +1262,7 @@ var WsManager = class {
    * Streams delta events to the renderer window.
    * Returns the fully assembled text content when streaming completes.
    */
-  async sendChatMessageStreaming(baseUrl, token, agentId, message) {
+  async sendChatMessageStreaming(baseUrl, token, agentId, message, model) {
     if (!this.isConnected()) {
       await this.connect(baseUrl, token);
     }
@@ -1271,7 +1292,8 @@ var WsManager = class {
         sessionKey: `agent:${agentId}:myopenclaw:${this._getSessionId(agentId)}`,
         message,
         deliver: false,
-        idempotencyKey: id
+        idempotencyKey: id,
+        ...model ? { model } : {}
       }
     };
     return new Promise((resolve5, reject) => {
@@ -1401,6 +1423,7 @@ function registerChatHandlers(getGatewayHandle, getMainWindow2) {
     try {
       const message = typeof payload === "string" ? payload : payload?.message;
       const agentId = payload?.agentId || "main";
+      const model = payload?.model || "";
       const state = loadAppState();
       const gate = checkPremiumGate(state);
       if (!gate.allow) {
@@ -1429,9 +1452,9 @@ function registerChatHandlers(getGatewayHandle, getMainWindow2) {
         if (win) wsManager.setWindow(win);
         content = await wsManager.sendChatMessageStreaming(gatewayBaseUrl, gatewayToken, agentId, message);
       } else if (hasRelay) {
-        content = await sendViaRelay(relay.baseUrl, relayAuthToken, messages, deviceId);
+        content = await sendViaRelay(relay.baseUrl, relayAuthToken, messages, deviceId, model);
       } else if (deviceId && (relay.baseUrl || RELAY_BASE_URL)) {
-        content = await sendViaRelay(relay.baseUrl || RELAY_BASE_URL, "", messages, deviceId);
+        content = await sendViaRelay(relay.baseUrl || RELAY_BASE_URL, "", messages, deviceId, model);
       } else {
         throw new Error("No AI provider configured. Please login to use Cloud Relay.");
       }
@@ -1881,6 +1904,7 @@ function registerProviderHandlers(getGatewayHandle, onStartGateway) {
 
 // src/ipc/relay-ipc.ts
 var import_electron7 = require("electron");
+var import_axios8 = __toESM(require("axios"));
 function registerRelayHandlers() {
   import_electron7.ipcMain.handle("save-relay-config", async (_event, config) => {
     try {
@@ -1936,9 +1960,26 @@ function registerRelayHandlers() {
       state.relay.accessToken = accessToken || "";
       state.relay.refreshToken = refreshToken || "";
       saveAppState(state);
+      await ensureGatewayProviderOrRelay();
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
+    }
+  });
+  import_electron7.ipcMain.handle("get-models", async () => {
+    try {
+      const state = loadAppState();
+      const baseUrl = (state.relay?.baseUrl || RELAY_BASE_URL).replace(/\/+$/, "");
+      const headers = {};
+      const jwt = state.relay?.accessToken || state.relay?.authToken;
+      if (jwt) headers["Authorization"] = `Bearer ${jwt}`;
+      if (state.deviceId) headers["X-Device-Id"] = state.deviceId;
+      const res = await import_axios8.default.get(`${baseUrl}/v1/models`, { headers, timeout: 1e4 });
+      const models = res.data?.data || [];
+      return { success: true, models };
+    } catch (e) {
+      const msg = e?.response?.data?.error?.message || e?.response?.data?.message || e.message;
+      return { success: false, error: msg, models: [] };
     }
   });
   import_electron7.ipcMain.handle("logout", async () => {
@@ -1948,6 +1989,7 @@ function registerRelayHandlers() {
       state.relay.refreshToken = "";
       state.relay.userEmail = "";
       saveAppState(state);
+      await ensureGatewayProviderOrRelay();
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
@@ -1957,7 +1999,7 @@ function registerRelayHandlers() {
 
 // src/ipc/device-ipc.ts
 var import_electron8 = require("electron");
-var import_axios7 = __toESM(require("axios"));
+var import_axios9 = __toESM(require("axios"));
 function registerDeviceHandlers() {
   import_electron8.ipcMain.handle("get-device-id", async () => {
     const state = loadAppState();
@@ -1967,15 +2009,16 @@ function registerDeviceHandlers() {
     const state = loadAppState();
     const relay = state.relay;
     const deviceId = state.deviceId;
-    const baseUrl = relay.baseUrl || RELAY_BASE_URL;
-    if (!deviceId) {
+    const baseUrl = (relay.baseUrl || RELAY_BASE_URL).replace(/\/+$/, "");
+    const authToken = relay.accessToken || relay.authToken;
+    if (!authToken && !deviceId) {
       return { success: false, error: "not_configured" };
     }
     try {
-      const authToken = relay.accessToken || relay.authToken;
       const headers = {};
       if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-      const response = await import_axios7.default.get(`${baseUrl}/v1/devices/${deviceId}/usage`, { headers, timeout: 2e4 });
+      if (deviceId) headers["X-Device-Id"] = deviceId;
+      const response = await import_axios9.default.get(`${baseUrl}/v1/usage`, { headers, timeout: 2e4 });
       return response.data;
     } catch (err) {
       return { success: false, error: err.message };
@@ -1987,7 +2030,7 @@ function registerDeviceHandlers() {
 var fs9 = __toESM(require("fs"));
 var path9 = __toESM(require("path"));
 var import_electron9 = require("electron");
-var import_axios8 = __toESM(require("axios"));
+var import_axios10 = __toESM(require("axios"));
 function maskToken(token) {
   if (!token || token.length <= 12) return "****";
   const prefix = token.slice(0, 10);
@@ -2000,7 +2043,7 @@ async function fetchTelegramBotName(botToken) {
   const cached = botNameCache.get(cacheKey);
   if (cached !== void 0) return cached;
   try {
-    const res = await import_axios8.default.get(`https://api.telegram.org/bot${botToken}/getMe`, { timeout: 5e3 });
+    const res = await import_axios10.default.get(`https://api.telegram.org/bot${botToken}/getMe`, { timeout: 5e3 });
     const name = res.data?.result?.username || "";
     botNameCache.set(cacheKey, name);
     return name;
@@ -2032,7 +2075,7 @@ function registerChannelHandlers() {
       cfg.channels[channelType].accounts[agentId || "default"] = parsed;
       saveEmbeddedConfig(cfg);
       syncChannelsToGatewayConfig(cfg.channels);
-      ensureGatewayProviderOrRelay();
+      await ensureGatewayProviderOrRelay();
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
@@ -2416,7 +2459,7 @@ function registerSkillsHandlers(getGatewayHandle) {
 
 // src/ipc/cron-ipc.ts
 var crypto7 = __toESM(require("crypto"));
-var import_axios9 = __toESM(require("axios"));
+var import_axios11 = __toESM(require("axios"));
 var import_electron11 = require("electron");
 function wsRpc(port, token, method, params = {}) {
   return new Promise((resolve5, reject) => {
@@ -2566,7 +2609,7 @@ function registerCronHandlers(getGatewayHandle) {
         '  "message": "the prompt message to send to the agent when the job runs"',
         "}"
       ].join("\n");
-      const response = await import_axios9.default.post(`http://127.0.0.1:${port}/v1/chat/completions`, {
+      const response = await import_axios11.default.post(`http://127.0.0.1:${port}/v1/chat/completions`, {
         model: "openclaw:main",
         messages: [
           { role: "system", content: systemPrompt },

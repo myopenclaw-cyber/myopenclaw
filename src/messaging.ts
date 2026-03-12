@@ -35,6 +35,7 @@ export async function sendViaRelay(
   relayAuthToken: string,
   messages: ConversationMessage[],
   deviceId: string,
+  model?: string,
 ): Promise<string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -46,7 +47,7 @@ export async function sendViaRelay(
     headers['X-Device-Id'] = deviceId;
   }
   const response = await axios.post(`${relayBaseUrl}/v1/chat/completions`, {
-    model: 'openclaw:main',
+    model: model || 'openclaw:main',
     messages,
   }, {
     headers,

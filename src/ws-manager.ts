@@ -182,6 +182,7 @@ export class WsManager {
     token: string,
     agentId: string,
     message: string,
+    model?: string,
   ): Promise<string> {
     if (!this.isConnected()) {
       await this.connect(baseUrl, token);
@@ -220,6 +221,7 @@ export class WsManager {
         message,
         deliver: false,
         idempotencyKey: id,
+        ...(model ? { model } : {}),
       },
     };
 
