@@ -369,6 +369,10 @@ async function ensureGatewayProviderOrRelay() {
     const workspaceDir = path3.join(OPENCLAW_CONFIG_DIR, "workspace");
     fs2.mkdirSync(path3.join(workspaceDir, ".openclaw"), { recursive: true });
     ocCfg.agents.defaults.workspace = workspaceDir;
+    ocCfg.gateway = ocCfg.gateway || {};
+    ocCfg.gateway.http = ocCfg.gateway.http || {};
+    ocCfg.gateway.http.endpoints = ocCfg.gateway.http.endpoints || {};
+    ocCfg.gateway.http.endpoints.chatCompletions = { enabled: true };
     if (ocCfg.tools?.profile) {
       delete ocCfg.tools.profile;
     }

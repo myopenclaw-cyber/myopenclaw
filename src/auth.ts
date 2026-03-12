@@ -187,6 +187,12 @@ export async function ensureGatewayProviderOrRelay(): Promise<void> {
     fs.mkdirSync(path.join(workspaceDir, '.openclaw'), { recursive: true });
     ocCfg.agents.defaults.workspace = workspaceDir;
 
+    // Ensure gateway HTTP chat completions endpoint is enabled
+    ocCfg.gateway = ocCfg.gateway || {};
+    ocCfg.gateway.http = ocCfg.gateway.http || {};
+    ocCfg.gateway.http.endpoints = ocCfg.gateway.http.endpoints || {};
+    ocCfg.gateway.http.endpoints.chatCompletions = { enabled: true };
+
     // Remove tools.profile to prevent upstream providers rejecting the tools parameter
     if (ocCfg.tools?.profile) {
       delete ocCfg.tools.profile;
