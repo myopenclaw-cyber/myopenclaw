@@ -118,6 +118,21 @@ export function createWindow(): void {
     return { action: 'deny' };
   });
 
+  // mainWindow.webContents.on('before-input-event', (_e, input) => {
+  //   if (!mainWindow || mainWindow.isDestroyed()) return;
+  //   if (input.type !== 'keyDown') return;
+  //   const meta = input.meta; // macOS Cmd
+  //   if (meta && input.key === 'r') {
+  //     mainWindow.webContents.reload();
+  //   } else if (meta && input.shift && input.key === 'i') {
+  //     if (mainWindow.webContents.isDevToolsOpened()) {
+  //       mainWindow.webContents.closeDevTools();
+  //     } else {
+  //       mainWindow.webContents.openDevTools();
+  //     }
+  //   }
+  // });
+
   mainWindow.webContents.on('render-process-gone', (_e, details) => {
     console.error('[renderer] process gone:', details.reason, details.exitCode);
   });
