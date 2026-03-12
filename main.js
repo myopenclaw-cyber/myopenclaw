@@ -727,7 +727,7 @@ async function startGateway(updateLoadingStatus2) {
         "-NoProfile",
         "-Command",
         `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*myopenclaw*' -and $_.CommandLine -like '*gateway*' } | ForEach-Object { Write-Host "Killing PID $($_.ProcessId): $($_.CommandLine.Substring(0, [Math]::Min(80, $_.CommandLine.Length)))"; Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`
-      ], { encoding: "utf8", timeout: 15e3, stdio: "pipe", windowsHide: true });
+      ], { encoding: "utf8", timeout: 15e3, stdio: "pipe" });
       if (killed.trim()) console.log("[startGateway] Killed leftover processes:", killed.trim());
     } else {
       (0, import_child_process2.execSync)("ps -eo pid,command | grep 'myopenclaw' | grep 'gateway' | grep -v grep | awk '{print $1}' | xargs kill -9 2>/dev/null", { timeout: 5e3, stdio: "pipe" });
@@ -1994,11 +1994,18 @@ function maskToken(token) {
   const suffix = token.slice(-10);
   return prefix + "****" + suffix;
 }
+var botNameCache = /* @__PURE__ */ new Map();
 async function fetchTelegramBotName(botToken) {
+  const cacheKey = botToken.slice(-10);
+  const cached = botNameCache.get(cacheKey);
+  if (cached !== void 0) return cached;
   try {
     const res = await import_axios8.default.get(`https://api.telegram.org/bot${botToken}/getMe`, { timeout: 5e3 });
-    return res.data?.result?.username || "";
+    const name = res.data?.result?.username || "";
+    botNameCache.set(cacheKey, name);
+    return name;
   } catch {
+    botNameCache.set(cacheKey, "");
     return "";
   }
 }

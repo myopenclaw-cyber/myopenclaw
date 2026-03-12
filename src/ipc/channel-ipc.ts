@@ -13,11 +13,19 @@ function maskToken(token: string): string {
   return prefix + '****' + suffix;
 }
 
+const botNameCache = new Map<string, string>();
+
 async function fetchTelegramBotName(botToken: string): Promise<string> {
+  const cacheKey = botToken.slice(-10);
+  const cached = botNameCache.get(cacheKey);
+  if (cached !== undefined) return cached;
   try {
     const res = await axios.get(`https://api.telegram.org/bot${botToken}/getMe`, { timeout: 5000 });
-    return res.data?.result?.username || '';
+    const name = res.data?.result?.username || '';
+    botNameCache.set(cacheKey, name);
+    return name;
   } catch {
+    botNameCache.set(cacheKey, '');
     return '';
   }
 }
