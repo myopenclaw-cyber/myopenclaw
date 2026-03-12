@@ -636,7 +636,7 @@ function findOpenClawCli() {
   const systemCandidates = [];
   try {
     const cmd = process.platform === "win32" ? "where" : "which";
-    const result = (0, import_child_process.execFileSync)(cmd, ["openclaw"], { encoding: "utf8", timeout: 3e3 }).trim();
+    const result = (0, import_child_process.execFileSync)(cmd, ["openclaw"], { encoding: "utf8", timeout: 3e3, windowsHide: true }).trim();
     if (result) systemCandidates.push(result.split(/\r?\n/)[0]);
   } catch {
   }
@@ -672,9 +672,9 @@ function findNodeBinary() {
   const nodeExe = process.platform === "win32" ? "node.exe" : "node";
   try {
     const cmd = process.platform === "win32" ? "where" : "which";
-    const nodePath = (0, import_child_process.execFileSync)(cmd, [nodeExe], { encoding: "utf8", timeout: 3e3 }).trim().split(/\r?\n/)[0];
+    const nodePath = (0, import_child_process.execFileSync)(cmd, [nodeExe], { encoding: "utf8", timeout: 3e3, windowsHide: true }).trim().split(/\r?\n/)[0];
     if (nodePath) {
-      const ver = (0, import_child_process.execFileSync)(nodePath, ["--version"], { encoding: "utf8", timeout: 3e3 }).trim();
+      const ver = (0, import_child_process.execFileSync)(nodePath, ["--version"], { encoding: "utf8", timeout: 3e3, windowsHide: true }).trim();
       const major = parseInt(ver.replace("v", "").split(".")[0], 10);
       if (major >= MIN_NODE_MAJOR_VERSION) {
         console.log(`[node] Using system node: ${nodePath} (${ver})`);
@@ -797,7 +797,7 @@ async function startGateway(updateLoadingStatus2) {
         "-NoProfile",
         "-Command",
         `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*myopenclaw*' -and $_.CommandLine -like '*gateway*' } | ForEach-Object { Write-Host "Killing PID $($_.ProcessId): $($_.CommandLine.Substring(0, [Math]::Min(80, $_.CommandLine.Length)))"; Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`
-      ], { encoding: "utf8", timeout: 15e3, stdio: "pipe" });
+      ], { encoding: "utf8", timeout: 15e3, stdio: "pipe", windowsHide: true });
       if (killed.trim()) console.log("[startGateway] Killed leftover processes:", killed.trim());
     } else {
       (0, import_child_process2.execSync)("ps -eo pid,command | grep 'myopenclaw' | grep 'gateway' | grep -v grep | awk '{print $1}' | xargs kill -9 2>/dev/null", { timeout: 5e3, stdio: "pipe" });
@@ -813,7 +813,7 @@ async function startGateway(updateLoadingStatus2) {
         if (!fs4.existsSync(lf) || fs4.readFileSync(lf, "utf8")) break;
       } catch {
       }
-      (0, import_child_process2.execSync)("timeout /t 1 /nobreak >nul 2>&1", { timeout: 3e3, stdio: "pipe" });
+      (0, import_child_process2.execSync)("timeout /t 1 /nobreak >nul 2>&1", { timeout: 3e3, stdio: "pipe", windowsHide: true });
     }
   }
   stopExistingGateway();
@@ -964,7 +964,7 @@ function forceCleanGatewayLock() {
         console.log(`[startGateway] Lock held by PID ${pid}, force-killing...`);
         try {
           if (process.platform === "win32") {
-            (0, import_child_process2.execSync)(`taskkill /F /PID ${pid}`, { timeout: 5e3, stdio: "pipe" });
+            (0, import_child_process2.execSync)(`taskkill /F /PID ${pid}`, { timeout: 5e3, stdio: "pipe", windowsHide: true });
           } else {
             process.kill(pid, "SIGKILL");
           }
@@ -1012,7 +1012,8 @@ function tryDoctorFix() {
         timeout: 15e3,
         stdio: "pipe",
         env,
-        cwd: runtimeDir
+        cwd: runtimeDir,
+        windowsHide: true
       });
       if (output.includes("fix") || output.includes("removed") || output.includes("Unrecognized")) {
         console.log("[doctor] Auto-fixed config via node fallback:", output.trim());
@@ -2199,7 +2200,7 @@ function findClawHubCli() {
   const candidates = [];
   try {
     const cmd = process.platform === "win32" ? "where" : "which";
-    const result = (0, import_child_process3.execFileSync)(cmd, ["clawhub"], { encoding: "utf8", timeout: 3e3 }).trim();
+    const result = (0, import_child_process3.execFileSync)(cmd, ["clawhub"], { encoding: "utf8", timeout: 3e3, windowsHide: true }).trim();
     if (result) candidates.push(result.split(/\r?\n/)[0]);
   } catch {
   }

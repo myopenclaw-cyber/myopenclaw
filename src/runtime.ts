@@ -216,7 +216,7 @@ export function findOpenClawCli(): string | null {
 
   try {
     const cmd = process.platform === 'win32' ? 'where' : 'which';
-    const result = execFileSync(cmd, ['openclaw'], { encoding: 'utf8', timeout: 3000 }).trim();
+    const result = execFileSync(cmd, ['openclaw'], { encoding: 'utf8', timeout: 3000, windowsHide: true }).trim();
     if (result) systemCandidates.push(result.split(/\r?\n/)[0]);
   } catch { /* not in PATH */ }
 
@@ -259,9 +259,9 @@ export function findNodeBinary(): string {
   // 1. System node with sufficient version
   try {
     const cmd = process.platform === 'win32' ? 'where' : 'which';
-    const nodePath = execFileSync(cmd, [nodeExe], { encoding: 'utf8', timeout: 3000 }).trim().split(/\r?\n/)[0];
+    const nodePath = execFileSync(cmd, [nodeExe], { encoding: 'utf8', timeout: 3000, windowsHide: true }).trim().split(/\r?\n/)[0];
     if (nodePath) {
-      const ver = execFileSync(nodePath, ['--version'], { encoding: 'utf8', timeout: 3000 }).trim();
+      const ver = execFileSync(nodePath, ['--version'], { encoding: 'utf8', timeout: 3000, windowsHide: true }).trim();
       const major = parseInt(ver.replace('v', '').split('.')[0], 10);
       if (major >= MIN_NODE_MAJOR_VERSION) {
         console.log(`[node] Using system node: ${nodePath} (${ver})`);

@@ -14,7 +14,7 @@ function findClawHubCli(): string | null {
 
   try {
     const cmd = process.platform === 'win32' ? 'where' : 'which';
-    const result = execFileSync(cmd, ['clawhub'], { encoding: 'utf8', timeout: 3000 }).trim();
+    const result = execFileSync(cmd, ['clawhub'], { encoding: 'utf8', timeout: 3000, windowsHide: true }).trim();
     if (result) candidates.push(result.split(/\r?\n/)[0]);
   } catch { /* not in PATH */ }
 

@@ -27,7 +27,7 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
       const killed = execFileSync('powershell.exe', [
         '-NoProfile', '-Command',
         "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*myopenclaw*' -and $_.CommandLine -like '*gateway*' } | ForEach-Object { Write-Host \"Killing PID $($_.ProcessId): $($_.CommandLine.Substring(0, [Math]::Min(80, $_.CommandLine.Length)))\"; Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
-      ], { encoding: 'utf8', timeout: 15000, stdio: 'pipe' });
+      ], { encoding: 'utf8', timeout: 15000, stdio: 'pipe', windowsHide: true });
       if (killed.trim()) console.log('[startGateway] Killed leftover processes:', killed.trim());
     } else {
       execSync("ps -eo pid,command | grep 'myopenclaw' | grep 'gateway' | grep -v grep | awk '{print $1}' | xargs kill -9 2>/dev/null", { timeout: 5000, stdio: 'pipe' });
@@ -40,7 +40,7 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
     const start = Date.now();
     while (Date.now() - start < 3000) {
       try { const lf = resolveGatewayLockFile(); if (!fs.existsSync(lf) || fs.readFileSync(lf, 'utf8')) break; } catch { /* still locked */ }
-      execSync('timeout /t 1 /nobreak >nul 2>&1', { timeout: 3000, stdio: 'pipe' });
+      execSync('timeout /t 1 /nobreak >nul 2>&1', { timeout: 3000, stdio: 'pipe', windowsHide: true });
     }
   }
 
@@ -226,7 +226,7 @@ function forceCleanGatewayLock(): void {
         console.log(`[startGateway] Lock held by PID ${pid}, force-killing...`);
         try {
           if (process.platform === 'win32') {
-            execSync(`taskkill /F /PID ${pid}`, { timeout: 5000, stdio: 'pipe' });
+            execSync(`taskkill /F /PID ${pid}`, { timeout: 5000, stdio: 'pipe', windowsHide: true });
           } else {
             process.kill(pid, 'SIGKILL');
           }
@@ -273,7 +273,7 @@ function tryDoctorFix(): void {
       const env = { ...process.env, PATH: buildNodeEnhancedPath(), OPENCLAW_CONFIG_PATH: CONFIG_FILE };
 
       const output = execFileSync(nodeBin, [entryFile, 'doctor', '--fix'], {
-        encoding: 'utf8', timeout: 15000, stdio: 'pipe', env, cwd: runtimeDir,
+        encoding: 'utf8', timeout: 15000, stdio: 'pipe', env, cwd: runtimeDir, windowsHide: true,
       });
       if (output.includes('fix') || output.includes('removed') || output.includes('Unrecognized')) {
         console.log('[doctor] Auto-fixed config via node fallback:', output.trim());
