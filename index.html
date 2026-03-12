@@ -5,11 +5,14 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>MyOpenClaw</title>
 <style>
-/* Font loaded async to prevent blocking render in offline/VM environments */
+@font-face{font-family:'Aspekta';src:url('./build/fonts/Aspekta/Aspekta-300.woff2') format('woff2');font-weight:300;font-style:normal;font-display:swap}
+@font-face{font-family:'Aspekta';src:url('./build/fonts/Aspekta/Aspekta-400.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'Aspekta';src:url('./build/fonts/Aspekta/Aspekta-500.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap}
+@font-face{font-family:'Aspekta';src:url('./build/fonts/Aspekta/Aspekta-600.woff2') format('woff2');font-weight:600 800;font-style:normal;font-display:swap}
 * { box-sizing: border-box; }
-body { margin: 0; font-family: Inter, sans-serif; background: #FFFFFF; color: #161835; min-height: 100vh; }
-.shell { display: grid; grid-template-columns: 308px 1fr; min-height: 100vh; }
-.side { padding: 25px 18px; border-right: 1px solid rgba(107,70,255,0.2); background: #FFFFFF; display: flex; flex-direction: column; min-height: 100vh; box-shadow: 0px 10px 40px 0px rgba(0,0,0,0.04); position: relative; z-index: 1; }
+body { margin: 0; font-family: 'Aspekta', -apple-system, BlinkMacSystemFont, sans-serif; background: #FFFFFF; color: #161835; min-height: 100vh; }
+.shell { display: grid; grid-template-columns: 308px 1fr; height: 100vh; overflow: hidden; }
+.side { padding: 25px 18px; border-right: 1px solid rgba(107,70,255,0.2); background: #FFFFFF; display: flex; flex-direction: column; height: 100vh; overflow-y: auto; box-shadow: 0px 10px 40px 0px rgba(0,0,0,0.04); position: sticky; top: 0; z-index: 1; }
 .brand { display: flex; align-items: center; gap: 12px; font-size: 20px; font-weight: 800; margin-bottom: 16px; color: #161835; }
 .brand img { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; background: linear-gradient(-11deg, rgba(233,224,255,1) 13%, rgba(255,255,255,1) 100%); }
 .gateway { display: flex; align-items: center; gap: 12px; font-size: 14px; padding: 10px 16px; border: 1px solid rgba(107,70,255,0.2); background: rgba(241,159,73,0.1); border-radius: 20px; margin-bottom: 24px; color: rgba(0,0,0,0.6); }
@@ -22,8 +25,10 @@ body { margin: 0; font-family: Inter, sans-serif; background: #FFFFFF; color: #1
 .menu button .icon-act { display: none; }
 .menu button.active .icon-def { display: none; }
 .menu button.active .icon-act { display: block; }
-.main { padding: 25px 20px; background: linear-gradient(180deg, rgba(221,220,255,1) 0%, rgba(255,255,255,1) 100%); min-height: 100vh; overflow: auto; }
-.hero { padding: 20px; border-radius: 20px; border: 1px solid rgba(107,70,255,0.2); background: rgba(255,255,255,0.4); backdrop-filter: blur(4px); box-shadow: 0px 10px 40px 0px rgba(0,0,0,0.04); margin-bottom: 16px; }
+.main { padding: 25px 20px; background: linear-gradient(180deg, #FFF 0%, #DDDCFF 100%); height: 100vh; overflow-y: auto; }
+.menu { flex: 1; display: flex; flex-direction: column; }
+#tab-account { margin-top: auto; }
+.hero { padding: 20px 30px; border-radius: 20px; border: 1px solid rgba(107,70,255,0.2); background: rgba(255,255,255,0.4); backdrop-filter: blur(4px); box-shadow: 0px 10px 40px 0px rgba(0,0,0,0.04); margin-bottom: 20px; }
 .hero h1 { margin: 0 0 6px; font-size: 20px; font-weight: 700; color: #161835; }
 .hero p { margin: 0; color: rgba(0,0,0,0.4); font-size: 14px; }
 .page { display: none; }
@@ -32,6 +37,8 @@ body { margin: 0; font-family: Inter, sans-serif; background: #FFFFFF; color: #1
 .card h3 { color: #161835; font-size: 20px; font-weight: 700; margin: 0 0 12px; }
 .row { display: flex; gap: 8px; align-items: center; margin: 10px 0; }
 input, textarea, select { width: 100%; padding: 12px 16px; border: 1px solid rgba(107,70,255,0.2); border-radius: 10px; background: rgba(255,255,255,0.4); backdrop-filter: blur(4px); color: #161835; font-family: inherit; font-size: 14px; }
+select{appearance: none;-webkit-appearance: none;-moz-appearance: none; padding-right: 20px;background-image: url("./build/assets/arrow-down.png");background-repeat: no-repeat;background-position: right 10px center;background-size: 24px;}
+/* Modals */
 input::placeholder, textarea::placeholder { color: rgba(0,0,0,0.4); }
 input:focus, textarea:focus, select:focus { outline: none; border-color: #6B46FF; }
 button { padding: 10px 20px; border: none; border-radius: 10px; background: linear-gradient(90deg, rgba(93,104,255,1) 0%, rgba(140,70,252,1) 100%); color: #FFFFFF; font-weight: 600; cursor: pointer; font-family: inherit; font-size: 14px; transition: opacity 0.2s ease; }
@@ -39,7 +46,7 @@ button:hover { opacity: 0.9; }
 button.alt { background: rgba(0,0,0,0.04); color: #070707; border: none; }
 button.danger { background: #FF6092; color: #fff; border: none; }
 button:disabled { opacity: .45; cursor: not-allowed; }
-.chat { height: 400px; overflow: auto; padding: 12px; border-radius: 12px; border: 1px solid rgba(107,70,255,0.2); background: rgba(255,255,255,0.5); backdrop-filter: blur(4px); }
+.chat { height: 400px; overflow: auto; padding: 20px; border-radius: 12px; border: 1px solid rgba(107,70,255,0.2); background: rgba(255,255,255,0.5); backdrop-filter: blur(4px); }
 .m { max-width: 78%; padding: 10px 12px; border-radius: 12px; margin: 8px 0; line-height: 1.5; word-break: break-word; font-size: 14px; color: #161835; }
 .u { margin-left: auto; background: linear-gradient(90deg, rgba(93,104,255,1) 0%, rgba(140,70,252,1) 100%); color: #FFFFFF; }
 .a { background: rgba(107,70,255,0.06); border: 1px solid rgba(107,70,255,0.1); }
@@ -56,6 +63,8 @@ ul { list-style: none; padding: 0; }
 li { padding: 10px; border: 1px solid rgba(107,70,255,0.15); background: rgba(255,255,255,0.5); border-radius: 10px; margin: 8px 0; color: #161835; }
 .small { font-size: 12px; color: rgba(0,0,0,0.55); }
 hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; }
+.chat-title {color: #161835;font-size: 20px;font-weight: 600;margin-bottom:12px;}
+.chat-select {border-radius: 20px;border: 1px solid rgba(107, 70, 255, 0.20);background: rgba(255, 255, 255, 0.40);box-shadow: 0 10px 40px 0 rgba(0, 0, 0, 0.04);backdrop-filter: blur(2px);height:48px; appearance: none;-webkit-appearance: none;-moz-appearance: none; padding-right: 20px;background-image: url("./build/assets/arrow-down.png");background-repeat: no-repeat;background-position: right 10px center;background-size: 24px;}
 /* Modals */
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.2); display: none; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(4px); }
 .modal.show { display: flex; }
@@ -86,9 +95,38 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
 .check { color: #04C83E; }
 .cross { color: #FF6092; opacity: .7; }
 .upgrade-btn { padding: 8px 16px; font-size: 13px; }
+.plan-wrap {width:100%;}
+.plan-wrap .plan-wrap-title{display:flex;align-items: center;color: #000;font-size: 16px;font-style: normal;font-weight: 600;line-height: 24px;gap:12px;width:100%}
+.plan-wrap .plan-wrap-title span{flex:1;margin-bottom: 20px;}
+.plan-wrap .plan-wrap-title span:nth-child(3) {color:#6B46FF}
+.plan-wrap .plan-wrap-title span:nth-child(4) {background: linear-gradient(90deg, #DF5DFF 0%, #8C46FC 100%);background-clip: text;-webkit-background-clip: text;-webkit-text-fill-color: transparent;}
+.plan-wrap-content {display: flex;align-items:center;gap:12px}
+.plan-wrap-content .plan-wrap-item {flex:1;display: flex;flex-direction: column;gap:32px}
+.plan-wrap-content .plan-wrap-item:nth-child(1){font-weight: 500;font-size: 14px;color: rgba(0, 0, 0, 0.4);line-height: 24px;padding-top: 8px;}
+.plan-wrap-content .plan-wrap-item:nth-child(2),
+.plan-wrap-content .plan-wrap-item:nth-child(3),
+.plan-wrap-content .plan-wrap-item:nth-child(4) {
+  border-radius: 20px;
+  border: 1px solid rgba(107, 70, 255, 0.20);
+  background: rgba(255, 255, 255, 0.40);
+  box-shadow: 0 10px 40px 0 var(--, rgba(0, 0, 0, 0.04));
+  backdrop-filter: blur(2px);
+  padding: 20px;
+  padding-left: 28px;
+  color: #000;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 24px;
+}
+.plan-wrap-content .plan-wrap-item:nth-child(2) span:nth-child(3),
+.plan-wrap-content .plan-wrap-item:nth-child(3) span:nth-child(3),
+.plan-wrap-content .plan-wrap-item:nth-child(4) span:nth-child(3) {
+  color: #04C83E
+}
 /* Agent items */
 .agent-item { display: flex; align-items: center; gap: 8px; padding: 12px; border: 1px solid rgba(107,70,255,0.15); background: rgba(255,255,255,0.5); border-radius: 10px; margin: 8px 0; }
-.agent-item .agent-name { flex: 1; font-weight: 500; color: #000000; }
+.agent-item .agent-info { flex: 1; display: flex; align-items: center; gap: 8px; }
+.agent-item .agent-name { font-weight: 500; color: #000000; }
 .agent-item .active-badge { font-size: 12px; padding: 5px 10px; border-radius: 999px; background: rgba(4,200,62,0.1); color: #04C83E; border: none; font-weight: 500; }
 /* Relay status */
 .relay-status-dot { width: 10px; height: 10px; border-radius: 50%; background: #D9D9D9; flex-shrink: 0; }
@@ -196,8 +234,6 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
 .cron-run-row { display: flex; gap: 10px; padding: 4px 0; border-bottom: 1px solid #ffffff10; }
 .cron-run-row:last-child { border-bottom: none; }
 </style>
-<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'">
 </head>
 <body>
 <div class="shell">
@@ -226,11 +262,6 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
         <img class="icon-act" src="./build/assets/config-active.png" alt=""/>
         <span>Config</span>
       </button>
-      <button id="tab-account" onclick="showPage('account')">
-        <img class="icon-def" src="./build/assets/account.png" alt=""/>
-        <img class="icon-act" src="./build/assets/account-active.png" alt=""/>
-        <span>Account</span>
-      </button>
        <button id="tab-skills" onclick="showPage('skills');loadSkills()">
         <img class="icon-def" src="./build/assets/config.png" alt=""/>
         <img class="icon-act" src="./build/assets/config-active.png" alt=""/>
@@ -240,6 +271,11 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
         <img class="icon-def" src="./build/assets/config.png" alt=""/>
         <img class="icon-act" src="./build/assets/config-active.png" alt=""/>
         <span>Cron Tasks</span>
+      </button>
+      <button id="tab-account" onclick="showPage('account')">
+        <img class="icon-def" src="./build/assets/account.png" alt=""/>
+        <img class="icon-act" src="./build/assets/account-active.png" alt=""/>
+        <span id="tabAccountLabel">Account</span>
       </button>
     </nav>
   </aside>
@@ -253,17 +289,17 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
     <!-- Chat Page -->
     <section id="chat" class="page active">
       <div class="card">
+        <div class="chat-title">Agent</div>
         <div class="row" style="margin-bottom:6px">
-          <label style="width:90px;flex-shrink:0">Agent</label>
-          <select id="agentSelect"></select>
-          <button class="alt" onclick="openDashboardChat()" title="Open full chat in Dashboard" style="white-space:nowrap;font-size:12px;padding:8px 12px">Dashboard Chat</button>
+          <select id="agentSelect" class="chat-select"></select>
+          <button class="alt" onclick="openDashboardChat()" title="Open full chat in Dashboard" style="white-space:nowrap;font-size:12px;padding:8px 12px;height:48px;">Dashboard Chat</button>
         </div>
         <div id="chatBox" class="chat"></div>
         <div id="filePreview" style="display:none"></div>
         <div class="row">
-          <button onclick="pickFile()" title="Attach file" style="min-width:36px;padding:8px;font-size:16px">&#128206;</button>
-          <textarea id="msg" rows="2" placeholder="Type your message... (Enter to send, Shift+Enter for new line)" style="max-height:160px"></textarea>
-          <button onclick="sendMsg()">Send</button>
+          <button onclick="pickFile()" title="Attach file" style="min-width:38px;padding:8px;font-size:16px;height: 38px;">&#128206;</button>
+          <textarea id="msg" rows="2" placeholder="Type your message... (Enter to send, Shift+Enter for new line)" style="max-height:48px"></textarea>
+          <button onclick="sendMsg()" style="height: 48px; width: 180px;">Send</button>
         </div>
       </div>
     </section>
@@ -271,11 +307,11 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
     <!-- Agents Page -->
     <section id="agents" class="page">
       <div class="card">
-        <h3 style="margin:0 0 10px">Agents</h3>
-        <div id="agentLimitInfo" style="font-size:13px;opacity:.75;margin-bottom:10px"></div>
-        <div class="row">
+        <h3 style="">Agents</h3>
+        <div id="agentLimitInfo" style="font-size:14px;color:rgba(0,0,0,0.4);margin-bottom: 20px;"></div>
+        <div class="row" style="margin-bottom: 20px;">
           <input id="newAgentName" placeholder="New agent name"/>
-          <button id="addAgentBtn" onclick="addAgent()">Add Agent</button>
+          <button id="addAgentBtn" onclick="addAgent()" style="white-space: nowrap;">Add Agent</button>
         </div>
         <div id="agentList"></div>
       </div>
@@ -287,8 +323,8 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
     <section id="config" class="page">
       <div class="card">
         <h3>Configuration</h3>
-        <div class="row" style="justify-content:space-between;align-items:center">
-          <div style="font-size:14px;opacity:.8">Reset all OpenClaw model-related config to factory defaults.</div>
+        <div style="font-size:14px;color:rgba(0,0,0,0.4);font-weight:500;margin-bottom: 20px;">Reset all OpenClaw model-related config to factory defaults.</div>
+        <div class="row" style="justify-content:flex-end;align-items:center">
           <button class="danger" onclick="resetAllModelConfig()">Reset All Config</button>
         </div>
       </div>
@@ -350,14 +386,14 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
           <label style="min-width:130px;display: block;margin-bottom: 8px;" class="small">Device ID</label>
           <div style="display:flex;align-items:center;gap:8px">
             <input id="accountDeviceId" readonly style="opacity:.7;cursor:default;font-size:12px" placeholder="Loading..."/>
-            <button class="alt" style="flex-shrink:0;padding:8px 10px;font-size:12px;margin-left:8px" onclick="copyDeviceId()">Copy</button>
+            <button class="alt" style="flex-shrink:0;padding:8px 10px;font-size:12px;margin-left:8px;height: 48px;" onclick="copyDeviceId()">Copy</button>
           </div>
         </div>
         <div  style="align-items:center;margin-bottom:8px">
           <label style="min-width:130px;display: block;margin-bottom: 8px;margin-top: 20px;" class="small">Usage</label>
           <div style="display:flex;align-items:center;gap:8px">
-            <span id="accountQuotaText" class="small" style="opacity:.75">Loading...</span>
-            <button class="alt" style="flex-shrink:0;padding:8px 10px;font-size:12px;margin-left:auto" onclick="refreshQuota()">Refresh</button>
+            <span id="accountQuotaText" class="small" style="opacity:.75;background: rgba(0,0,0,0.04);width:100%;height:48px;border-radius: 10px;line-height: 48px;padding-left: 12px;">Loading...</span>
+            <button class="alt" style="flex-shrink:0;font-size:14px;color:#070707;text-align:center;margin-left:auto;height:48px;" onclick="refreshQuota()">Refresh</button>
           </div>
         </div>
         <div id="accountAuthRow" class="row" style="align-items:center;margin-top:6px">
@@ -384,7 +420,7 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
       </div>
 
       <div class="card">
-        <h3 style="margin:0 0 12px">Current Plan</h3>
+        <h3 style="color:#161835">Current Plan</h3>
         <div class="row" style="margin:0 0 12px">
           <span id="planBadge" class="plan-badge plan-free">
             <span class="plan-dot"></span>
@@ -397,7 +433,42 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
 
       <div class="card">
         <h3 style="margin:0 0 12px">Plans</h3>
-        <table class="plan-table">
+        <div class="plan-wrap">
+          <div class="plan-wrap-title">
+            <span>Feature</span>
+            <span>Free</span>
+            <span>Premium</span>
+            <span>Pro</span>
+          </div>
+          <div class="plan-wrap-content">
+            <div class="plan-wrap-item"> 
+               <span>Feature</span>
+                <span>Max Agents</span>
+                <span>Relay Access</span>
+                <span>Model Tier</span>
+            </div>
+            <div class="plan-wrap-item"> 
+               <span>$0</span>
+              <span>1</span>
+              <span>Yes (15/mo)</span>
+              <span>Basic</span>
+            </div>
+             <div class="plan-wrap-item"> 
+               <span>$9.9/mo</span>
+              <span>5</span>
+              <span>Yes</span>
+              <span>Sonnet</span>
+            </div>
+             <div class="plan-wrap-item"> 
+               <span>$29.9/mo</span>
+              <span>Unlimited</span>
+              <span>Yes</span>
+              <span>Opus</span>
+            </div>
+          </div>
+
+        </div>
+        <!-- <table class="plan-table">
           <thead>
             <tr>
               <th>Feature</th>
@@ -432,7 +503,7 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
               <td class="plan-col-pro">Opus</td>
             </tr>
           </tbody>
-        </table>
+        </table> -->
         <div class="row" style="margin-top:14px;flex-wrap:wrap;gap:10px;justify-content: flex-end;">
           <button id="upgradeFreeBtnAccount" class="alt upgrade-btn" onclick="upgradePlan('free')" style="background:rgba(0,0,0,0.04);color:#000000;">Use Free</button>
           <button id="upgradePremiumBtnAccount" class="alt upgrade-btn" onclick="upgradePlan('premium')" style="background:#6B46FF;color:#FFFFFF;">Upgrade to Premium</button>
@@ -1027,6 +1098,8 @@ function updateAuthUI() {
   const relay = appState && appState.relay;
   const email = relay && relay.userEmail;
   const hasToken = relay && relay.accessToken;
+  const tabLabel = document.getElementById('tabAccountLabel');
+  if (tabLabel) tabLabel.textContent = (hasToken && email) ? email : 'Account';
   if (hasToken && email) {
     row.innerHTML =
       '<label style="min-width:130px" class="small">Account</label>' +
@@ -1120,17 +1193,21 @@ async function refreshAgents() {
     const item = document.createElement('div');
     item.className = 'agent-item';
 
+    const info = document.createElement('div');
+    info.className = 'agent-info';
+
     const namePart = document.createElement('span');
     namePart.className = 'agent-name';
     namePart.textContent = a.name;
-    item.appendChild(namePart);
+    info.appendChild(namePart);
 
     if (a.id === currentAgent) {
       const activeBadge = document.createElement('span');
       activeBadge.className = 'active-badge';
       activeBadge.textContent = 'Active';
-      item.appendChild(activeBadge);
+      info.appendChild(activeBadge);
     }
+    item.appendChild(info);
 
     const actions = document.createElement('div');
     actions.style.display = 'flex';
