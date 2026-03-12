@@ -20,15 +20,19 @@ import { findOpenClawCli, findRuntimeDir, findNodeBinary, buildNodeEnhancedPath 
 import type { GatewayHandle, LoadingStatusCallback } from './types';
 
 export async function startGateway(updateLoadingStatus: LoadingStatusCallback): Promise<GatewayHandle> {
-  // Kill only our own leftover gateway (identified by OPENCLAW_SERVICE_MARKER=myopenclaw)
-  // Never touch system-installed openclaw gateways
+  // Kill our own leftover gateway — match by .myopenclaw path in command line
+  // (env vars set via spawn({env}) don't appear in CommandLine on Windows)
   try {
     if (process.platform === 'win32') {
-      execSync('wmic process where "CommandLine like \'%OPENCLAW_SERVICE_MARKER=myopenclaw%\' and name like \'%node%\'" call terminate', { timeout: 5000, stdio: 'pipe' });
+      execSync('wmic process where "CommandLine like \'%myopenclaw%\' and CommandLine like \'%gateway%\' and name like \'%node%\'" call terminate', { timeout: 5000, stdio: 'pipe' });
     } else {
-      execSync("ps -eo pid,command | grep 'OPENCLAW_SERVICE_MARKER=myopenclaw' | grep -v grep | awk '{print $1}' | xargs kill -9 2>/dev/null", { timeout: 5000, stdio: 'pipe' });
+      execSync("ps -eo pid,command | grep 'myopenclaw' | grep 'gateway' | grep -v grep | awk '{print $1}' | xargs kill -9 2>/dev/null", { timeout: 5000, stdio: 'pipe' });
     }
   } catch { /* no leftover process — fine */ }
+  // Give Windows a moment to release file handles after process termination
+  if (process.platform === 'win32') {
+    try { execSync('timeout /t 2 /nobreak >nul 2>&1', { timeout: 5000, stdio: 'pipe' }); } catch {}
+  }
 
   // Stop any existing gateway holding a lock (e.g. leftover from crash or previous session)
   stopExistingGateway();
