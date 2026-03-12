@@ -1842,14 +1842,22 @@ function renderSkills() {
   if (!container) return;
   container.innerHTML = '';
 
-  // Filter
+  // Hide only truly blocked skills (disabled + ineligible + no install option)
+  const visible = skillsData.filter(function(s) {
+    if (s.enabled) return true;
+    if (s.eligible !== false) return true;
+    if (Array.isArray(s.install) && s.install.length > 0) return true;
+    return false;
+  });
+
+  // Filter by search
   const filtered = skillsFilter
-    ? skillsData.filter(function(s) {
+    ? visible.filter(function(s) {
         return (s.name || '').toLowerCase().indexOf(skillsFilter) !== -1
           || (s.skillKey || '').toLowerCase().indexOf(skillsFilter) !== -1
           || (s.description || '').toLowerCase().indexOf(skillsFilter) !== -1;
       })
-    : skillsData;
+    : visible;
 
   // Group by source
   const groups = { workspace: [], bundled: [], other: [] };
