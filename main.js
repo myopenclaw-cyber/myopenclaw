@@ -276,6 +276,45 @@ function ensureAuthProfilesFromEmbeddedConfig() {
     console.error("[auth-profile-sync-bootstrap] failed:", e.message);
   }
 }
+function decodeJwtPayload(token) {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    return JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+async function refreshJwtIfNeeded(relayBaseUrl) {
+  const state = loadAppState();
+  const base = relayBaseUrl || state.relay?.baseUrl || RELAY_BASE_URL;
+  const jwt = state.relay?.accessToken || "";
+  if (!jwt) return "";
+  const payload = decodeJwtPayload(jwt);
+  if (!payload?.exp) return jwt;
+  const nowSec = Math.floor(Date.now() / 1e3);
+  const FIVE_MIN = 5 * 60;
+  if (payload.exp > nowSec + FIVE_MIN) return jwt;
+  const refreshToken = state.relay?.refreshToken || "";
+  if (!refreshToken) {
+    console.log("[auth] JWT expired and no refreshToken available");
+    return "";
+  }
+  try {
+    const url = base.replace(/\/+$/, "") + "/v1/auth/refresh";
+    const res = await import_axios2.default.post(url, { refreshToken }, { timeout: 15e3 });
+    const tokens = res.data?.tokens;
+    if (!tokens?.accessToken) throw new Error("No accessToken in refresh response");
+    state.relay.accessToken = tokens.accessToken;
+    state.relay.refreshToken = tokens.refreshToken || refreshToken;
+    saveAppState(state);
+    console.log("[auth] JWT refreshed successfully");
+    return tokens.accessToken;
+  } catch (e) {
+    console.error("[auth] JWT refresh failed:", e.message);
+    return "";
+  }
+}
 async function ensureGatewayProviderOrRelay() {
   try {
     const userProvider = getUserProviderConfig();
@@ -283,9 +322,9 @@ async function ensureGatewayProviderOrRelay() {
     const state = loadAppState();
     const rawRelayUrl = state.relay?.baseUrl || RELAY_BASE_URL;
     const relayUrl = rawRelayUrl.replace(/\/+$/, "") + "/v1";
-    const jwt = state.relay?.accessToken || "";
     const deviceToken = state.deviceToken || "";
     const deviceId = state.deviceId || "";
+    const jwt = await refreshJwtIfNeeded(rawRelayUrl);
     if (!relayUrl || !jwt && !deviceToken && !deviceId) return;
     const relayApiKey = jwt || deviceToken || `device:${deviceId}`;
     const RELAY_PROVIDER = "relay";
@@ -323,7 +362,9 @@ async function ensureGatewayProviderOrRelay() {
       ...ocCfg.agents.defaults.model || {},
       primary: `${RELAY_PROVIDER}/${defaultModel}`
     };
-    ocCfg.agents.defaults.workspace = path3.join(OPENCLAW_CONFIG_DIR, "workspace");
+    const workspaceDir = path3.join(OPENCLAW_CONFIG_DIR, "workspace");
+    fs2.mkdirSync(path3.join(workspaceDir, ".openclaw"), { recursive: true });
+    ocCfg.agents.defaults.workspace = workspaceDir;
     if (ocCfg.tools?.profile) {
       delete ocCfg.tools.profile;
     }
@@ -1446,6 +1487,10 @@ function registerChatHandlers(getGatewayHandle, getMainWindow2) {
       const gw = getGatewayHandle();
       const gatewayBaseUrl = gw?.baseUrl || null;
       const gatewayToken = gw?.token || "";
+      const freshJwt = await refreshJwtIfNeeded();
+      if (freshJwt && freshJwt !== relayAuthToken) {
+        await ensureGatewayProviderOrRelay();
+      }
       let content;
       if (gatewayBaseUrl) {
         const win = getMainWindow2();
@@ -2170,9 +2215,36 @@ function findClawHubCli() {
   }
   return null;
 }
+function installClawHubCli() {
+  return new Promise((resolve5, reject) => {
+    console.log("[skills] clawhub not found, auto-installing via npm...");
+    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+    (0, import_child_process3.execFile)(npmCmd, ["install", "-g", "clawhub"], {
+      timeout: 12e4,
+      encoding: "utf8",
+      shell: process.platform === "win32",
+      windowsHide: true
+    }, (err, stdout, stderr) => {
+      if (err) {
+        console.error("[skills] clawhub install failed:", stderr || err.message);
+        reject(new Error("Failed to auto-install clawhub: " + (stderr || err.message)));
+      } else {
+        console.log("[skills] clawhub installed successfully");
+        const bin = findClawHubCli();
+        if (bin) resolve5(bin);
+        else reject(new Error("clawhub installed but binary not found in PATH"));
+      }
+    });
+  });
+}
 function runClawHubCli(args) {
-  const bin = findClawHubCli();
-  if (!bin) return Promise.reject(new Error("clawhub CLI not found. Install with: npm i -g clawhub"));
+  let bin = findClawHubCli();
+  if (!bin) {
+    return installClawHubCli().then((installedBin) => runClawHubCliWithBin(installedBin, args));
+  }
+  return runClawHubCliWithBin(bin, args);
+}
+function runClawHubCliWithBin(bin, args) {
   const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(bin);
   return new Promise((resolve5, reject) => {
     (0, import_child_process3.execFile)(bin, args, {

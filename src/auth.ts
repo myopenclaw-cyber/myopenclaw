@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import axios from 'axios';
 import { AUTH_PROFILES_DIR, AUTH_PROFILES_FILE, CONFIG_FILE, OPENCLAW_CONFIG_DIR, RELAY_BASE_URL } from './constants';
-import { loadEmbeddedConfig, loadAppState, getUserProviderConfig } from './config-store';
+import { loadEmbeddedConfig, loadAppState, saveAppState, getUserProviderConfig } from './config-store';
 
 export function syncAuthProfileForProvider(providerId: string, apiKey: string, api: string = ''): void {
   try {
@@ -46,6 +46,61 @@ export function ensureAuthProfilesFromEmbeddedConfig(): void {
 }
 
 /**
+ * Decode JWT payload without verification (just base64).
+ * Returns null if the token is not a valid JWT shape.
+ */
+function decodeJwtPayload(token: string): { exp?: number; sub?: string } | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    return JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * If the current accessToken is expired or expiring within 5 minutes,
+ * use the refreshToken to obtain a new pair and persist them.
+ * Returns the (possibly refreshed) accessToken.
+ */
+export async function refreshJwtIfNeeded(relayBaseUrl?: string): Promise<string> {
+  const state = loadAppState();
+  const base = relayBaseUrl || state.relay?.baseUrl || RELAY_BASE_URL;
+  const jwt = state.relay?.accessToken || '';
+  if (!jwt) return '';
+
+  const payload = decodeJwtPayload(jwt);
+  if (!payload?.exp) return jwt;
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const FIVE_MIN = 5 * 60;
+  if (payload.exp > nowSec + FIVE_MIN) return jwt; // still valid
+
+  const refreshToken = state.relay?.refreshToken || '';
+  if (!refreshToken) {
+    console.log('[auth] JWT expired and no refreshToken available');
+    return '';
+  }
+
+  try {
+    const url = base.replace(/\/+$/, '') + '/v1/auth/refresh';
+    const res = await axios.post(url, { refreshToken }, { timeout: 15000 });
+    const tokens = res.data?.tokens;
+    if (!tokens?.accessToken) throw new Error('No accessToken in refresh response');
+
+    state.relay.accessToken = tokens.accessToken;
+    state.relay.refreshToken = tokens.refreshToken || refreshToken;
+    saveAppState(state);
+    console.log('[auth] JWT refreshed successfully');
+    return tokens.accessToken;
+  } catch (e: any) {
+    console.error('[auth] JWT refresh failed:', e.message);
+    return '';
+  }
+}
+
+/**
  * Ensure the gateway has at least one AI provider configured.
  * If no direct API key is set, configure the relay as a fallback provider
  * using `device:<deviceId>` as the auth token.
@@ -60,9 +115,12 @@ export async function ensureGatewayProviderOrRelay(): Promise<void> {
     const state = loadAppState();
     const rawRelayUrl = state.relay?.baseUrl || RELAY_BASE_URL;
     const relayUrl = rawRelayUrl.replace(/\/+$/, '') + '/v1';
-    const jwt = state.relay?.accessToken || '';
     const deviceToken = state.deviceToken || '';
     const deviceId = state.deviceId || '';
+
+    // Auto-refresh JWT if expired
+    const jwt = await refreshJwtIfNeeded(rawRelayUrl);
+
     if (!relayUrl || (!jwt && !deviceToken && !deviceId)) return;
 
     // Prefer user JWT (logged in) > signed device token > unsigned device ID
@@ -121,7 +179,9 @@ export async function ensureGatewayProviderOrRelay(): Promise<void> {
       ...(ocCfg.agents.defaults.model || {}),
       primary: `${RELAY_PROVIDER}/${defaultModel}`,
     };
-    ocCfg.agents.defaults.workspace = path.join(OPENCLAW_CONFIG_DIR, 'workspace');
+    const workspaceDir = path.join(OPENCLAW_CONFIG_DIR, 'workspace');
+    fs.mkdirSync(path.join(workspaceDir, '.openclaw'), { recursive: true });
+    ocCfg.agents.defaults.workspace = workspaceDir;
 
     // Remove tools.profile to prevent upstream providers rejecting the tools parameter
     if (ocCfg.tools?.profile) {

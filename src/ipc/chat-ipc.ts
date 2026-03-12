@@ -10,6 +10,7 @@ import {
 import { sendViaRelay } from '../messaging';
 import { RELAY_BASE_URL } from '../constants';
 import { wsManager } from '../ws-manager';
+import { refreshJwtIfNeeded, ensureGatewayProviderOrRelay } from '../auth';
 import type { GatewayHandle } from '../types';
 
 export function registerChatHandlers(
@@ -97,6 +98,12 @@ export function registerChatHandlers(
       const gw = getGatewayHandle();
       const gatewayBaseUrl = gw?.baseUrl || null;
       const gatewayToken = gw?.token || '';
+
+      // Auto-refresh JWT and update gateway auth profile if token was refreshed
+      const freshJwt = await refreshJwtIfNeeded();
+      if (freshJwt && freshJwt !== relayAuthToken) {
+        await ensureGatewayProviderOrRelay();
+      }
 
       let content: string;
 

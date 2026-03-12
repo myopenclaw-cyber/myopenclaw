@@ -54,9 +54,38 @@ function findClawHubCli(): string | null {
   return null;
 }
 
+function installClawHubCli(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    console.log('[skills] clawhub not found, auto-installing via npm...');
+    const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+    execFile(npmCmd, ['install', '-g', 'clawhub'], {
+      timeout: 120000,
+      encoding: 'utf8',
+      shell: process.platform === 'win32',
+      windowsHide: true,
+    }, (err, stdout, stderr) => {
+      if (err) {
+        console.error('[skills] clawhub install failed:', stderr || err.message);
+        reject(new Error('Failed to auto-install clawhub: ' + (stderr || err.message)));
+      } else {
+        console.log('[skills] clawhub installed successfully');
+        const bin = findClawHubCli();
+        if (bin) resolve(bin);
+        else reject(new Error('clawhub installed but binary not found in PATH'));
+      }
+    });
+  });
+}
+
 function runClawHubCli(args: string[]): Promise<string> {
-  const bin = findClawHubCli();
-  if (!bin) return Promise.reject(new Error('clawhub CLI not found. Install with: npm i -g clawhub'));
+  let bin = findClawHubCli();
+  if (!bin) {
+    return installClawHubCli().then(installedBin => runClawHubCliWithBin(installedBin, args));
+  }
+  return runClawHubCliWithBin(bin, args);
+}
+
+function runClawHubCliWithBin(bin: string, args: string[]): Promise<string> {
 
   const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(bin);
   return new Promise((resolve, reject) => {
