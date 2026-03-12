@@ -1969,7 +1969,7 @@ function mpRender() {
   var gridEl = document.getElementById('mpGrid');
   gridEl.innerHTML = '';
   // Get set of locally installed skill keys for comparison
-  var localKeys = new Set(skillsData.map(function(s) { return s.skillKey; }));
+  var localKeys = new Set(skillsData.filter(function(s) { return s.enabled; }).map(function(s) { return s.skillKey; }));
 
   mpItems.forEach(function(item) {
     var card = document.createElement('div');

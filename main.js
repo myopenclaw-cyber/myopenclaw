@@ -2376,6 +2376,15 @@ function registerSkillsHandlers(getGatewayHandle) {
           throw clawErr;
         }
       }
+      try {
+        const ocCfg = fs10.existsSync(CONFIG_FILE) ? JSON.parse(fs10.readFileSync(CONFIG_FILE, "utf8").replace(/^\uFEFF/, "")) : {};
+        if (ocCfg.skills?.entries?.[slug]) {
+          delete ocCfg.skills.entries[slug];
+          fs10.writeFileSync(CONFIG_FILE, JSON.stringify(ocCfg, null, 2), "utf8");
+          console.log(`[marketplace] Removed ${slug} from skills.entries`);
+        }
+      } catch {
+      }
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };

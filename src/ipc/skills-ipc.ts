@@ -363,6 +363,18 @@ export function registerSkillsHandlers(
         }
       }
 
+      // Remove entry from openclaw.json skills.entries so it no longer appears as installed
+      try {
+        const ocCfg: any = fs.existsSync(CONFIG_FILE)
+          ? JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8').replace(/^\uFEFF/, ''))
+          : {};
+        if (ocCfg.skills?.entries?.[slug]) {
+          delete ocCfg.skills.entries[slug];
+          fs.writeFileSync(CONFIG_FILE, JSON.stringify(ocCfg, null, 2), 'utf8');
+          console.log(`[marketplace] Removed ${slug} from skills.entries`);
+        }
+      } catch { /* best effort */ }
+
       return { success: true };
     } catch (e: any) {
       return { success: false, error: e.message };
