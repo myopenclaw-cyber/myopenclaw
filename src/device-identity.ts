@@ -130,8 +130,6 @@ export function buildConnectParams(
   const privateKey = crypto.createPrivateKey(kp.privateKey);
   const signature = crypto.sign(null, Buffer.from(payload, 'utf8'), privateKey);
 
-  const deviceToken = loadDeviceAuthToken();
-
   return {
     minProtocol: 3,
     maxProtocol: 3,
@@ -153,7 +151,6 @@ export function buildConnectParams(
     },
     auth: {
       token: gatewayToken,
-      ...(deviceToken ? { deviceToken } : {}),
     },
   };
 }

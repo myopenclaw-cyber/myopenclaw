@@ -241,14 +241,14 @@ export function registerSkillsHandlers(
 
   ipcMain.handle('marketplace-install', async (_event, payload) => {
     try {
+      const gw = getGatewayHandle();
+      if (!gw?.baseUrl) return { success: false, error: 'Gateway not running' };
+
       const { slug } = payload || {};
       if (!slug || !/^[a-zA-Z0-9_-]+$/.test(slug)) return { success: false, error: 'Invalid slug' };
-      return new Promise((resolve) => {
-        execFile('clawhub', ['install', slug, '--no-input'], { timeout: 120000 }, (err, stdout, stderr) => {
-          if (err) resolve({ success: false, error: stderr || err.message });
-          else resolve({ success: true, output: stdout });
-        });
-      });
+
+      await gatewayRpc(gw, 'skills.install', { name: slug, installId: slug, timeoutMs: 120000 });
+      return { success: true };
     } catch (e: any) {
       return { success: false, error: e.message };
     }
@@ -256,14 +256,14 @@ export function registerSkillsHandlers(
 
   ipcMain.handle('marketplace-uninstall', async (_event, payload) => {
     try {
+      const gw = getGatewayHandle();
+      if (!gw?.baseUrl) return { success: false, error: 'Gateway not running' };
+
       const { slug } = payload || {};
       if (!slug || !/^[a-zA-Z0-9_-]+$/.test(slug)) return { success: false, error: 'Invalid slug' };
-      return new Promise((resolve) => {
-        execFile('clawhub', ['uninstall', slug, '--yes'], { timeout: 30000 }, (err, stdout, stderr) => {
-          if (err) resolve({ success: false, error: stderr || err.message });
-          else resolve({ success: true, output: stdout });
-        });
-      });
+
+      await gatewayRpc(gw, 'skills.uninstall', { name: slug });
+      return { success: true };
     } catch (e: any) {
       return { success: false, error: e.message };
     }

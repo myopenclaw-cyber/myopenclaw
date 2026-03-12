@@ -1,5 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
+import * as crypto from 'crypto';
 import { spawn, execSync, execFileSync } from 'child_process';
 import axios from 'axios';
 import {
@@ -18,15 +20,32 @@ import { findOpenClawCli, findRuntimeDir, findNodeBinary, buildNodeEnhancedPath 
 import type { GatewayHandle, LoadingStatusCallback } from './types';
 
 export async function startGateway(updateLoadingStatus: LoadingStatusCallback): Promise<GatewayHandle> {
-  // Kill only our own leftover gateway (identified by OPENCLAW_SERVICE_MARKER=myopenclaw)
-  // Never touch system-installed openclaw gateways
+  // Kill our own leftover gateway — match by .myopenclaw path in command line
   try {
     if (process.platform === 'win32') {
-      execSync('wmic process where "CommandLine like \'%OPENCLAW_SERVICE_MARKER=myopenclaw%\' and name like \'%node%\'" call terminate', { timeout: 5000, stdio: 'pipe' });
+      // Use PowerShell via execFileSync to avoid cmd.exe eating % wildcards
+      const killed = execFileSync('powershell.exe', [
+        '-NoProfile', '-Command',
+        "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*myopenclaw*' -and $_.CommandLine -like '*gateway*' } | ForEach-Object { Write-Host \"Killing PID $($_.ProcessId): $($_.CommandLine.Substring(0, [Math]::Min(80, $_.CommandLine.Length)))\"; Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
+      ], { encoding: 'utf8', timeout: 15000, stdio: 'pipe', windowsHide: true });
+      if (killed.trim()) console.log('[startGateway] Killed leftover processes:', killed.trim());
     } else {
-      execSync("ps -eo pid,command | grep 'OPENCLAW_SERVICE_MARKER=myopenclaw' | grep -v grep | awk '{print $1}' | xargs kill -9 2>/dev/null", { timeout: 5000, stdio: 'pipe' });
+      execSync("ps -eo pid,command | grep 'myopenclaw' | grep 'gateway' | grep -v grep | awk '{print $1}' | xargs kill -9 2>/dev/null", { timeout: 5000, stdio: 'pipe' });
     }
-  } catch { /* no leftover process — fine */ }
+  } catch (e: any) {
+    console.log('[startGateway] Process cleanup:', e.message?.slice(0, 100));
+  }
+  // Give Windows time to release file handles after process termination
+  if (process.platform === 'win32') {
+    const start = Date.now();
+    while (Date.now() - start < 3000) {
+      try { const lf = resolveGatewayLockFile(); if (!fs.existsSync(lf) || fs.readFileSync(lf, 'utf8')) break; } catch { /* still locked */ }
+      execSync('timeout /t 1 /nobreak >nul 2>&1', { timeout: 3000, stdio: 'pipe' });
+    }
+  }
+
+  // Stop any existing gateway holding a lock (e.g. leftover from crash or previous session)
+  stopExistingGateway();
 
   const gatewayPort = await findAvailablePort(DEFAULT_PORT);
   const gatewayBaseUrl = `http://127.0.0.1:${gatewayPort}`;
@@ -66,6 +85,31 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
   tryDoctorFix();
 
   updateLoadingStatus('Launching openclaw gateway...', 90);
+
+  // Kill any process holding our lock and remove the lock file right before spawn
+  forceCleanGatewayLock();
+
+  // Diagnostic: dump lock directory state before gateway spawn
+  try {
+    const lockFile = resolveGatewayLockFile();
+    const lockDir = path.dirname(lockFile);
+    console.log(`[lock-diag] Expected lock file: ${lockFile}`);
+    console.log(`[lock-diag] CONFIG_FILE resolved: ${path.resolve(CONFIG_FILE)}`);
+    console.log(`[lock-diag] Lock dir exists: ${fs.existsSync(lockDir)}`);
+    if (fs.existsSync(lockDir)) {
+      const files = fs.readdirSync(lockDir);
+      console.log(`[lock-diag] Lock dir contents (${files.length}): ${files.join(', ')}`);
+      for (const f of files) {
+        try {
+          const content = fs.readFileSync(path.join(lockDir, f), 'utf8');
+          console.log(`[lock-diag] ${f}: ${content.slice(0, 200)}`);
+        } catch { /* locked file */ }
+      }
+    }
+    console.log(`[lock-diag] Lock file exists: ${fs.existsSync(lockFile)}`);
+  } catch (e: any) {
+    console.log(`[lock-diag] Error: ${e.message}`);
+  }
 
   const gatewayEnv = {
     ...process.env,
@@ -120,7 +164,7 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
     throw new Error(`Gateway process exited immediately with code ${gatewayExitCode}. Check logs above for details.`);
   }
 
-  await waitForGateway(gatewayBaseUrl);
+  await waitForGateway(gatewayBaseUrl, 90, () => gatewayExited);
 
   updateLoadingStatus('Startup complete. Opening workspace...', 100);
   console.log(`[startGateway] Gateway started successfully on ${gatewayBaseUrl}`);
@@ -133,9 +177,17 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
   };
 }
 
-export async function waitForGateway(gatewayBaseUrl: string, maxRetries: number = 30): Promise<boolean> {
+export async function waitForGateway(
+  gatewayBaseUrl: string,
+  maxRetries: number = 90,
+  hasProcessExited?: () => boolean,
+): Promise<boolean> {
   console.log(`[waitForGateway] Checking ${gatewayBaseUrl}/health...`);
   for (let i = 0; i < maxRetries; i++) {
+    if (hasProcessExited?.()) {
+      console.error('[waitForGateway] Gateway process exited, aborting health checks');
+      throw new Error('Gateway process exited unexpectedly. Check logs above for details.');
+    }
     try {
       console.log(`[waitForGateway] Attempt ${i + 1}/${maxRetries}...`);
       const response = await axios.get(`${gatewayBaseUrl}/health`, { timeout: 2000 });
@@ -147,7 +199,73 @@ export async function waitForGateway(gatewayBaseUrl: string, maxRetries: number 
     }
   }
   console.error('[waitForGateway] Max retries reached, gateway failed to start');
-  throw new Error('Gateway failed to start after 30 attempts. Please check your configuration and try again.');
+  throw new Error('Gateway failed to start after max retries. Please check your configuration and try again.');
+}
+
+function stopExistingGateway(): void {
+  try {
+    const cli = findOpenClawCli();
+    if (!cli) return;
+    const env = {
+      ...process.env,
+      PATH: buildNodeEnhancedPath(),
+      OPENCLAW_STATE_DIR: OPENCLAW_CONFIG_DIR,
+      OPENCLAW_CONFIG_PATH: CONFIG_FILE,
+    };
+    const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(cli);
+    execFileSync(cli, ['gateway', 'stop'], {
+      encoding: 'utf8', timeout: 10000, stdio: 'pipe', env, shell: useShell,
+      ...(process.platform === 'win32' ? { windowsHide: true } : {}),
+    });
+    console.log('[startGateway] Stopped existing gateway via CLI');
+  } catch {
+    // No gateway running or stop failed — fine
+  }
+}
+
+/** Resolve the gateway lock file path scoped to our CONFIG_FILE. */
+function resolveGatewayLockFile(): string {
+  const hash = crypto.createHash('sha256').update(path.resolve(CONFIG_FILE)).digest('hex').slice(0, 8);
+  const uid = process.getuid?.();
+  const lockDir = path.join(os.tmpdir(), uid != null ? `openclaw-${uid}` : 'openclaw');
+  return path.join(lockDir, `gateway.${hash}.lock`);
+}
+
+/**
+ * Kill the process holding our gateway lock, then remove the lock file.
+ * The lock file is JSON: { pid, createdAt, configPath }
+ */
+function forceCleanGatewayLock(): void {
+  try {
+    const lockFile = resolveGatewayLockFile();
+    if (!fs.existsSync(lockFile)) return;
+
+    // Read lock to get PID
+    try {
+      const lock = JSON.parse(fs.readFileSync(lockFile, 'utf8'));
+      const pid = lock?.pid;
+      if (pid && typeof pid === 'number') {
+        console.log(`[startGateway] Lock held by PID ${pid}, force-killing...`);
+        try {
+          if (process.platform === 'win32') {
+            execSync(`taskkill /F /PID ${pid}`, { timeout: 5000, stdio: 'pipe' });
+          } else {
+            process.kill(pid, 'SIGKILL');
+          }
+          console.log(`[startGateway] Killed PID ${pid}`);
+        } catch {
+          console.log(`[startGateway] PID ${pid} already dead or inaccessible`);
+        }
+      }
+    } catch {
+      // Lock file unreadable — just delete it
+    }
+
+    fs.unlinkSync(lockFile);
+    console.log(`[startGateway] Removed lock file: ${lockFile}`);
+  } catch (e: any) {
+    console.log('[startGateway] Lock cleanup failed:', e.message);
+  }
 }
 
 function tryDoctorFix(): void {

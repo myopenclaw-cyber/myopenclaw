@@ -40,10 +40,12 @@ export function handleDeepLink(
         const mainWindow = getMainWindow();
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.executeJavaScript(`
-            if (typeof loadRelayConfig === 'function') loadRelayConfig();
-            if (typeof loadDeviceInfo === 'function') loadDeviceInfo();
-            if (typeof refreshQuota === 'function') refreshQuota();
-            if (typeof refreshState === 'function') refreshState();
+            (async () => {
+              if (typeof refreshState === 'function') await refreshState();
+              if (typeof loadRelayConfig === 'function') loadRelayConfig();
+              if (typeof loadDeviceInfo === 'function') loadDeviceInfo();
+              if (typeof refreshQuota === 'function') refreshQuota();
+            })();
           `).catch(() => {});
           mainWindow.show();
           mainWindow.focus();
