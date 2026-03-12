@@ -39,6 +39,19 @@ function findClawHubCli(): string | null {
     candidates.push(path.join(DOWNLOADED_RUNTIME_DIR, 'openclaw-deps', '.bin', bin));
   }
 
+  if (process.platform === 'win32') {
+    // Windows npm global bin directories
+    const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+    for (const bin of binNames) {
+      candidates.push(path.join(appData, 'npm', bin));
+    }
+    // Also check Program Files node paths
+    const pf = process.env.ProgramFiles || 'C:\\Program Files';
+    for (const bin of binNames) {
+      candidates.push(path.join(pf, 'nodejs', bin));
+    }
+  }
+
   candidates.push(
     '/usr/local/bin/clawhub',
     '/opt/homebrew/bin/clawhub',
@@ -86,8 +99,8 @@ function runClawHubCli(args: string[]): Promise<string> {
 }
 
 function runClawHubCliWithBin(bin: string, args: string[]): Promise<string> {
-
-  const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(bin);
+  // On Windows always use shell — `where` may return paths without .cmd extension
+  const useShell = process.platform === 'win32';
   return new Promise((resolve, reject) => {
     execFile(bin, args, {
       timeout: 120000,

@@ -2218,6 +2218,16 @@ function findClawHubCli() {
   for (const bin of binNames) {
     candidates.push(path10.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", ".bin", bin));
   }
+  if (process.platform === "win32") {
+    const appData = process.env.APPDATA || path10.join(home, "AppData", "Roaming");
+    for (const bin of binNames) {
+      candidates.push(path10.join(appData, "npm", bin));
+    }
+    const pf = process.env.ProgramFiles || "C:\\Program Files";
+    for (const bin of binNames) {
+      candidates.push(path10.join(pf, "nodejs", bin));
+    }
+  }
   candidates.push(
     "/usr/local/bin/clawhub",
     "/opt/homebrew/bin/clawhub"
@@ -2261,7 +2271,7 @@ function runClawHubCli(args) {
   return runClawHubCliWithBin(bin, args);
 }
 function runClawHubCliWithBin(bin, args) {
-  const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(bin);
+  const useShell = process.platform === "win32";
   return new Promise((resolve5, reject) => {
     (0, import_child_process3.execFile)(bin, args, {
       timeout: 12e4,
