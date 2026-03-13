@@ -1719,6 +1719,8 @@ async function loadRelayConfig() {
     const effectiveToken = r.relay.accessToken || r.relay.authToken;
     if (effectiveToken) {
       setRelayStatus(true, 'Connected');
+    } else if (appState && appState.deviceId) {
+      setRelayStatus(true, 'Connected (Guest)');
     } else {
       setRelayStatus(false, 'Not connected');
     }
@@ -1751,7 +1753,7 @@ async function testRelay() {
   setRelayStatus(false, 'Testing...');
   const r = await window.electronAPI.testRelayConnection();
   if (r && r.success) {
-    setRelayStatus(true, 'Connected');
+    setRelayStatus(true, r.guest ? 'Connected (Guest)' : 'Connected');
   } else {
     setRelayStatus(false, 'Connection failed');
     showToast('Relay connection failed: ' + (r && r.error || 'unknown error'));
@@ -2618,17 +2620,21 @@ function initKeyboard() {
   try {
     initKeyboard();
     renderChannelFields();
-    await refreshGatewayStatus();
-    await refreshState();
-    await refreshAgents();
-    await loadRelayConfig();
-    await loadDeviceInfo();
-    await refreshQuota();
+    // Run all independent IPC init calls in parallel for faster startup
+    await Promise.all([
+      refreshGatewayStatus(),
+      refreshState(),
+      refreshAgents(),
+      loadRelayConfig(),
+      loadDeviceInfo(),
+      refreshQuota(),
+      window.electronAPI.getAppVersion().then(ver => {
+        if (ver) document.getElementById('appVersionLabel').textContent = 'MyOpenClaw Desktop \u2014 v' + ver;
+      }),
+    ]);
     renderConversation();
     startPairingPolling();
     setInterval(() => refreshQuota(), 5 * 60 * 1000);
-    const ver = await window.electronAPI.getAppVersion();
-    if (ver) document.getElementById('appVersionLabel').textContent = 'MyOpenClaw Desktop \u2014 v' + ver;
   } catch (err) {
     console.error('[init] startup error:', err);
   }

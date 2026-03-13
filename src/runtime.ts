@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import axios from 'axios';
-import { spawn, execFileSync } from 'child_process';
+import { spawn, execFile, execFileSync } from 'child_process';
 import {
   OPENCLAW_CONFIG_DIR,
   CONFIG_FILE,
@@ -11,6 +11,27 @@ import {
   MIN_NODE_MAJOR_VERSION,
 } from './constants';
 import type { LoadingStatusCallback } from './types';
+
+// ---------------------------------------------------------------------------
+// Async execFile wrapper — avoids blocking the Electron main thread
+// ---------------------------------------------------------------------------
+function execFileAsync(cmd: string, args: string[], opts: any = {}): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, { encoding: 'utf8', ...opts }, (err, stdout) => {
+      if (err) return reject(err);
+      resolve(String(stdout || ''));
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// CLI cache — avoid spawning `openclaw --version` multiple times per startup
+// ---------------------------------------------------------------------------
+let _cachedCli: string | null | undefined; // undefined = not yet resolved
+
+export function clearCliCache(): void {
+  _cachedCli = undefined;
+}
 
 export function getRuntimeTargetLabel(): string {
   if (process.platform === 'win32') return 'windows';
@@ -104,18 +125,18 @@ export async function ensureEmbeddedRuntime(updateLoadingStatus: LoadingStatusCa
   updateLoadingStatus('Extracting openclaw runtime...', 84);
   fs.mkdirSync(DOWNLOADED_RUNTIME_DIR, { recursive: true });
   if (process.platform === 'win32') {
-    execFileSync('tar', ['-xf', zipPath, '-C', DOWNLOADED_RUNTIME_DIR], { stdio: 'pipe', windowsHide: true });
+    await execFileAsync('tar', ['-xf', zipPath, '-C', DOWNLOADED_RUNTIME_DIR], { stdio: 'pipe', windowsHide: true });
   } else {
-    execFileSync('unzip', ['-o', zipPath, '-d', DOWNLOADED_RUNTIME_DIR], { stdio: 'inherit' });
+    await execFileAsync('unzip', ['-o', zipPath, '-d', DOWNLOADED_RUNTIME_DIR], { stdio: 'pipe' });
     // Fix permissions on extracted binaries (unzip may strip execute bits)
     // Also remove macOS quarantine attributes that block execution
     const binDir = path.join(DOWNLOADED_RUNTIME_DIR, 'openclaw-deps', '.bin');
     const nodeDir = path.join(DOWNLOADED_RUNTIME_DIR, 'node');
     for (const dir of [binDir, nodeDir]) {
       if (fs.existsSync(dir)) {
-        execFileSync('chmod', ['-R', '+x', dir], { stdio: 'inherit' });
-        try { execFileSync('xattr', ['-rd', 'com.apple.quarantine', dir], { stdio: 'pipe' }); } catch { /* ok */ }
-        try { execFileSync('xattr', ['-rd', 'com.apple.provenance', dir], { stdio: 'pipe' }); } catch { /* ok */ }
+        await execFileAsync('chmod', ['-R', '+x', dir], { stdio: 'pipe' });
+        try { await execFileAsync('xattr', ['-rd', 'com.apple.quarantine', dir], { stdio: 'pipe' }); } catch { /* ok */ }
+        try { await execFileAsync('xattr', ['-rd', 'com.apple.provenance', dir], { stdio: 'pipe' }); } catch { /* ok */ }
         console.log(`[runtime] Fixed permissions: ${dir}`);
       }
     }
@@ -183,6 +204,8 @@ export function verifyOpenClawCli(binPath: string): boolean {
 }
 
 export function findOpenClawCli(): string | null {
+  if (_cachedCli !== undefined) return _cachedCli;
+
   // --- Priority 1: MyOpenClaw's own embedded/downloaded runtime ---
   // This ensures full isolation from any global OpenClaw installation.
   const binNames = process.platform === 'win32'
@@ -207,6 +230,7 @@ export function findOpenClawCli(): string | null {
     console.log(`[cli] Found own runtime: ${p}, verifying...`);
     if (verifyOpenClawCli(p)) {
       console.log(`[cli] Verified own openclaw CLI: ${p}`);
+      _cachedCli = p;
       return p;
     }
   }
@@ -246,10 +270,12 @@ export function findOpenClawCli(): string | null {
     console.log(`[cli] Found system candidate: ${p}, verifying...`);
     if (verifyOpenClawCli(p)) {
       console.log(`[cli] Using system openclaw CLI: ${p}`);
+      _cachedCli = p;
       return p;
     }
   }
 
+  _cachedCli = null;
   return null;
 }
 

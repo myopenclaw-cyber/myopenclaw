@@ -3,8 +3,12 @@ import { readGatewayTokenFromConfig } from './config-store';
 import type { ConversationMessage } from './types';
 
 export async function checkRelayHealth(baseUrl: string, token: string): Promise<any> {
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
   const response = await axios.get(`${baseUrl}/health`, {
-    headers: { 'Authorization': `Bearer ${token}` },
+    headers,
     timeout: 20000,
   });
   return response.data;
