@@ -1701,6 +1701,8 @@ async function loadRelayConfig() {
     const effectiveToken = r.relay.accessToken || r.relay.authToken;
     if (effectiveToken) {
       setRelayStatus(true, 'Connected');
+    } else if (appState && appState.deviceId) {
+      setRelayStatus(true, 'Connected (Guest)');
     } else {
       setRelayStatus(false, 'Not connected');
     }
@@ -1733,7 +1735,7 @@ async function testRelay() {
   setRelayStatus(false, 'Testing...');
   const r = await window.electronAPI.testRelayConnection();
   if (r && r.success) {
-    setRelayStatus(true, 'Connected');
+    setRelayStatus(true, r.guest ? 'Connected (Guest)' : 'Connected');
   } else {
     setRelayStatus(false, 'Connection failed');
     showToast('Relay connection failed: ' + (r && r.error || 'unknown error'));

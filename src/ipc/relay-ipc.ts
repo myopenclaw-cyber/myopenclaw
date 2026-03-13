@@ -3,7 +3,7 @@ import axios from 'axios';
 import { RELAY_BASE_URL } from '../constants';
 import { loadAppState, saveAppState, getDefaultAppState } from '../config-store';
 import { checkRelayHealth } from '../messaging';
-import { ensureGatewayProviderOrRelay } from '../auth';
+import { ensureGatewayProviderOrRelay, refreshJwtIfNeeded } from '../auth';
 
 export function registerRelayHandlers(): void {
   ipcMain.handle('save-relay-config', async (_event, config: { baseUrl?: string; authToken?: string }) => {
@@ -31,12 +31,24 @@ export function registerRelayHandlers(): void {
   ipcMain.handle('test-relay-connection', async () => {
     try {
       const state = loadAppState();
-      const relay = state.relay;
-      const authToken = relay.accessToken || relay.authToken;
-      const baseUrl = relay.baseUrl || RELAY_BASE_URL;
+      const baseUrl = state.relay?.baseUrl || RELAY_BASE_URL;
+
+      // Auto-refresh JWT if expired
+      const freshJwt = await refreshJwtIfNeeded(baseUrl);
+
+      const authToken = freshJwt || state.relay?.accessToken || state.relay?.authToken;
+      const deviceId = state.deviceId || '';
+
+      // Guest users: test via /health (public endpoint) + /v1/usage (validates deviceId)
+      if (!authToken && deviceId) {
+        await checkRelayHealth(baseUrl, '');
+        return { success: true, guest: true };
+      }
+
       if (!authToken) {
         return { success: false, error: 'Auth token is required. Please log in first.' };
       }
+
       await checkRelayHealth(baseUrl, authToken);
       return { success: true };
     } catch (e: any) {
