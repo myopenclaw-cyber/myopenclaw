@@ -29,8 +29,12 @@ function execFileAsync(cmd: string, args: string[], opts: any = {}): Promise<str
 // ---------------------------------------------------------------------------
 let _cachedCli: string | null | undefined; // undefined = not yet resolved
 
+// Mtime-based verification cache — avoids spawning `openclaw --version` if binary is unchanged
+let _verifiedBins = new Map<string, number>(); // path → mtimeMs
+
 export function clearCliCache(): void {
   _cachedCli = undefined;
+  _verifiedBins.clear();
 }
 
 export function getRuntimeTargetLabel(): string {
@@ -182,6 +186,13 @@ export function buildNodeEnhancedPath(): string {
 
 export function verifyOpenClawCli(binPath: string): boolean {
   try {
+    // Fast path: if binary mtime hasn't changed since last successful verify, skip spawn
+    const stat = fs.statSync(binPath);
+    const prevMtime = _verifiedBins.get(binPath);
+    if (prevMtime !== undefined && stat.mtimeMs === prevMtime) {
+      return true;
+    }
+
     const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(binPath);
     execFileSync(binPath, ['--version'], {
       encoding: 'utf8',
@@ -196,6 +207,7 @@ export function verifyOpenClawCli(binPath: string): boolean {
       shell: useShell,
       windowsHide: true,
     });
+    _verifiedBins.set(binPath, stat.mtimeMs);
     return true;
   } catch (e: any) {
     console.log(`[cli] Verification failed for ${binPath}:`, e.message);

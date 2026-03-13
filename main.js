@@ -26,7 +26,6 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var path13 = __toESM(require("path"));
 var os5 = __toESM(require("os"));
 var import_electron14 = require("electron");
-var import_child_process4 = require("child_process");
 
 // src/constants.ts
 var path = __toESM(require("path"));
@@ -478,8 +477,10 @@ function execFileAsync(cmd, args, opts = {}) {
   });
 }
 var _cachedCli;
+var _verifiedBins = /* @__PURE__ */ new Map();
 function clearCliCache() {
   _cachedCli = void 0;
+  _verifiedBins.clear();
 }
 function getRuntimeTargetLabel() {
   if (process.platform === "win32") return "windows";
@@ -625,6 +626,11 @@ function buildNodeEnhancedPath() {
 }
 function verifyOpenClawCli(binPath) {
   try {
+    const stat = fs3.statSync(binPath);
+    const prevMtime = _verifiedBins.get(binPath);
+    if (prevMtime !== void 0 && stat.mtimeMs === prevMtime) {
+      return true;
+    }
     const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(binPath);
     (0, import_child_process.execFileSync)(binPath, ["--version"], {
       encoding: "utf8",
@@ -639,6 +645,7 @@ function verifyOpenClawCli(binPath) {
       shell: useShell,
       windowsHide: true
     });
+    _verifiedBins.set(binPath, stat.mtimeMs);
     return true;
   } catch (e) {
     console.log(`[cli] Verification failed for ${binPath}:`, e.message);
@@ -827,6 +834,56 @@ function isPortAvailable(port) {
   });
 }
 
+// src/perf-monitor.ts
+var SAMPLE_INTERVAL = 1e4;
+var WARN_CPU_PCT = 80;
+var WARN_MEM_MB = 512;
+var _timer = null;
+var _prevCpu = process.cpuUsage();
+var _prevTime = Date.now();
+var _gatewayProc = null;
+function sample() {
+  const now = Date.now();
+  const elapsed = (now - _prevTime) * 1e3;
+  if (elapsed <= 0) return;
+  const cpu = process.cpuUsage(_prevCpu);
+  _prevCpu = process.cpuUsage();
+  _prevTime = now;
+  const cpuPct = (cpu.user + cpu.system) / elapsed * 100;
+  const mem = process.memoryUsage();
+  const rssMB = Math.round(mem.rss / 1024 / 1024);
+  const heapMB = Math.round(mem.heapUsed / 1024 / 1024);
+  const heapTotalMB = Math.round(mem.heapTotal / 1024 / 1024);
+  let gwInfo = "";
+  if (_gatewayProc?.pid && !_gatewayProc.killed) {
+    gwInfo = ` | gateway PID=${_gatewayProc.pid}`;
+  }
+  const line = `[perf] cpu=${cpuPct.toFixed(1)}% rss=${rssMB}MB heap=${heapMB}/${heapTotalMB}MB${gwInfo}`;
+  if (cpuPct > WARN_CPU_PCT || rssMB > WARN_MEM_MB) {
+    console.warn(line);
+    if (cpuPct > WARN_CPU_PCT) {
+      console.warn(`[perf] HIGH CPU: ${cpuPct.toFixed(1)}% (threshold: ${WARN_CPU_PCT}%)`);
+    }
+    if (rssMB > WARN_MEM_MB) {
+      console.warn(`[perf] HIGH MEMORY: ${rssMB}MB RSS (threshold: ${WARN_MEM_MB}MB)`);
+    }
+  } else {
+    console.log(line);
+  }
+}
+function startPerfMonitor(gatewayProcess) {
+  if (_timer) return;
+  if (gatewayProcess) _gatewayProc = gatewayProcess;
+  _prevCpu = process.cpuUsage();
+  _prevTime = Date.now();
+  _timer = setInterval(sample, SAMPLE_INTERVAL);
+  if (_timer.unref) _timer.unref();
+  console.log(`[perf] Monitor started (interval=${SAMPLE_INTERVAL / 1e3}s, cpu_warn=${WARN_CPU_PCT}%, mem_warn=${WARN_MEM_MB}MB)`);
+}
+function updateGatewayProcess(proc) {
+  _gatewayProc = proc;
+}
+
 // src/gateway.ts
 async function startGateway(updateLoadingStatus2) {
   try {
@@ -882,7 +939,6 @@ async function startGateway(updateLoadingStatus2) {
   } catch (e) {
     console.error("[startGateway] Failed to sync token to openclaw.json:", e.message);
   }
-  await tryDoctorFix();
   updateLoadingStatus2("Launching openclaw gateway...", 90);
   forceCleanGatewayLock();
   const gatewayEnv = {
@@ -930,6 +986,7 @@ async function startGateway(updateLoadingStatus2) {
     if (code !== 0) console.error("[Gateway] Unexpected exit!");
   });
   gatewayProcess.on("error", (err) => console.error("[Gateway] Process error:", err));
+  updateGatewayProcess(gatewayProcess);
   console.log("[startGateway] Waiting for gateway to start...");
   updateLoadingStatus2("Checking gateway health...", 94);
   await new Promise((resolve5) => setTimeout(resolve5, 500));
@@ -939,6 +996,8 @@ async function startGateway(updateLoadingStatus2) {
   await waitForGateway(gatewayBaseUrl, 60, () => gatewayExited);
   updateLoadingStatus2("Startup complete. Opening workspace...", 100);
   console.log(`[startGateway] Gateway started successfully on ${gatewayBaseUrl}`);
+  tryDoctorFix().catch(() => {
+  });
   return {
     port: gatewayPort,
     baseUrl: gatewayBaseUrl,
@@ -967,6 +1026,11 @@ async function waitForGateway(gatewayBaseUrl, maxRetries = 90, hasProcessExited)
   throw new Error("Gateway failed to start after max retries. Please check your configuration and try again.");
 }
 async function stopExistingGateway() {
+  const lockFile = resolveGatewayLockFile();
+  if (!fs4.existsSync(lockFile)) {
+    console.log("[startGateway] No gateway lock file, skipping stop");
+    return;
+  }
   const cli = findOpenClawCli();
   if (!cli) return;
   try {
@@ -1107,8 +1171,12 @@ var import_fs = require("fs");
 // src/messaging.ts
 var import_axios7 = __toESM(require("axios"));
 async function checkRelayHealth(baseUrl, token) {
+  const headers = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
   const response = await import_axios7.default.get(`${baseUrl}/health`, {
-    headers: { "Authorization": `Bearer ${token}` },
+    headers,
     timeout: 2e4
   });
   return response.data;
@@ -2027,9 +2095,14 @@ function registerRelayHandlers() {
   import_electron7.ipcMain.handle("test-relay-connection", async () => {
     try {
       const state = loadAppState();
-      const relay = state.relay;
-      const authToken = relay.accessToken || relay.authToken;
-      const baseUrl = relay.baseUrl || RELAY_BASE_URL;
+      const baseUrl = state.relay?.baseUrl || RELAY_BASE_URL;
+      const freshJwt = await refreshJwtIfNeeded(baseUrl);
+      const authToken = freshJwt || state.relay?.accessToken || state.relay?.authToken;
+      const deviceId = state.deviceId || "";
+      if (!authToken && deviceId) {
+        await checkRelayHealth(baseUrl, "");
+        return { success: true, guest: true };
+      }
       if (!authToken) {
         return { success: false, error: "Auth token is required. Please log in first." };
       }
@@ -3042,12 +3115,8 @@ function createWindow() {
 initFileLogger();
 var isVM = (() => {
   try {
-    if (process.platform === "darwin") {
-      const model = (0, import_child_process4.execFileSync)("sysctl", ["-n", "machdep.cpu.brand_string"], { encoding: "utf8", timeout: 2e3 }).trim();
-      return /virtual|Apple Virtual/i.test(model);
-    }
     const cpuModel = os5.cpus()?.[0]?.model || "";
-    return /virtual|QEMU|KVM|VirtualBox|VMware/i.test(cpuModel);
+    return /virtual|Apple Virtual|QEMU|KVM|VirtualBox|VMware/i.test(cpuModel);
   } catch {
     return false;
   }
@@ -3094,6 +3163,7 @@ if (!gotTheLock) {
       state.relay.baseUrl = RELAY_BASE_URL;
       saveAppState(state);
     }
+    startPerfMonitor();
     console.log("[app] creating window...");
     createWindow();
     const launchUrl = process.argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));

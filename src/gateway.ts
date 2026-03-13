@@ -17,6 +17,7 @@ import {
 import { ensureAuthProfilesFromEmbeddedConfig, ensureGatewayProviderOrRelay } from './auth';
 import { findAvailablePort, isOpenClawGatewayRunning } from './network';
 import { findOpenClawCli, findRuntimeDir, findNodeBinary, buildNodeEnhancedPath } from './runtime';
+import { updateGatewayProcess } from './perf-monitor';
 import type { GatewayHandle, LoadingStatusCallback } from './types';
 
 export async function startGateway(updateLoadingStatus: LoadingStatusCallback): Promise<GatewayHandle> {
@@ -86,9 +87,6 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
     console.error('[startGateway] Failed to sync token to openclaw.json:', e.message);
   }
 
-  // Auto-fix invalid config keys before starting gateway
-  await tryDoctorFix();
-
   updateLoadingStatus('Launching openclaw gateway...', 90);
 
   // Kill any process holding our lock and remove the lock file right before spawn
@@ -138,6 +136,7 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
     if (code !== 0) console.error('[Gateway] Unexpected exit!');
   });
   gatewayProcess.on('error', (err) => console.error('[Gateway] Process error:', err));
+  updateGatewayProcess(gatewayProcess);
 
   console.log('[startGateway] Waiting for gateway to start...');
   updateLoadingStatus('Checking gateway health...', 94);
@@ -153,6 +152,9 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
 
   updateLoadingStatus('Startup complete. Opening workspace...', 100);
   console.log(`[startGateway] Gateway started successfully on ${gatewayBaseUrl}`);
+
+  // Run doctor --fix in background after startup — not on the critical path
+  tryDoctorFix().catch(() => {});
 
   return {
     port: gatewayPort,
@@ -188,6 +190,13 @@ export async function waitForGateway(
 }
 
 async function stopExistingGateway(): Promise<void> {
+  // Skip spawning a full Node.js subprocess if no lock file exists
+  const lockFile = resolveGatewayLockFile();
+  if (!fs.existsSync(lockFile)) {
+    console.log('[startGateway] No gateway lock file, skipping stop');
+    return;
+  }
+
   const cli = findOpenClawCli();
   if (!cli) return;
   try {

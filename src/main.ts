@@ -1,13 +1,13 @@
 import * as path from 'path';
 import * as os from 'os';
 import { app, BrowserWindow } from 'electron';
-import { execFileSync } from 'child_process';
 import { PROTOCOL, RELAY_BASE_URL } from './constants';
 import { loadAppState, saveAppState } from './config-store';
 import { ensureDeviceId, registerDevice } from './device';
 import { handleDeepLink } from './deep-link';
 import { createWindow, getMainWindow, killGateway, registerAllIpcHandlers } from './window';
 import { initFileLogger } from './logger';
+import { startPerfMonitor } from './perf-monitor';
 
 // ---------------------------------------------------------------------------
 // File logger — write all console output to ~/.myopenclaw/myopenclaw.log
@@ -16,15 +16,12 @@ initFileLogger();
 
 // ---------------------------------------------------------------------------
 // VM detection — disable GPU to prevent white screen in virtual machines
+// Uses os.cpus() on all platforms to avoid spawning a subprocess at startup.
 // ---------------------------------------------------------------------------
 const isVM = (() => {
   try {
-    if (process.platform === 'darwin') {
-      const model = execFileSync('sysctl', ['-n', 'machdep.cpu.brand_string'], { encoding: 'utf8', timeout: 2000 }).trim();
-      return /virtual|Apple Virtual/i.test(model);
-    }
     const cpuModel = os.cpus()?.[0]?.model || '';
-    return /virtual|QEMU|KVM|VirtualBox|VMware/i.test(cpuModel);
+    return /virtual|Apple Virtual|QEMU|KVM|VirtualBox|VMware/i.test(cpuModel);
   } catch { return false; }
 })();
 if (isVM) {
@@ -90,6 +87,7 @@ if (!gotTheLock) {
       state.relay.baseUrl = RELAY_BASE_URL;
       saveAppState(state);
     }
+    startPerfMonitor();
     console.log('[app] creating window...');
     createWindow();
 
