@@ -39,7 +39,7 @@ var APP_STATE_FILE = path.join(MYOPENCLAW_DATA_DIR, "app-state.json");
 var AUTH_PROFILES_DIR = path.join(OPENCLAW_CONFIG_DIR, "agents", "main", "agent");
 var AUTH_PROFILES_FILE = path.join(AUTH_PROFILES_DIR, "auth-profiles.json");
 var DOWNLOADED_RUNTIME_DIR = path.join(MYOPENCLAW_DATA_DIR, "runtime");
-var RELAY_BASE_URL = "https://myopenclaw-relay-service-production.up.railway.app";
+var RELAY_BASE_URL = "https://relay.myopenclaws.app";
 var PROTOCOL = "myopenclaw";
 var MIN_NODE_MAJOR_VERSION = 22;
 
@@ -197,13 +197,54 @@ function getUserProviderConfig() {
 
 // src/device.ts
 var crypto2 = __toESM(require("crypto"));
+var import_child_process = require("child_process");
 var import_axios = __toESM(require("axios"));
+function getMachineId() {
+  try {
+    if (process.platform === "darwin") {
+      const output = (0, import_child_process.execSync)(
+        "ioreg -rd1 -c IOPlatformExpertDevice | grep IOPlatformUUID",
+        { encoding: "utf8", timeout: 5e3 }
+      );
+      const match = output.match(/"IOPlatformUUID"\s*=\s*"([^"]+)"/);
+      return match?.[1] || null;
+    }
+    if (process.platform === "win32") {
+      const output = (0, import_child_process.execSync)("wmic csproduct get uuid", {
+        encoding: "utf8",
+        timeout: 5e3
+      });
+      const lines = output.trim().split("\n");
+      const uuid = lines[1]?.trim();
+      return uuid && uuid !== "" ? uuid : null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+function deriveDeviceId(machineId) {
+  const hash = crypto2.createHash("sha256").update(`myopenclaw:${machineId}`).digest("hex");
+  return [
+    hash.slice(0, 8),
+    hash.slice(8, 12),
+    "5" + hash.slice(13, 16),
+    "8" + hash.slice(17, 20),
+    hash.slice(20, 32)
+  ].join("-");
+}
 function ensureDeviceId() {
   const state = loadAppState();
   if (!state.deviceId) {
-    state.deviceId = crypto2.randomUUID();
+    const machineId = getMachineId();
+    if (machineId) {
+      state.deviceId = deriveDeviceId(machineId);
+      console.log("[device-id] Derived device ID from machine hardware");
+    } else {
+      state.deviceId = crypto2.randomUUID();
+      console.log("[device-id] Generated random device ID (hardware ID unavailable)");
+    }
     saveAppState(state);
-    console.log("[device-id] Generated new device ID:", state.deviceId);
   } else {
     console.log("[device-id] Loaded existing device ID:", state.deviceId);
   }
@@ -467,10 +508,10 @@ var path4 = __toESM(require("path"));
 var fs3 = __toESM(require("fs"));
 var os2 = __toESM(require("os"));
 var import_axios4 = __toESM(require("axios"));
-var import_child_process = require("child_process");
+var import_child_process2 = require("child_process");
 function execFileAsync(cmd, args, opts = {}) {
   return new Promise((resolve5, reject) => {
-    (0, import_child_process.execFile)(cmd, args, { encoding: "utf8", ...opts }, (err, stdout) => {
+    (0, import_child_process2.execFile)(cmd, args, { encoding: "utf8", ...opts }, (err, stdout) => {
       if (err) return reject(err);
       resolve5(String(stdout || ""));
     });
@@ -598,7 +639,7 @@ async function ensureEmbeddedRuntime(updateLoadingStatus2) {
 function addWindowsFirewallRule(nodeExePath) {
   if (!fs3.existsSync(nodeExePath)) return;
   try {
-    (0, import_child_process.execFileSync)("netsh", [
+    (0, import_child_process2.execFileSync)("netsh", [
       "advfirewall",
       "firewall",
       "add",
@@ -632,7 +673,7 @@ function verifyOpenClawCli(binPath) {
       return true;
     }
     const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(binPath);
-    (0, import_child_process.execFileSync)(binPath, ["--version"], {
+    (0, import_child_process2.execFileSync)(binPath, ["--version"], {
       encoding: "utf8",
       timeout: 1e4,
       stdio: "pipe",
@@ -679,7 +720,7 @@ function findOpenClawCli() {
   const systemCandidates = [];
   try {
     const cmd = process.platform === "win32" ? "where" : "which";
-    const result = (0, import_child_process.execFileSync)(cmd, ["openclaw"], { encoding: "utf8", timeout: 3e3, windowsHide: true }).trim();
+    const result = (0, import_child_process2.execFileSync)(cmd, ["openclaw"], { encoding: "utf8", timeout: 3e3, windowsHide: true }).trim();
     if (result) systemCandidates.push(result.split(/\r?\n/)[0]);
   } catch {
   }
@@ -717,9 +758,9 @@ function findNodeBinary() {
   const nodeExe = process.platform === "win32" ? "node.exe" : "node";
   try {
     const cmd = process.platform === "win32" ? "where" : "which";
-    const nodePath = (0, import_child_process.execFileSync)(cmd, [nodeExe], { encoding: "utf8", timeout: 3e3, windowsHide: true }).trim().split(/\r?\n/)[0];
+    const nodePath = (0, import_child_process2.execFileSync)(cmd, [nodeExe], { encoding: "utf8", timeout: 3e3, windowsHide: true }).trim().split(/\r?\n/)[0];
     if (nodePath) {
-      const ver = (0, import_child_process.execFileSync)(nodePath, ["--version"], { encoding: "utf8", timeout: 3e3, windowsHide: true }).trim();
+      const ver = (0, import_child_process2.execFileSync)(nodePath, ["--version"], { encoding: "utf8", timeout: 3e3, windowsHide: true }).trim();
       const major = parseInt(ver.replace("v", "").split(".")[0], 10);
       if (major >= MIN_NODE_MAJOR_VERSION) {
         console.log(`[node] Using system node: ${nodePath} (${ver})`);
@@ -779,7 +820,7 @@ function runOpenClawOnboard(cmd, prependArgs = [], cwd) {
     };
     const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(cmd);
     console.log(`[onboard] Running: ${cmd} ${args.join(" ")}`);
-    const proc = (0, import_child_process.spawn)(cmd, args, { stdio: "pipe", env, shell: useShell, windowsHide: true, ...cwd ? { cwd } : {} });
+    const proc = (0, import_child_process2.spawn)(cmd, args, { stdio: "pipe", env, shell: useShell, windowsHide: true, ...cwd ? { cwd } : {} });
     let output = "";
     proc.stdout.on("data", (d) => {
       output += d;
@@ -810,7 +851,7 @@ var path5 = __toESM(require("path"));
 var fs4 = __toESM(require("fs"));
 var os3 = __toESM(require("os"));
 var crypto3 = __toESM(require("crypto"));
-var import_child_process2 = require("child_process");
+var import_child_process3 = require("child_process");
 var import_axios6 = __toESM(require("axios"));
 
 // src/network.ts
@@ -889,7 +930,7 @@ async function startGateway(updateLoadingStatus2) {
   try {
     if (process.platform === "win32") {
       await new Promise((resolve5) => {
-        (0, import_child_process2.execFile)("powershell.exe", [
+        (0, import_child_process3.execFile)("powershell.exe", [
           "-NoProfile",
           "-Command",
           `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*myopenclaw*' -and $_.CommandLine -like '*gateway*' } | ForEach-Object { Write-Host "Killing PID $($_.ProcessId): $($_.CommandLine.Substring(0, [Math]::Min(80, $_.CommandLine.Length)))"; Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`
@@ -900,7 +941,7 @@ async function startGateway(updateLoadingStatus2) {
         });
       });
     } else {
-      (0, import_child_process2.execSync)("ps -eo pid,command | grep 'myopenclaw' | grep 'gateway' | grep -v grep | awk '{print $1}' | xargs kill -9 2>/dev/null", { timeout: 5e3, stdio: "pipe" });
+      (0, import_child_process3.execSync)("ps -eo pid,command | grep 'myopenclaw' | grep 'gateway' | grep -v grep | awk '{print $1}' | xargs kill -9 2>/dev/null", { timeout: 5e3, stdio: "pipe" });
     }
   } catch (e) {
     console.log("[startGateway] Process cleanup:", e.message?.slice(0, 100));
@@ -955,7 +996,7 @@ async function startGateway(updateLoadingStatus2) {
   if (openclawBin) {
     console.log(`[startGateway] Using openclaw CLI: ${openclawBin}`);
     const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(openclawBin);
-    gatewayProcess = (0, import_child_process2.spawn)(openclawBin, ["gateway", "run", "--port", String(gatewayPort), "--allow-unconfigured"], {
+    gatewayProcess = (0, import_child_process3.spawn)(openclawBin, ["gateway", "run", "--port", String(gatewayPort), "--allow-unconfigured"], {
       stdio: "pipe",
       env: gatewayEnv,
       shell: useShell,
@@ -968,7 +1009,7 @@ async function startGateway(updateLoadingStatus2) {
     const entryFile = fs4.existsSync(entryMjs) ? entryMjs : entryJs;
     const nodeBin = findNodeBinary();
     console.log(`[startGateway] Fallback: ${nodeBin} ${entryFile} gateway run --port ${gatewayPort}`);
-    gatewayProcess = (0, import_child_process2.spawn)(nodeBin, [entryFile, "gateway", "run", "--port", String(gatewayPort), "--allow-unconfigured"], {
+    gatewayProcess = (0, import_child_process3.spawn)(nodeBin, [entryFile, "gateway", "run", "--port", String(gatewayPort), "--allow-unconfigured"], {
       stdio: "pipe",
       cwd: runtimeDir,
       env: gatewayEnv,
@@ -1042,7 +1083,7 @@ async function stopExistingGateway() {
     };
     const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(cli);
     await new Promise((resolve5) => {
-      (0, import_child_process2.execFile)(cli, ["gateway", "stop"], {
+      (0, import_child_process3.execFile)(cli, ["gateway", "stop"], {
         encoding: "utf8",
         timeout: 1e4,
         stdio: "pipe",
@@ -1074,7 +1115,7 @@ function forceCleanGatewayLock() {
         console.log(`[startGateway] Lock held by PID ${pid}, force-killing...`);
         try {
           if (process.platform === "win32") {
-            (0, import_child_process2.execSync)(`taskkill /F /PID ${pid}`, { timeout: 5e3, stdio: "pipe", windowsHide: true });
+            (0, import_child_process3.execSync)(`taskkill /F /PID ${pid}`, { timeout: 5e3, stdio: "pipe", windowsHide: true });
           } else {
             process.kill(pid, "SIGKILL");
           }
@@ -1094,7 +1135,7 @@ function forceCleanGatewayLock() {
 async function tryDoctorFix() {
   const runDoctor = (cmd, args, opts) => {
     return new Promise((resolve5) => {
-      (0, import_child_process2.execFile)(cmd, args, { encoding: "utf8", timeout: 15e3, stdio: "pipe", ...opts }, (err, stdout) => {
+      (0, import_child_process3.execFile)(cmd, args, { encoding: "utf8", timeout: 15e3, stdio: "pipe", ...opts }, (err, stdout) => {
         const output = String(stdout || "");
         if (!err && (output.includes("fix") || output.includes("removed") || output.includes("Unrecognized"))) {
           console.log("[doctor] Auto-fixed config:", output.trim());
@@ -1245,7 +1286,7 @@ function getRawPublicKey(pem) {
   const spki = keyObj.export({ type: "spki", format: "der" });
   return Buffer.from(spki).subarray(12);
 }
-function deriveDeviceId(rawPubKey) {
+function deriveDeviceId2(rawPubKey) {
   return crypto4.createHash("sha256").update(rawPubKey).digest("hex");
 }
 function saveDeviceAuthToken(token) {
@@ -1271,7 +1312,7 @@ var SCOPES = [
 function buildConnectParams(gatewayToken, challengeNonce) {
   const kp = ensureKeypair();
   const rawPub = getRawPublicKey(kp.publicKey);
-  const deviceId = deriveDeviceId(rawPub);
+  const deviceId = deriveDeviceId2(rawPub);
   const signedAt = Date.now();
   const scopesCsv = [...SCOPES].sort().join(",");
   const tokenStr = gatewayToken || "";
@@ -2303,13 +2344,13 @@ var crypto6 = __toESM(require("crypto"));
 var fs10 = __toESM(require("fs"));
 var os4 = __toESM(require("os"));
 var path10 = __toESM(require("path"));
-var import_child_process3 = require("child_process");
+var import_child_process4 = require("child_process");
 var import_electron10 = require("electron");
 function findClawHubCli() {
   const candidates = [];
   try {
     const cmd = process.platform === "win32" ? "where" : "which";
-    const result = (0, import_child_process3.execFileSync)(cmd, ["clawhub"], { encoding: "utf8", timeout: 3e3, windowsHide: true }).trim();
+    const result = (0, import_child_process4.execFileSync)(cmd, ["clawhub"], { encoding: "utf8", timeout: 3e3, windowsHide: true }).trim();
     if (result) candidates.push(result.split(/\r?\n/)[0]);
   } catch {
   }
@@ -2355,7 +2396,7 @@ function installClawHubCli() {
   return new Promise((resolve5, reject) => {
     console.log("[skills] clawhub not found, auto-installing via npm...");
     const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
-    (0, import_child_process3.execFile)(npmCmd, ["install", "-g", "clawhub"], {
+    (0, import_child_process4.execFile)(npmCmd, ["install", "-g", "clawhub"], {
       timeout: 12e4,
       encoding: "utf8",
       shell: process.platform === "win32",
@@ -2383,7 +2424,7 @@ function runClawHubCli(args) {
 function runClawHubCliWithBin(bin, args) {
   const useShell = process.platform === "win32";
   return new Promise((resolve5, reject) => {
-    (0, import_child_process3.execFile)(bin, args, {
+    (0, import_child_process4.execFile)(bin, args, {
       timeout: 12e4,
       encoding: "utf8",
       shell: useShell ? true : void 0,
@@ -2525,7 +2566,7 @@ function registerSkillsHandlers(getGatewayHandle) {
     for (const bin of safeBins) {
       try {
         await new Promise((resolve5, reject) => {
-          (0, import_child_process3.execFile)("brew", ["install", bin], { timeout: 12e4 }, (err, _stdout, stderr) => {
+          (0, import_child_process4.execFile)("brew", ["install", bin], { timeout: 12e4 }, (err, _stdout, stderr) => {
             if (err) reject(new Error(stderr || err.message));
             else resolve5();
           });
@@ -3028,20 +3069,6 @@ function createWindow() {
     const target = /^https?:\/\/127\.0\.0\.1:\d+\/?$/i.test(String(url || "")) ? buildDashboardUrl(url, gw?.baseUrl) : url;
     import_electron13.shell.openExternal(target);
     return { action: "deny" };
-  });
-  mainWindow.webContents.on("before-input-event", (_e, input) => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (input.type !== "keyDown") return;
-    const meta = input.meta;
-    if (meta && input.key === "r") {
-      mainWindow.webContents.reload();
-    } else if (meta && input.shift && input.key === "i") {
-      if (mainWindow.webContents.isDevToolsOpened()) {
-        mainWindow.webContents.closeDevTools();
-      } else {
-        mainWindow.webContents.openDevTools();
-      }
-    }
   });
   mainWindow.webContents.on("render-process-gone", (_e, details) => {
     console.error("[renderer] process gone:", details.reason, details.exitCode);

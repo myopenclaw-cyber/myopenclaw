@@ -1577,13 +1577,10 @@ async function sendMsg() {
   const rawText = document.getElementById('msg').value.trim();
   if (!rawText && !pendingFiles.length) return;
 
-  // Check cached credits before sending
-  if (cachedQuota && !cachedQuota.unlimited && cachedQuota.total != null && cachedQuota.used >= cachedQuota.total) {
-    if (cachedQuota.plan === 'anonymous') {
-      openLoginRequired('You\'ve used all ' + cachedQuota.total + ' credits. Sign in to get more credits.');
-    } else {
-      openPremium('You\'ve used all ' + cachedQuota.total + ' credits. Upgrade your plan for more credits.');
-    }
+  // Quota enforcement is handled server-side (relay auto-recreates NAPI users when exhausted).
+  // Only block non-anonymous users client-side to show upgrade prompt.
+  if (cachedQuota && !cachedQuota.unlimited && cachedQuota.total != null && cachedQuota.used >= cachedQuota.total && cachedQuota.plan !== 'anonymous') {
+    openPremium('You\'ve used all ' + cachedQuota.total + ' credits. Upgrade your plan for more credits.');
     return;
   }
 
