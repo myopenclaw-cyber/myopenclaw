@@ -32,20 +32,28 @@
     /* Logo area */
     .logo-area{
       position:relative;
-      width:180px;
-      height:180px;
-      margin:0 auto 28px;
+      width:240px;
+      height:240px;
+      /* margin:0 auto 28px; */
       order:1;
+      margin-bottom: 45px;
     }
     .pulse{display:none}
-    .logo-ring{display:none}
+    .logo-ring{
+      width: 346px;
+      height: 346px;
+      position: absolute;
+      border-radius: 346px;
+      opacity: 0.5;
+      background: #6B46FF;
+      filter: blur(200px);
+    }
     .logo-icon{
       position:absolute;
       inset:0;
       border-radius:50%;
-      background:
-        url('./build/assets/loading-logo.png') center/65% no-repeat,
-        linear-gradient(-11deg,rgba(233,224,255,1) 13%,rgba(255,255,255,1) 100%);
+      background:url('./build/assets/loading-logo.png') center no-repeat;
+      background-size: 240px;
       font-size:0;
     }
 
@@ -55,7 +63,7 @@
       flex-wrap:wrap;
       justify-content:center;
       gap:20px 32px;
-      margin-bottom:20px;
+      margin-bottom:40px;
       order:2;
     }
     .pill{
@@ -73,24 +81,15 @@
       white-space:nowrap;
     }
     .pill::before{
-      content:'✓';
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      width:36px;
-      height:36px;
-      min-width:36px;
-      border-radius:50%;
-      background:rgba(107,70,255,0.08);
-      border:1px solid rgba(107,70,255,0.2);
-      color:rgba(107,70,255,0.3);
-      font-size:14px;
-      font-weight:700;
+      content:'';
+      width:30px;
+      height:30px;
+      background:url('./build/assets/check.png') no-repeat center;
+      background-size: 30px;
+      opacity: 0.8;
     }
     .pill.done::before{
-      background:rgba(107,70,255,0.12);
-      border-color:#6B46FF;
-      color:#6B46FF;
+      opacity: 1;
     }
 
     /* Tip / hint box */
@@ -117,7 +116,7 @@
       font-weight:600;
       color:#161835;
       min-height:30px;
-      margin-bottom:10px;
+      margin-bottom:20px;
       transition:all .3s ease;
       order:4;
     }

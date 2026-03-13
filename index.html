@@ -28,6 +28,7 @@ body { margin: 0; font-family: 'Aspekta', -apple-system, BlinkMacSystemFont, san
 .main { padding: 25px 20px; background: linear-gradient(180deg, #FFF 0%, #DDDCFF 100%); height: 100vh; overflow-y: auto; }
 .menu { flex: 1; display: flex; flex-direction: column; }
 #tab-account { margin-top: auto; }
+#tabAccountLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .hero { padding: 20px 30px; border-radius: 20px; border: 1px solid rgba(107,70,255,0.2); background: rgba(255,255,255,0.4); backdrop-filter: blur(4px); box-shadow: 0px 10px 40px 0px rgba(0,0,0,0.04); margin-bottom: 20px; }
 .hero h1 { margin: 0 0 6px; font-size: 20px; font-weight: 700; color: #161835; }
 .hero p { margin: 0; color: rgba(0,0,0,0.4); font-size: 14px; }
@@ -302,11 +303,11 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
         <img class="icon-act" src="./build/assets/agents-active.png" alt=""/>
         <span>Agents</span>
       </button>
-      <button id="tab-config" onclick="showPage('config')">
+      <!-- <button id="tab-config" onclick="showPage('config')">
         <img class="icon-def" src="./build/assets/config.png" alt=""/>
         <img class="icon-act" src="./build/assets/config-active.png" alt=""/>
         <span>Config</span>
-      </button>
+      </button> -->
        <button id="tab-skills" onclick="showPage('skills');loadSkills()">
         <img class="icon-def" src="./build/assets/skill.png" alt=""/>
         <img class="icon-act" src="./build/assets/skill-active.png" alt=""/>
@@ -470,6 +471,23 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
         <input id="relayAuthToken" type="hidden"/>
         <input id="relayDeviceId" type="hidden"/>
         <input id="relayAccessToken" type="hidden"/>
+      </div>
+
+      <div class="card">
+        <h3>Configuration</h3>
+        <div style="font-size:14px;color:rgba(0,0,0,0.4);font-weight:500;margin-bottom: 20px;">Reset all OpenClaw model-related config to factory defaults.</div>
+        <div class="row" style="justify-content:flex-end;align-items:center">
+          <button class="danger" onclick="resetAllModelConfig()">Reset All Config</button>
+        </div>
+      </div>
+      <div class="card" style="opacity:.7;font-size:13px">
+        <div class="row" style="margin:0;justify-content:space-between">
+          <span id="appVersionLabel">MyOpenClaw Desktop</span>
+          <div class="row" style="margin:0;gap:8px">
+            <button class="alt" style="padding:6px 12px;font-size:12px" onclick="window.electronAPI.openLogFile()">View Logs</button>
+            <button class="alt" style="padding:6px 12px;font-size:12px" onclick="window.electronAPI.openGatewayDashboard().then(r => { if (r && !r.success) showToast(r.error); })">Open Gateway Dashboard</button>
+          </div>
+        </div>
       </div>
 
       <div class="card">
