@@ -138,17 +138,38 @@ export async function ensureGatewayProviderOrRelay(): Promise<void> {
 
     syncAuthProfileForProvider(RELAY_PROVIDER, relayApiKey);
 
-    // Fetch available models from relay API
+    // Fetch available models from relay API (with cache-first strategy)
     const headers: Record<string, string> = {};
     if (jwt) headers['Authorization'] = `Bearer ${jwt}`;
     if (deviceId) headers['X-Device-Id'] = deviceId;
 
+    // Use previously cached relay models from openclaw.json if available,
+    // then refresh in background to avoid blocking startup
+    const existingCfg: any = fs.existsSync(CONFIG_FILE)
+      ? JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8').replace(/^\uFEFF/, ''))
+      : {};
+    const cachedModels = existingCfg?.models?.providers?.relay?.models;
+
     let relayModels: Array<{ id: string; name: string; available?: boolean }> = [];
-    try {
-      const res = await axios.get(`${relayUrl}/models`, { headers, timeout: 10000 });
-      relayModels = res.data?.data || [];
-    } catch (e: any) {
-      console.log('[auth] Failed to fetch relay models, using fallback:', e.message);
+    if (cachedModels?.length) {
+      // Use cached models immediately, refresh async in background
+      console.log('[auth] Using cached relay models, refreshing in background');
+      relayModels = cachedModels.map((m: any) => ({ id: m.id, name: m.name || m.id, available: true }));
+      // Fire-and-forget background refresh
+      axios.get(`${relayUrl}/models`, { headers, timeout: 10000 }).then(res => {
+        const fresh = res.data?.data || [];
+        if (fresh.length) {
+          console.log('[auth] Background relay models refresh complete:', fresh.length, 'models');
+        }
+      }).catch(() => { /* background refresh failed, cached models still valid */ });
+    } else {
+      // No cache: must fetch synchronously on first launch
+      try {
+        const res = await axios.get(`${relayUrl}/models`, { headers, timeout: 10000 });
+        relayModels = res.data?.data || [];
+      } catch (e: any) {
+        console.log('[auth] Failed to fetch relay models, using fallback:', e.message);
+      }
     }
 
     // Build gateway model list from relay models
