@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import { BrowserWindow, Menu, shell } from 'electron';
 import { CONFIG_FILE, RELAY_BASE_URL } from './constants';
 import { buildDashboardUrl, loadAppState, saveAppState } from './config-store';
-import { findOpenClawCli, findRuntimeDir, findNodeBinary, ensureEmbeddedRuntime, ensureOpenClawInPath, runOpenClawOnboard } from './runtime';
+import { findOpenClawCli, findRuntimeDir, findNodeBinary, ensureEmbeddedRuntime, ensureOpenClawInPath, runOpenClawOnboard, clearCliCache } from './runtime';
 import { startGateway } from './gateway';
 import { registerGatewayHandlers } from './ipc/gateway-ipc';
 import { registerChatHandlers } from './ipc/chat-ipc';
@@ -161,6 +161,7 @@ export function createWindow(): void {
         console.log('[startup] No openclaw or runtime found, downloading runtime...');
         updateLoadingStatus('Downloading OpenClaw runtime...', 30);
         await ensureEmbeddedRuntime(updateLoadingStatus);
+        clearCliCache(); // invalidate cache after new runtime download
         openclawBin = findOpenClawCli();
       }
 

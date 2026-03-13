@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as crypto from 'crypto';
-import { spawn, execSync, execFileSync } from 'child_process';
+import { spawn, execSync, execFile, execFileSync } from 'child_process';
 import axios from 'axios';
 import {
   OPENCLAW_CONFIG_DIR,
@@ -23,12 +23,17 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
   // Kill our own leftover gateway — match by .myopenclaw path in command line
   try {
     if (process.platform === 'win32') {
-      // Use PowerShell via execFileSync to avoid cmd.exe eating % wildcards
-      const killed = execFileSync('powershell.exe', [
-        '-NoProfile', '-Command',
-        "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*myopenclaw*' -and $_.CommandLine -like '*gateway*' } | ForEach-Object { Write-Host \"Killing PID $($_.ProcessId): $($_.CommandLine.Substring(0, [Math]::Min(80, $_.CommandLine.Length)))\"; Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
-      ], { encoding: 'utf8', timeout: 15000, stdio: 'pipe', windowsHide: true });
-      if (killed.trim()) console.log('[startGateway] Killed leftover processes:', killed.trim());
+      // Use PowerShell via execFile (async) to avoid blocking main thread
+      await new Promise<void>((resolve) => {
+        execFile('powershell.exe', [
+          '-NoProfile', '-Command',
+          "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*myopenclaw*' -and $_.CommandLine -like '*gateway*' } | ForEach-Object { Write-Host \"Killing PID $($_.ProcessId): $($_.CommandLine.Substring(0, [Math]::Min(80, $_.CommandLine.Length)))\"; Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
+        ], { encoding: 'utf8', timeout: 15000, windowsHide: true }, (err, stdout) => {
+          const killed = (stdout as string || '').trim();
+          if (killed) console.log('[startGateway] Killed leftover processes:', killed);
+          resolve();
+        });
+      });
     } else {
       execSync("ps -eo pid,command | grep 'myopenclaw' | grep 'gateway' | grep -v grep | awk '{print $1}' | xargs kill -9 2>/dev/null", { timeout: 5000, stdio: 'pipe' });
     }
@@ -37,15 +42,15 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
   }
   // Give Windows time to release file handles after process termination
   if (process.platform === 'win32') {
-    const start = Date.now();
-    while (Date.now() - start < 3000) {
-      try { const lf = resolveGatewayLockFile(); if (!fs.existsSync(lf) || fs.readFileSync(lf, 'utf8')) break; } catch { /* still locked */ }
-      execSync('timeout /t 1 /nobreak >nul 2>&1', { timeout: 3000, stdio: 'pipe', windowsHide: true });
+    const lf = resolveGatewayLockFile();
+    for (let waited = 0; waited < 3000; waited += 300) {
+      try { if (!fs.existsSync(lf) || fs.readFileSync(lf, 'utf8')) break; } catch { /* still locked */ }
+      await new Promise(r => setTimeout(r, 300));
     }
   }
 
   // Stop any existing gateway holding a lock (e.g. leftover from crash or previous session)
-  stopExistingGateway();
+  await stopExistingGateway();
 
   const gatewayPort = await findAvailablePort(DEFAULT_PORT);
   const gatewayBaseUrl = `http://127.0.0.1:${gatewayPort}`;
@@ -82,7 +87,7 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
   }
 
   // Auto-fix invalid config keys before starting gateway
-  tryDoctorFix();
+  await tryDoctorFix();
 
   updateLoadingStatus('Launching openclaw gateway...', 90);
 
@@ -136,13 +141,15 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
 
   console.log('[startGateway] Waiting for gateway to start...');
   updateLoadingStatus('Checking gateway health...', 94);
-  await new Promise(resolve => setTimeout(resolve, 5000));
+
+  // Give the process a brief moment to crash-exit before polling
+  await new Promise(resolve => setTimeout(resolve, 500));
 
   if (gatewayExited) {
     throw new Error(`Gateway process exited immediately with code ${gatewayExitCode}. Check logs above for details.`);
   }
 
-  await waitForGateway(gatewayBaseUrl, 90, () => gatewayExited);
+  await waitForGateway(gatewayBaseUrl, 60, () => gatewayExited);
 
   updateLoadingStatus('Startup complete. Opening workspace...', 100);
   console.log(`[startGateway] Gateway started successfully on ${gatewayBaseUrl}`);
@@ -173,17 +180,17 @@ export async function waitForGateway(
       return true;
     } catch (error: any) {
       console.log(`[waitForGateway] Attempt ${i + 1} failed:`, error.message);
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
   }
   console.error('[waitForGateway] Max retries reached, gateway failed to start');
   throw new Error('Gateway failed to start after max retries. Please check your configuration and try again.');
 }
 
-function stopExistingGateway(): void {
+async function stopExistingGateway(): Promise<void> {
+  const cli = findOpenClawCli();
+  if (!cli) return;
   try {
-    const cli = findOpenClawCli();
-    if (!cli) return;
     const env = {
       ...process.env,
       PATH: buildNodeEnhancedPath(),
@@ -191,11 +198,15 @@ function stopExistingGateway(): void {
       OPENCLAW_CONFIG_PATH: CONFIG_FILE,
     };
     const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(cli);
-    execFileSync(cli, ['gateway', 'stop'], {
-      encoding: 'utf8', timeout: 10000, stdio: 'pipe', env, shell: useShell,
-      ...(process.platform === 'win32' ? { windowsHide: true } : {}),
+    await new Promise<void>((resolve) => {
+      execFile(cli, ['gateway', 'stop'], {
+        encoding: 'utf8', timeout: 10000, stdio: 'pipe', env, shell: useShell,
+        ...(process.platform === 'win32' ? { windowsHide: true } : {}),
+      } as any, (err) => {
+        if (!err) console.log('[startGateway] Stopped existing gateway via CLI');
+        resolve();
+      });
     });
-    console.log('[startGateway] Stopped existing gateway via CLI');
   } catch {
     // No gateway running or stop failed — fine
   }
@@ -246,40 +257,37 @@ function forceCleanGatewayLock(): void {
   }
 }
 
-function tryDoctorFix(): void {
-  try {
-    const cli = findOpenClawCli();
-    if (!cli) return;
+async function tryDoctorFix(): Promise<void> {
+  const runDoctor = (cmd: string, args: string[], opts: any): Promise<void> => {
+    return new Promise((resolve) => {
+      execFile(cmd, args, { encoding: 'utf8', timeout: 15000, stdio: 'pipe', ...opts } as any, (err, stdout) => {
+        const output = String(stdout || '');
+        if (!err && (output.includes('fix') || output.includes('removed') || output.includes('Unrecognized'))) {
+          console.log('[doctor] Auto-fixed config:', output.trim());
+        }
+        resolve();
+      });
+    });
+  };
 
+  const cli = findOpenClawCli();
+  if (cli) {
     const env = { ...process.env, PATH: buildNodeEnhancedPath(), OPENCLAW_CONFIG_PATH: CONFIG_FILE };
     const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(cli);
-
-    const output = execFileSync(cli, ['doctor', '--fix'], {
-      encoding: 'utf8', timeout: 15000, stdio: 'pipe', env, shell: useShell,
+    await runDoctor(cli, ['doctor', '--fix'], {
+      env, shell: useShell,
       ...(process.platform === 'win32' ? { windowsHide: true } : {}),
     });
-    if (output.includes('fix') || output.includes('removed') || output.includes('Unrecognized')) {
-      console.log('[doctor] Auto-fixed config:', output.trim());
-    }
-  } catch (err: any) {
-    // doctor --fix is best-effort; if CLI not available, try node fallback
-    try {
-      const runtimeDir = findRuntimeDir();
-      if (!runtimeDir) return;
-      const entryMjs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'openclaw.mjs');
-      const entryJs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'dist', 'entry.js');
-      const entryFile = fs.existsSync(entryMjs) ? entryMjs : entryJs;
-      const nodeBin = findNodeBinary();
-      const env = { ...process.env, PATH: buildNodeEnhancedPath(), OPENCLAW_CONFIG_PATH: CONFIG_FILE };
-
-      const output = execFileSync(nodeBin, [entryFile, 'doctor', '--fix'], {
-        encoding: 'utf8', timeout: 15000, stdio: 'pipe', env, cwd: runtimeDir, windowsHide: true,
-      });
-      if (output.includes('fix') || output.includes('removed') || output.includes('Unrecognized')) {
-        console.log('[doctor] Auto-fixed config via node fallback:', output.trim());
-      }
-    } catch {
-      console.log('[doctor] Could not run doctor --fix:', err.message);
-    }
+    return;
   }
+
+  // Fallback: run via node entry point
+  const runtimeDir = findRuntimeDir();
+  if (!runtimeDir) return;
+  const entryMjs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'openclaw.mjs');
+  const entryJs = path.join(runtimeDir, 'openclaw-deps', 'openclaw', 'dist', 'entry.js');
+  const entryFile = fs.existsSync(entryMjs) ? entryMjs : entryJs;
+  const nodeBin = findNodeBinary();
+  const env = { ...process.env, PATH: buildNodeEnhancedPath(), OPENCLAW_CONFIG_PATH: CONFIG_FILE };
+  await runDoctor(nodeBin, [entryFile, 'doctor', '--fix'], { env, cwd: runtimeDir, windowsHide: true });
 }

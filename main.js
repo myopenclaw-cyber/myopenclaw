@@ -340,12 +340,26 @@ async function ensureGatewayProviderOrRelay() {
     const headers = {};
     if (jwt) headers["Authorization"] = `Bearer ${jwt}`;
     if (deviceId) headers["X-Device-Id"] = deviceId;
+    const existingCfg = fs2.existsSync(CONFIG_FILE) ? JSON.parse(fs2.readFileSync(CONFIG_FILE, "utf8").replace(/^\uFEFF/, "")) : {};
+    const cachedModels = existingCfg?.models?.providers?.relay?.models;
     let relayModels = [];
-    try {
-      const res = await import_axios2.default.get(`${relayUrl}/models`, { headers, timeout: 1e4 });
-      relayModels = res.data?.data || [];
-    } catch (e) {
-      console.log("[auth] Failed to fetch relay models, using fallback:", e.message);
+    if (cachedModels?.length) {
+      console.log("[auth] Using cached relay models, refreshing in background");
+      relayModels = cachedModels.map((m) => ({ id: m.id, name: m.name || m.id, available: true }));
+      import_axios2.default.get(`${relayUrl}/models`, { headers, timeout: 1e4 }).then((res) => {
+        const fresh = res.data?.data || [];
+        if (fresh.length) {
+          console.log("[auth] Background relay models refresh complete:", fresh.length, "models");
+        }
+      }).catch(() => {
+      });
+    } else {
+      try {
+        const res = await import_axios2.default.get(`${relayUrl}/models`, { headers, timeout: 1e4 });
+        relayModels = res.data?.data || [];
+      } catch (e) {
+        console.log("[auth] Failed to fetch relay models, using fallback:", e.message);
+      }
     }
     const gatewayModels = relayModels.length ? relayModels.map((m) => ({ id: m.id, name: m.name || m.id, contextWindow: 18e4, maxTokens: 8192 })) : [{ id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", contextWindow: 18e4, maxTokens: 8192 }];
     const firstAvailable = relayModels.find((m) => m.available !== false);
@@ -455,6 +469,18 @@ var fs3 = __toESM(require("fs"));
 var os2 = __toESM(require("os"));
 var import_axios4 = __toESM(require("axios"));
 var import_child_process = require("child_process");
+function execFileAsync(cmd, args, opts = {}) {
+  return new Promise((resolve5, reject) => {
+    (0, import_child_process.execFile)(cmd, args, { encoding: "utf8", ...opts }, (err, stdout) => {
+      if (err) return reject(err);
+      resolve5(String(stdout || ""));
+    });
+  });
+}
+var _cachedCli;
+function clearCliCache() {
+  _cachedCli = void 0;
+}
 function getRuntimeTargetLabel() {
   if (process.platform === "win32") return "windows";
   if (process.platform === "darwin") return process.arch === "arm64" ? "mac_silicon" : "mac_intel";
@@ -539,20 +565,20 @@ async function ensureEmbeddedRuntime(updateLoadingStatus2) {
   updateLoadingStatus2("Extracting openclaw runtime...", 84);
   fs3.mkdirSync(DOWNLOADED_RUNTIME_DIR, { recursive: true });
   if (process.platform === "win32") {
-    (0, import_child_process.execFileSync)("tar", ["-xf", zipPath, "-C", DOWNLOADED_RUNTIME_DIR], { stdio: "pipe", windowsHide: true });
+    await execFileAsync("tar", ["-xf", zipPath, "-C", DOWNLOADED_RUNTIME_DIR], { stdio: "pipe", windowsHide: true });
   } else {
-    (0, import_child_process.execFileSync)("unzip", ["-o", zipPath, "-d", DOWNLOADED_RUNTIME_DIR], { stdio: "inherit" });
+    await execFileAsync("unzip", ["-o", zipPath, "-d", DOWNLOADED_RUNTIME_DIR], { stdio: "pipe" });
     const binDir = path4.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", ".bin");
     const nodeDir = path4.join(DOWNLOADED_RUNTIME_DIR, "node");
     for (const dir of [binDir, nodeDir]) {
       if (fs3.existsSync(dir)) {
-        (0, import_child_process.execFileSync)("chmod", ["-R", "+x", dir], { stdio: "inherit" });
+        await execFileAsync("chmod", ["-R", "+x", dir], { stdio: "pipe" });
         try {
-          (0, import_child_process.execFileSync)("xattr", ["-rd", "com.apple.quarantine", dir], { stdio: "pipe" });
+          await execFileAsync("xattr", ["-rd", "com.apple.quarantine", dir], { stdio: "pipe" });
         } catch {
         }
         try {
-          (0, import_child_process.execFileSync)("xattr", ["-rd", "com.apple.provenance", dir], { stdio: "pipe" });
+          await execFileAsync("xattr", ["-rd", "com.apple.provenance", dir], { stdio: "pipe" });
         } catch {
         }
         console.log(`[runtime] Fixed permissions: ${dir}`);
@@ -620,6 +646,7 @@ function verifyOpenClawCli(binPath) {
   }
 }
 function findOpenClawCli() {
+  if (_cachedCli !== void 0) return _cachedCli;
   const binNames = process.platform === "win32" ? ["openclaw.cmd", "openclaw.exe", "openclaw"] : ["openclaw"];
   const ownCandidates = [];
   for (const bin of binNames) {
@@ -638,6 +665,7 @@ function findOpenClawCli() {
     console.log(`[cli] Found own runtime: ${p}, verifying...`);
     if (verifyOpenClawCli(p)) {
       console.log(`[cli] Verified own openclaw CLI: ${p}`);
+      _cachedCli = p;
       return p;
     }
   }
@@ -671,9 +699,11 @@ function findOpenClawCli() {
     console.log(`[cli] Found system candidate: ${p}, verifying...`);
     if (verifyOpenClawCli(p)) {
       console.log(`[cli] Using system openclaw CLI: ${p}`);
+      _cachedCli = p;
       return p;
     }
   }
+  _cachedCli = null;
   return null;
 }
 function findNodeBinary() {
@@ -801,12 +831,17 @@ function isPortAvailable(port) {
 async function startGateway(updateLoadingStatus2) {
   try {
     if (process.platform === "win32") {
-      const killed = (0, import_child_process2.execFileSync)("powershell.exe", [
-        "-NoProfile",
-        "-Command",
-        `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*myopenclaw*' -and $_.CommandLine -like '*gateway*' } | ForEach-Object { Write-Host "Killing PID $($_.ProcessId): $($_.CommandLine.Substring(0, [Math]::Min(80, $_.CommandLine.Length)))"; Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`
-      ], { encoding: "utf8", timeout: 15e3, stdio: "pipe", windowsHide: true });
-      if (killed.trim()) console.log("[startGateway] Killed leftover processes:", killed.trim());
+      await new Promise((resolve5) => {
+        (0, import_child_process2.execFile)("powershell.exe", [
+          "-NoProfile",
+          "-Command",
+          `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*myopenclaw*' -and $_.CommandLine -like '*gateway*' } | ForEach-Object { Write-Host "Killing PID $($_.ProcessId): $($_.CommandLine.Substring(0, [Math]::Min(80, $_.CommandLine.Length)))"; Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`
+        ], { encoding: "utf8", timeout: 15e3, windowsHide: true }, (err, stdout) => {
+          const killed = (stdout || "").trim();
+          if (killed) console.log("[startGateway] Killed leftover processes:", killed);
+          resolve5();
+        });
+      });
     } else {
       (0, import_child_process2.execSync)("ps -eo pid,command | grep 'myopenclaw' | grep 'gateway' | grep -v grep | awk '{print $1}' | xargs kill -9 2>/dev/null", { timeout: 5e3, stdio: "pipe" });
     }
@@ -814,17 +849,16 @@ async function startGateway(updateLoadingStatus2) {
     console.log("[startGateway] Process cleanup:", e.message?.slice(0, 100));
   }
   if (process.platform === "win32") {
-    const start = Date.now();
-    while (Date.now() - start < 3e3) {
+    const lf = resolveGatewayLockFile();
+    for (let waited = 0; waited < 3e3; waited += 300) {
       try {
-        const lf = resolveGatewayLockFile();
         if (!fs4.existsSync(lf) || fs4.readFileSync(lf, "utf8")) break;
       } catch {
       }
-      (0, import_child_process2.execSync)("timeout /t 1 /nobreak >nul 2>&1", { timeout: 3e3, stdio: "pipe", windowsHide: true });
+      await new Promise((r) => setTimeout(r, 300));
     }
   }
-  stopExistingGateway();
+  await stopExistingGateway();
   const gatewayPort = await findAvailablePort(DEFAULT_PORT);
   const gatewayBaseUrl = `http://127.0.0.1:${gatewayPort}`;
   console.log(`[startGateway] Starting gateway on port ${gatewayPort}...`);
@@ -848,7 +882,7 @@ async function startGateway(updateLoadingStatus2) {
   } catch (e) {
     console.error("[startGateway] Failed to sync token to openclaw.json:", e.message);
   }
-  tryDoctorFix();
+  await tryDoctorFix();
   updateLoadingStatus2("Launching openclaw gateway...", 90);
   forceCleanGatewayLock();
   const gatewayEnv = {
@@ -898,11 +932,11 @@ async function startGateway(updateLoadingStatus2) {
   gatewayProcess.on("error", (err) => console.error("[Gateway] Process error:", err));
   console.log("[startGateway] Waiting for gateway to start...");
   updateLoadingStatus2("Checking gateway health...", 94);
-  await new Promise((resolve5) => setTimeout(resolve5, 5e3));
+  await new Promise((resolve5) => setTimeout(resolve5, 500));
   if (gatewayExited) {
     throw new Error(`Gateway process exited immediately with code ${gatewayExitCode}. Check logs above for details.`);
   }
-  await waitForGateway(gatewayBaseUrl, 90, () => gatewayExited);
+  await waitForGateway(gatewayBaseUrl, 60, () => gatewayExited);
   updateLoadingStatus2("Startup complete. Opening workspace...", 100);
   console.log(`[startGateway] Gateway started successfully on ${gatewayBaseUrl}`);
   return {
@@ -926,16 +960,16 @@ async function waitForGateway(gatewayBaseUrl, maxRetries = 90, hasProcessExited)
       return true;
     } catch (error) {
       console.log(`[waitForGateway] Attempt ${i + 1} failed:`, error.message);
-      await new Promise((resolve5) => setTimeout(resolve5, 1e3));
+      await new Promise((resolve5) => setTimeout(resolve5, 300));
     }
   }
   console.error("[waitForGateway] Max retries reached, gateway failed to start");
   throw new Error("Gateway failed to start after max retries. Please check your configuration and try again.");
 }
-function stopExistingGateway() {
+async function stopExistingGateway() {
+  const cli = findOpenClawCli();
+  if (!cli) return;
   try {
-    const cli = findOpenClawCli();
-    if (!cli) return;
     const env = {
       ...process.env,
       PATH: buildNodeEnhancedPath(),
@@ -943,15 +977,19 @@ function stopExistingGateway() {
       OPENCLAW_CONFIG_PATH: CONFIG_FILE
     };
     const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(cli);
-    (0, import_child_process2.execFileSync)(cli, ["gateway", "stop"], {
-      encoding: "utf8",
-      timeout: 1e4,
-      stdio: "pipe",
-      env,
-      shell: useShell,
-      ...process.platform === "win32" ? { windowsHide: true } : {}
+    await new Promise((resolve5) => {
+      (0, import_child_process2.execFile)(cli, ["gateway", "stop"], {
+        encoding: "utf8",
+        timeout: 1e4,
+        stdio: "pipe",
+        env,
+        shell: useShell,
+        ...process.platform === "win32" ? { windowsHide: true } : {}
+      }, (err) => {
+        if (!err) console.log("[startGateway] Stopped existing gateway via CLI");
+        resolve5();
+      });
     });
-    console.log("[startGateway] Stopped existing gateway via CLI");
   } catch {
   }
 }
@@ -989,47 +1027,37 @@ function forceCleanGatewayLock() {
     console.log("[startGateway] Lock cleanup failed:", e.message);
   }
 }
-function tryDoctorFix() {
-  try {
-    const cli = findOpenClawCli();
-    if (!cli) return;
-    const env = { ...process.env, PATH: buildNodeEnhancedPath(), OPENCLAW_CONFIG_PATH: CONFIG_FILE };
+async function tryDoctorFix() {
+  const runDoctor = (cmd, args, opts) => {
+    return new Promise((resolve5) => {
+      (0, import_child_process2.execFile)(cmd, args, { encoding: "utf8", timeout: 15e3, stdio: "pipe", ...opts }, (err, stdout) => {
+        const output = String(stdout || "");
+        if (!err && (output.includes("fix") || output.includes("removed") || output.includes("Unrecognized"))) {
+          console.log("[doctor] Auto-fixed config:", output.trim());
+        }
+        resolve5();
+      });
+    });
+  };
+  const cli = findOpenClawCli();
+  if (cli) {
+    const env2 = { ...process.env, PATH: buildNodeEnhancedPath(), OPENCLAW_CONFIG_PATH: CONFIG_FILE };
     const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(cli);
-    const output = (0, import_child_process2.execFileSync)(cli, ["doctor", "--fix"], {
-      encoding: "utf8",
-      timeout: 15e3,
-      stdio: "pipe",
-      env,
+    await runDoctor(cli, ["doctor", "--fix"], {
+      env: env2,
       shell: useShell,
       ...process.platform === "win32" ? { windowsHide: true } : {}
     });
-    if (output.includes("fix") || output.includes("removed") || output.includes("Unrecognized")) {
-      console.log("[doctor] Auto-fixed config:", output.trim());
-    }
-  } catch (err) {
-    try {
-      const runtimeDir = findRuntimeDir();
-      if (!runtimeDir) return;
-      const entryMjs = path5.join(runtimeDir, "openclaw-deps", "openclaw", "openclaw.mjs");
-      const entryJs = path5.join(runtimeDir, "openclaw-deps", "openclaw", "dist", "entry.js");
-      const entryFile = fs4.existsSync(entryMjs) ? entryMjs : entryJs;
-      const nodeBin = findNodeBinary();
-      const env = { ...process.env, PATH: buildNodeEnhancedPath(), OPENCLAW_CONFIG_PATH: CONFIG_FILE };
-      const output = (0, import_child_process2.execFileSync)(nodeBin, [entryFile, "doctor", "--fix"], {
-        encoding: "utf8",
-        timeout: 15e3,
-        stdio: "pipe",
-        env,
-        cwd: runtimeDir,
-        windowsHide: true
-      });
-      if (output.includes("fix") || output.includes("removed") || output.includes("Unrecognized")) {
-        console.log("[doctor] Auto-fixed config via node fallback:", output.trim());
-      }
-    } catch {
-      console.log("[doctor] Could not run doctor --fix:", err.message);
-    }
+    return;
   }
+  const runtimeDir = findRuntimeDir();
+  if (!runtimeDir) return;
+  const entryMjs = path5.join(runtimeDir, "openclaw-deps", "openclaw", "openclaw.mjs");
+  const entryJs = path5.join(runtimeDir, "openclaw-deps", "openclaw", "dist", "entry.js");
+  const entryFile = fs4.existsSync(entryMjs) ? entryMjs : entryJs;
+  const nodeBin = findNodeBinary();
+  const env = { ...process.env, PATH: buildNodeEnhancedPath(), OPENCLAW_CONFIG_PATH: CONFIG_FILE };
+  await runDoctor(nodeBin, [entryFile, "doctor", "--fix"], { env, cwd: runtimeDir, windowsHide: true });
 }
 
 // src/ipc/gateway-ipc.ts
@@ -2950,6 +2978,7 @@ function createWindow() {
         console.log("[startup] No openclaw or runtime found, downloading runtime...");
         updateLoadingStatus("Downloading OpenClaw runtime...", 30);
         await ensureEmbeddedRuntime(updateLoadingStatus);
+        clearCliCache();
         openclawBin = findOpenClawCli();
       }
       if (openclawBin) {
