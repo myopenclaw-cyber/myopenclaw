@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as crypto from 'crypto';
-import { spawn, execSync, execFile, execFileSync } from 'child_process';
+import { spawn, execSync, execFile, execFileSync, type ChildProcess } from 'child_process';
 import axios from 'axios';
 import {
   OPENCLAW_CONFIG_DIR,
@@ -219,6 +219,107 @@ async function stopExistingGateway(): Promise<void> {
   } catch {
     // No gateway running or stop failed — fine
   }
+}
+
+function stopExistingGatewaySync(): void {
+  const lockFile = resolveGatewayLockFile();
+  if (!fs.existsSync(lockFile)) {
+    return;
+  }
+
+  const cli = findOpenClawCli();
+  if (!cli) return;
+
+  try {
+    const env = {
+      ...process.env,
+      PATH: buildNodeEnhancedPath(),
+      OPENCLAW_STATE_DIR: OPENCLAW_CONFIG_DIR,
+      OPENCLAW_CONFIG_PATH: CONFIG_FILE,
+    };
+    const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(cli);
+    execFileSync(cli, ['gateway', 'stop'], {
+      encoding: 'utf8',
+      timeout: 5000,
+      stdio: 'pipe',
+      env,
+      shell: useShell,
+      ...(process.platform === 'win32' ? { windowsHide: true } : {}),
+    } as any);
+    console.log('[gateway] Stopped existing gateway via CLI');
+  } catch {
+    // Best-effort cleanup only.
+  }
+}
+
+function isProcessRunning(proc?: ChildProcess | null): proc is ChildProcess {
+  return !!proc?.pid && proc.exitCode == null && proc.signalCode == null && !proc.killed;
+}
+
+async function waitForProcessExit(proc: ChildProcess | null | undefined, timeoutMs: number): Promise<boolean> {
+  if (!isProcessRunning(proc)) return true;
+
+  return await new Promise<boolean>((resolve) => {
+    let settled = false;
+    const finish = (result: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      proc.off('exit', onExit);
+      proc.off('close', onExit);
+      resolve(result);
+    };
+    const onExit = () => finish(true);
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    proc.once('exit', onExit);
+    proc.once('close', onExit);
+  });
+}
+
+function forceKillProcess(proc: ChildProcess | null | undefined): void {
+  if (!isProcessRunning(proc)) return;
+
+  try {
+    if (process.platform === 'win32' && proc.pid) {
+      execFileSync('taskkill', ['/PID', String(proc.pid), '/T', '/F'], {
+        timeout: 5000,
+        stdio: 'pipe',
+        windowsHide: true,
+      });
+      return;
+    }
+    proc.kill('SIGKILL');
+  } catch (err: any) {
+    console.warn('[gateway] Force kill failed:', err?.message || err);
+  }
+}
+
+export async function stopGatewayGracefully(gatewayProcess?: ChildProcess | null, timeoutMs: number = 3000): Promise<void> {
+  try {
+    await stopExistingGateway();
+  } catch (err: any) {
+    console.warn('[gateway] CLI stop failed:', err?.message || err);
+  }
+
+  const exited = await waitForProcessExit(gatewayProcess, Math.max(1000, timeoutMs - 500));
+  if (!exited) {
+    console.warn('[gateway] Gateway did not stop in time, forcing shutdown');
+    forceKillProcess(gatewayProcess);
+    await waitForProcessExit(gatewayProcess, 1000);
+  }
+
+  updateGatewayProcess(null);
+}
+
+export function stopGatewayImmediately(gatewayProcess?: ChildProcess | null): void {
+  try {
+    stopExistingGatewaySync();
+  } catch {
+    // Best-effort cleanup only.
+  }
+
+  forceKillProcess(gatewayProcess);
+  updateGatewayProcess(null);
 }
 
 /** Resolve the gateway lock file path scoped to our CONFIG_FILE. */

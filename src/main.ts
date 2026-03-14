@@ -1,11 +1,11 @@
 import * as path from 'path';
 import * as os from 'os';
-import { app, BrowserWindow } from 'electron';
+import { app } from 'electron';
 import { PROTOCOL, RELAY_BASE_URL } from './constants';
 import { loadAppState, saveAppState } from './config-store';
 import { ensureDeviceId, registerDevice } from './device';
 import { handleDeepLink } from './deep-link';
-import { createWindow, getMainWindow, killGateway, registerAllIpcHandlers } from './window';
+import { createWindow, getMainWindow, isQuitInProgress, prepareAppQuit, registerAllIpcHandlers, showMainWindow } from './window';
 import { initFileLogger } from './logger';
 import { startPerfMonitor } from './perf-monitor';
 
@@ -54,18 +54,29 @@ app.on('open-url', (event, url) => {
 // Single instance lock + deep link via argv (Windows/Linux)
 // ---------------------------------------------------------------------------
 const gotTheLock = app.requestSingleInstanceLock();
+let exitRequested = false;
+
+function requestAppExit(reason: string): void {
+  if (exitRequested) return;
+  exitRequested = true;
+  console.log(`[app] Exit requested (${reason})`);
+
+  void prepareAppQuit(reason)
+    .catch((err: any) => {
+      console.error('[app] Quit cleanup failed:', err?.message || err);
+    })
+    .finally(() => {
+      app.exit(0);
+    });
+}
+
 if (!gotTheLock) {
   app.quit();
 } else {
   app.on('second-instance', (_event, argv) => {
     const deepLinkUrl = argv.find(arg => arg.startsWith(`${PROTOCOL}://`));
     if (deepLinkUrl) handleDeepLink(deepLinkUrl, getMainWindow);
-
-    const mainWindow = getMainWindow();
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
+    showMainWindow();
   });
 
   // ---------------------------------------------------------------------------
@@ -97,11 +108,18 @@ if (!gotTheLock) {
   });
 
   app.on('window-all-closed', () => {
-    killGateway();
-    if (process.platform !== 'darwin') app.quit();
+    if (process.platform === 'linux') {
+      requestAppExit('window-all-closed');
+    }
+  });
+
+  app.on('before-quit', (event) => {
+    if (exitRequested || isQuitInProgress()) return;
+    event.preventDefault();
+    requestAppExit('before-quit');
   });
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    showMainWindow();
   });
 }
