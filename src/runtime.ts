@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import axios from 'axios';
-import { spawn, execFile, execFileSync } from 'child_process';
+import { spawn, execFileSync } from 'child_process';
 import {
   OPENCLAW_CONFIG_DIR,
   CONFIG_FILE,
@@ -13,13 +13,35 @@ import {
 import type { LoadingStatusCallback } from './types';
 
 // ---------------------------------------------------------------------------
-// Async execFile wrapper — avoids blocking the Electron main thread
+// Async spawn wrapper — avoids blocking the Electron main thread and
+// lets us suppress large stdout streams from archive tools during startup.
 // ---------------------------------------------------------------------------
 function execFileAsync(cmd: string, args: string[], opts: any = {}): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(cmd, args, { encoding: 'utf8', ...opts }, (err, stdout) => {
-      if (err) return reject(err);
-      resolve(String(stdout || ''));
+    const proc = spawn(cmd, args, {
+      stdio: 'pipe',
+      ...opts,
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout?.on('data', (chunk: Buffer | string) => {
+      stdout += chunk.toString();
+    });
+    proc.stderr?.on('data', (chunk: Buffer | string) => {
+      stderr += chunk.toString();
+    });
+
+    proc.on('error', reject);
+    proc.on('close', (code, signal) => {
+      if (code === 0) {
+        resolve(stdout);
+        return;
+      }
+
+      const detail = stderr.trim() || stdout.trim() || `signal ${signal ?? 'unknown'}`;
+      reject(new Error(`Command failed: ${cmd} ${args.join(' ')} (${detail})`));
     });
   });
 }
@@ -263,9 +285,9 @@ export async function ensureEmbeddedRuntime(updateLoadingStatus: LoadingStatusCa
   updateLoadingStatus('Extracting openclaw runtime...', 84);
   fs.mkdirSync(DOWNLOADED_RUNTIME_DIR, { recursive: true });
   if (process.platform === 'win32') {
-    await execFileAsync('tar', ['-xf', zipPath, '-C', DOWNLOADED_RUNTIME_DIR], { stdio: 'pipe', windowsHide: true });
+    await execFileAsync('tar', ['-xf', zipPath, '-C', DOWNLOADED_RUNTIME_DIR], { stdio: 'ignore', windowsHide: true });
   } else {
-    await execFileAsync('unzip', ['-o', zipPath, '-d', DOWNLOADED_RUNTIME_DIR], { stdio: 'pipe' });
+    await execFileAsync('unzip', ['-oq', zipPath, '-d', DOWNLOADED_RUNTIME_DIR], { stdio: 'ignore' });
     repairRuntimePermissions(DOWNLOADED_RUNTIME_DIR);
   }
 

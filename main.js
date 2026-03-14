@@ -15901,9 +15901,26 @@ var import_axios4 = __toESM(require("axios"));
 var import_child_process2 = require("child_process");
 function execFileAsync(cmd, args, opts = {}) {
   return new Promise((resolve5, reject) => {
-    (0, import_child_process2.execFile)(cmd, args, { encoding: "utf8", ...opts }, (err, stdout) => {
-      if (err) return reject(err);
-      resolve5(String(stdout || ""));
+    const proc = (0, import_child_process2.spawn)(cmd, args, {
+      stdio: "pipe",
+      ...opts
+    });
+    let stdout = "";
+    let stderr = "";
+    proc.stdout?.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    proc.stderr?.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    proc.on("error", reject);
+    proc.on("close", (code, signal) => {
+      if (code === 0) {
+        resolve5(stdout);
+        return;
+      }
+      const detail = stderr.trim() || stdout.trim() || `signal ${signal ?? "unknown"}`;
+      reject(new Error(`Command failed: ${cmd} ${args.join(" ")} (${detail})`));
     });
   });
 }
@@ -16103,9 +16120,9 @@ async function ensureEmbeddedRuntime(updateLoadingStatus2) {
   updateLoadingStatus2("Extracting openclaw runtime...", 84);
   fs3.mkdirSync(DOWNLOADED_RUNTIME_DIR, { recursive: true });
   if (process.platform === "win32") {
-    await execFileAsync("tar", ["-xf", zipPath, "-C", DOWNLOADED_RUNTIME_DIR], { stdio: "pipe", windowsHide: true });
+    await execFileAsync("tar", ["-xf", zipPath, "-C", DOWNLOADED_RUNTIME_DIR], { stdio: "ignore", windowsHide: true });
   } else {
-    await execFileAsync("unzip", ["-o", zipPath, "-d", DOWNLOADED_RUNTIME_DIR], { stdio: "pipe" });
+    await execFileAsync("unzip", ["-oq", zipPath, "-d", DOWNLOADED_RUNTIME_DIR], { stdio: "ignore" });
     repairRuntimePermissions(DOWNLOADED_RUNTIME_DIR);
   }
   if (!findRuntimeDir()) {
