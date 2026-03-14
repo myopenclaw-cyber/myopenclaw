@@ -124,6 +124,24 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
 .plan-wrap .plan-wrap-title span{flex:1;margin-bottom: 20px;}
 .plan-wrap .plan-wrap-title span:nth-child(3) {color:#6B46FF}
 .plan-wrap .plan-wrap-title span:nth-child(4) {background: linear-gradient(90deg, #DF5DFF 0%, #8C46FC 100%);background-clip: text;-webkit-background-clip: text;-webkit-text-fill-color: transparent;}
+.plan-wrap .plan-wrap-title .plan-is-current {
+  position: relative;
+}
+.plan-wrap .plan-wrap-title .plan-is-current::after {
+  content: 'Current';
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #ffffff;
+  background: linear-gradient(90deg, #DF5DFF 0%, #8C46FC 100%);
+  vertical-align: middle;
+}
 .plan-wrap-content {display: flex;align-items:center;gap:12px}
 .plan-wrap-content .plan-wrap-item {flex:1;display: flex;flex-direction: column;gap:32px}
 .plan-wrap-content .plan-wrap-item:nth-child(1){font-weight: 500;font-size: 14px;color: rgba(0, 0, 0, 0.4);line-height: 24px;padding-top: 8px;}
@@ -141,6 +159,11 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
   font-size: 14px;
   font-weight: 500;
   line-height: 24px;
+}
+.plan-wrap-content .plan-wrap-item.plan-is-current {
+  border-color: rgba(140, 70, 252, 0.45);
+  background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(223,93,255,0.08) 100%);
+  box-shadow: 0 18px 40px rgba(140, 70, 252, 0.14);
 }
 .plan-wrap-content .plan-wrap-item:nth-child(2) span:nth-child(3),
 .plan-wrap-content .plan-wrap-item:nth-child(3) span:nth-child(3),
@@ -507,9 +530,9 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
         <div class="plan-wrap">
           <div class="plan-wrap-title">
             <span>Feature</span>
-            <span>Free</span>
-            <span>Plus</span>
-            <span>Pro</span>
+            <span id="planTitleFree">Free</span>
+            <span id="planTitlePlus">Plus</span>
+            <span id="planTitlePro">Pro</span>
           </div>
           <div class="plan-wrap-content">
             <div class="plan-wrap-item">
@@ -518,19 +541,19 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
                 <span>Models</span>
                 <span>Agents</span>
             </div>
-            <div class="plan-wrap-item">
+            <div id="planCardFree" class="plan-wrap-item">
                <span>$0</span>
               <span>50</span>
               <span>Basic</span>
               <span>1</span>
             </div>
-             <div class="plan-wrap-item">
+             <div id="planCardPlus" class="plan-wrap-item">
                <span>$9.9/mo</span>
               <span>1,000</span>
               <span>All Major</span>
               <span>3</span>
             </div>
-             <div class="plan-wrap-item">
+             <div id="planCardPro" class="plan-wrap-item">
                <span>$29.9/mo</span>
               <span>5,000</span>
               <span>All + Latest</span>
@@ -1271,17 +1294,19 @@ async function refreshState() {
   updateAccountUI();
   updateAuthUI();
   updateRelayUI();
+  await refreshAgents();
 }
 
 function updateAccountUI() {
   if (!subscription) return;
   const plan = subscription.plan || 'free';
   const features = subscription.features || { maxAgents: 1, canUseRelay: false, modelTier: 'basic' };
+  const displayPlan = plan === 'premium' || plan === 'plus' ? 'Plus' : plan.charAt(0).toUpperCase() + plan.slice(1);
 
   const badge = document.getElementById('planBadge');
   const planName = document.getElementById('planName');
   badge.className = 'plan-badge plan-' + plan;
-  planName.textContent = plan.charAt(0).toUpperCase() + plan.slice(1);
+  planName.textContent = displayPlan;
 
   const expiry = document.getElementById('planExpiry');
   expiry.textContent = subscription.planExpiresAt
@@ -1299,9 +1324,34 @@ function updateAccountUI() {
   const freeBtn = document.getElementById('upgradeFreeBtnAccount');
   const plusBtn = document.getElementById('upgradePlusBtnAccount');
   const proBtn = document.getElementById('upgradeProBtnAccount');
-  if (freeBtn) freeBtn.disabled = plan === 'free';
-  if (plusBtn) plusBtn.disabled = plan === 'plus' || plan === 'premium';
-  if (proBtn) proBtn.disabled = plan === 'pro';
+  if (freeBtn) {
+    freeBtn.disabled = plan === 'free';
+    freeBtn.textContent = plan === 'free' ? 'Current Plan' : 'Use Free';
+  }
+  if (plusBtn) {
+    plusBtn.disabled = plan === 'plus' || plan === 'premium';
+    plusBtn.textContent = (plan === 'plus' || plan === 'premium') ? 'Current Plan' : 'Upgrade to Plus';
+  }
+  if (proBtn) {
+    proBtn.disabled = plan === 'pro';
+    proBtn.textContent = plan === 'pro' ? 'Current Plan' : 'Upgrade to Pro';
+  }
+
+  const planClassMap = {
+    free: ['planTitleFree', 'planCardFree'],
+    premium: ['planTitlePlus', 'planCardPlus'],
+    plus: ['planTitlePlus', 'planCardPlus'],
+    pro: ['planTitlePro', 'planCardPro'],
+  };
+  ['planTitleFree', 'planTitlePlus', 'planTitlePro', 'planCardFree', 'planCardPlus', 'planCardPro']
+    .forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.classList.remove('plan-is-current');
+    });
+  (planClassMap[plan] || []).forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('plan-is-current');
+  });
 }
 
 function updateAuthUI() {
@@ -1420,7 +1470,7 @@ async function refreshAgents() {
     if (a.id === currentAgent) {
       const activeBadge = document.createElement('span');
       activeBadge.className = 'active-badge';
-      activeBadge.textContent = 'Active';
+      activeBadge.textContent = 'Current';
       info.appendChild(activeBadge);
     }
     item.appendChild(info);
@@ -2617,11 +2667,11 @@ function initKeyboard() {
   try {
     initKeyboard();
     renderChannelFields();
-    // Run all independent IPC init calls in parallel for faster startup
+    // Refresh subscription/app state first so agent limits use the real plan.
+    await refreshState();
+    // Run the remaining independent startup calls in parallel.
     await Promise.all([
       refreshGatewayStatus(),
-      refreshState(),
-      refreshAgents(),
       loadRelayConfig(),
       loadDeviceInfo(),
       refreshQuota(),

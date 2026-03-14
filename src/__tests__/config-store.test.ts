@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getPlanFeatures, checkPremiumGate, getDefaultAppState } from '../config-store';
+import { applyPlanToState, checkPremiumGate, getDefaultAppState, getPlanFeatures, normalizePlan } from '../config-store';
 import type { AppState } from '../types';
 
 describe('getPlanFeatures', () => {
@@ -32,6 +32,41 @@ describe('getPlanFeatures', () => {
     const features = getPlanFeatures('unknown');
     expect(features.maxAgents).toBe(1);
     expect(features.modelTier).toBe('basic');
+  });
+});
+
+describe('normalizePlan', () => {
+  it('maps pro to pro', () => {
+    expect(normalizePlan('pro')).toBe('pro');
+  });
+
+  it('maps premium aliases to premium', () => {
+    expect(normalizePlan('premium')).toBe('premium');
+    expect(normalizePlan('plus')).toBe('premium');
+  });
+
+  it('maps unknown plans to free', () => {
+    expect(normalizePlan('user')).toBe('free');
+    expect(normalizePlan('whatever')).toBe('free');
+    expect(normalizePlan(undefined)).toBe('free');
+  });
+});
+
+describe('applyPlanToState', () => {
+  it('updates all subscription fields consistently', () => {
+    const state = getDefaultAppState();
+    applyPlanToState(state, 'pro', '2026-12-31');
+    expect(state.plan).toBe('pro');
+    expect(state.premiumTier).toBe('pro');
+    expect(state.isPremium).toBe(true);
+    expect(state.planExpiresAt).toBe('2026-12-31');
+  });
+
+  it('normalizes plus to premium', () => {
+    const state = getDefaultAppState();
+    applyPlanToState(state, 'plus');
+    expect(state.plan).toBe('premium');
+    expect(state.premiumTier).toBe('premium');
   });
 });
 
