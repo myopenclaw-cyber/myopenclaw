@@ -50,8 +50,16 @@ body { margin: 0; font-family: 'Aspekta', -apple-system, BlinkMacSystemFont, san
 .card { padding: 20px; border-radius: 20px; border: 1px solid rgba(107,70,255,0.2); background: rgba(255,255,255,0.4); backdrop-filter: blur(4px); box-shadow: 0px 10px 40px 0px rgba(0,0,0,0.04); margin-bottom: 16px; }
 .card h3 { color: #161835; font-size: 20px; font-weight: 700; margin: 0 0 12px; }
 .row { display: flex; gap: 8px; align-items: center; margin: 10px 0; }
-input, textarea, select { width: 100%; padding: 12px 16px; border: 1px solid rgba(107,70,255,0.2); border-radius: 10px; background: rgba(255,255,255,0.4); backdrop-filter: blur(4px); color: #161835; font-family: inherit; font-size: 14px; }
-select{appearance: none;-webkit-appearance: none;-moz-appearance: none; padding-right: 20px;background-image: url("./build/assets/arrow-down.png");background-repeat: no-repeat;background-position: right 10px center;background-size: 24px;}
+input, textarea, select, .cs-trigger { width: 100%; padding: 12px 16px; border: 1px solid rgba(107,70,255,0.2); border-radius: 10px; background: rgba(255,255,255,0.4); backdrop-filter: blur(4px); color: #161835; font-family: inherit; font-size: 14px; }
+select, .cs-trigger { appearance: none;-webkit-appearance: none;-moz-appearance: none; padding-right: 36px;background-image: url("./build/assets/arrow-down.png");background-repeat: no-repeat;background-position: right 10px center;background-size: 24px; }
+.cs-trigger { cursor: pointer; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-wrap { position: relative; width: 100%; }
+.cs-dropdown { display: none; position: absolute; top: calc(100% + 6px); left: 0; min-width: 100%; z-index: 500; border-radius: 20px; border: 1px solid rgba(0,0,0,0.04); background: #FFF; box-shadow: 0 10px 40px 0 rgba(0,0,0,0.04); padding: 8px; max-height: 300px; overflow-y: auto; }
+.cs-dropdown.open { display: block; }
+.cs-opt { height: 48px; display: flex; align-items: center; padding: 0 16px; color: #000; font-family: 'Aspekta', sans-serif; font-size: 14px; font-weight: 500; line-height: 24px; cursor: pointer; border-radius: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-opt:hover { background: rgba(107,70,255,0.06); }
+.cs-opt.active { background: rgba(107,70,255,0.10); backdrop-filter: blur(2px); }
+option { background: white !important; }
 /* Modals */
 input::placeholder, textarea::placeholder { color: rgba(0,0,0,0.4); }
 input:focus, textarea:focus, select:focus { outline: none; border-color: #6B46FF; }
@@ -89,17 +97,19 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
 .model-picker { display: none; position: absolute; bottom: 60px; left: 42px; margin-bottom: 6px; min-width: 220px; background: #ffffff; border: 1px solid rgba(107, 70, 255, 0.20); border-radius: 20px; box-shadow: 0 10px 40px 0 rgba(0, 0, 0, 0.04); padding: 12px; z-index: 100; }
 .model-picker.open { display: block; }
 .model-picker-group { padding: 4px 0; }
-.model-picker-label { font-size: 16px; font-weight: 700; color: #000000; text-transform: uppercase; line-height: 24px; display:flex;align-items:center;}
+.model-picker-label { font-size: 16px; font-weight: 700; color: #000000; text-transform: uppercase; line-height: 24px; display:flex;align-items:center;margin-bottom: 12px;}
 .model-picker-label img { width:24px;height:24px;margin-right:8px;}
-.model-picker-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; cursor: pointer; font-size: 12px; color: #cbd5e1; }
+.model-picker-item { min-width:261px; display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; color: #000000; font-weight: 500;}
 .model-picker-item:hover { background: rgba(151, 143, 143, 0.08); }
-.model-picker-item.active { background: rgba(107,70,255,.18); color: #a78bfa; }
+.model-picker-item.active { background: rgba(107,70,255,.1); }
 .model-picker-item .mp-check { width: 14px; text-align: center; font-size: 11px; color: #a78bfa; }
-.model-picker-item.locked { opacity: .45; cursor: not-allowed; }
+.model-picker-item.locked { cursor: not-allowed; }
 .model-picker-item.locked:hover { background: transparent; }
-.model-picker-item.locked .mp-lock { font-size: 10px; margin-left: auto; color: #94a3b8; }
+.model-picker-item.locked .mp-lock { font-size: 10px; margin-left: auto; color: #6B46FF; border-radius: 99px;background: rgba(107, 70, 255, 0.10);padding:6px}
 .model-picker-item .mp-name { flex: 1; }
-.model-picker-item .mp-credits { font-size: 10px; color: #94a3b8; margin-left: auto; padding: 1px 6px; background: rgba(255,255,255,.06); border-radius: 6px; }
+.model-picker-item.locked .mp-name {opacity: 0.45;}
+.model-picker-item .mp-credits { font-size: 10px; color: #94a3b8; margin-left: auto; padding: 1px 6px; background: rgba(0,0,0,0.04); border-radius: 10px; }
+.model-picker-item.active .mp-credits {color:#000000;}
 /* Modals */
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.2); display: none; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(4px); }
 .modal.show { display: flex; }
@@ -267,32 +277,32 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
 .pairing-req-actions .dismiss { background: rgba(255,255,255,.08); color: #94a3b8; }
 .pairing-req-actions .dismiss:hover { background: rgba(255,255,255,.14); color: #e2e8f0; }
 /* Channel status panel */
-.channel-panel { margin-top: 12px; border: 1px solid rgba(99,102,241,.2); border-radius: 12px; overflow: hidden; background: linear-gradient(135deg, rgba(99,102,241,.06) 0%, rgba(139,92,246,.04) 100%); }
+.channel-panel { margin-top: 12px; border: 1px solid rgba(107, 70, 255, 0.20); border-radius: 12px; overflow: hidden; background: rgba(107, 70, 255, 0.04);backdrop-filter: blur(2px); }
 .channel-panel-header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; cursor: pointer; user-select: none; }
 .channel-panel-header:hover { background: rgba(99,102,241,.08); }
-.channel-panel-title { font-size: 13px; font-weight: 600; color: #a5b4fc; flex: 1; }
+.channel-panel-title { font-size: 14px; font-weight: 600; color: #6B46ff; flex: 1; }
 .channel-panel-icons { display: flex; gap: 6px; }
 .channel-panel-icon { font-size: 16px; }
-.channel-panel-arrow { font-size: 12px; color: rgba(165,180,252,.5); transition: transform .2s; }
+.channel-panel-arrow { font-size: 12px; color: #6B46FF; transition: transform .2s; }
 .channel-panel.open .channel-panel-arrow { transform: rotate(90deg); }
 .channel-panel-body { display: none; padding: 0 14px 12px; }
 .channel-panel.open .channel-panel-body { display: block; }
-.ch-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin-top: 8px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); border-radius: 10px; }
-.ch-item-icon { font-size: 20px; flex-shrink: 0; }
+.ch-item { display: flex; align-items: flex-start; gap: 10px; padding: 12px; margin-top: 8px; background: rgba(107, 70, 255, 0.04); border: 1px solid rgba(107, 70, 255, 0.20); border-radius: 10px; backdrop-filter: blur(2px);}
+.ch-item-icon { width:24px;height:24px; flex-shrink: 0; }
 .ch-item-info { flex: 1; min-width: 0; }
-.ch-item-name { font-size: 13px; font-weight: 600; color: #e2e8f0; }
-.ch-item-bot { font-size: 12px; color: #818cf8; margin-top: 1px; }
-.ch-item-meta { font-size: 11px; color: rgba(255,255,255,.4); margin-top: 2px; }
+.ch-item-name { font-size: 14px; font-weight: 600; color: #6B46FF; }
+.ch-item-bot { font-size: 14px; color: #6B46FF; margin-left: 2px; }
+.ch-item-meta { font-size: 12px; color: rgba(0,0,0,.4); margin-top: 12px; line-height: 24px;}
 .ch-item-actions { flex-shrink: 0; }
-.ch-item-actions button { padding: 4px 10px; font-size: 11px; border-radius: 6px; cursor: pointer; border: 1px solid rgba(129,140,248,.25); background: rgba(99,102,241,.12); color: #a5b4fc; font-weight: 600; }
-.ch-item-actions button:hover { background: rgba(99,102,241,.22); color: #c7d2fe; }
+.ch-item-actions button { width:86px; height:36px; font-size: 14px; border-radius: 6px; cursor: pointer; background: #8C46FC; color: #ffffff; font-weight: 600; padding:0;}
+/* .ch-item-actions button:hover { background: rgba(99,102,241,.22); color: #c7d2fe; } */
 .ch-paired-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .ch-paired-tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; font-size: 11px; color: #94a3b8; background: rgba(255,255,255,.06); border-radius: 6px; }
 /* Channel setup guide */
-.channel-guide { background: rgba(255, 255, 255, 0.40); border: 1px solid #4f9eff44; border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
-.channel-guide p { margin: 0 0 10px; font-size: 13px; font-weight: 700; color: #8aa1ff; letter-spacing: .03em; }
-.channel-guide ol { margin: 0; padding-left: 20px; }
-.channel-guide ol li { font-size: 13px; color: #c8d4ff; line-height: 1.7; }
+.channel-guide { background: rgba(255, 255, 255, 0.40); border: 1px solid rgba(107, 70, 255, 0.20); border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+.channel-guide p { margin: 0 0 10px; font-size: 14px; font-weight: 700; color: #6B46FF; letter-spacing: .03em; }
+.channel-guide ol { margin: 0; padding-left: 12px; }
+.channel-guide ol li { font-size: 14px; color: #6B46FF; line-height: 1.7; border:none;background: rgba(0, 0, 0, 0.04);}
 .channel-guide a { color: #6db3ff; text-decoration: none; border-bottom: 1px dotted #6db3ff88; }
 .channel-guide a:hover { color: #a8d4ff; border-bottom-color: #a8d4ff; }
 /* Cron jobs */
@@ -390,7 +400,7 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
               <div class="model-tag-row">
                 <span id="modelTag" class="model-tag" onclick="toggleModelPicker()"></span>
               </div>
-                <div id="modelPicker" class="model-picker open">
+                <div id="modelPicker" class="model-picker">
                 <div class="model-picker-section" id="modelPickerList"></div>
               </div>
             </div>
@@ -866,8 +876,9 @@ function buildModelPickerList() {
       item.className = 'model-picker-item' + (m.id === selectedModel ? ' active' : '') + (locked ? ' locked' : '');
       const check = locked ? '' : (m.id === selectedModel ? '\u2713' : '');
       const credits = m.credits_per_message != null ? '<span class="mp-credits">' + m.credits_per_message + ' cr</span>' : '';
-      const tierLabel = locked && m.requires ? '<span class="mp-lock">\uD83D\uDD12 ' + m.requires + '</span>' : '';
-      item.innerHTML = '<span class="mp-check">' + check + '</span><span class="mp-name">' + escHtml(m.name || m.id) + '</span>' + credits + tierLabel;
+      const tierLabel = locked && m.requires ? '<span class="mp-lock">' + m.requires + '</span>' : '';
+      item.innerHTML =`<div class='row'><span class="mp-name">${escHtml(m.name || m.id)}</span>${tierLabel}</div><div class='row'>${credits}${check}</div>`
+      // item.innerHTML = '<span class="mp-check">' + check + '</span><span class="mp-name">' + escHtml(m.name || m.id) + '</span>' + credits + tierLabel;
       item.onclick = () => selectModel(m.id);
       group.appendChild(item);
     }
@@ -905,7 +916,7 @@ document.addEventListener('click', (e) => {
 // Toast
 // ---------------------------------------------------------------------------
 function showToast(msg, ms) {
-  ms = ms || 3000;
+  ms = ms || 5000;
   const t = document.createElement('div');
   t.className = 'toast';
   t.textContent = msg;
@@ -1577,8 +1588,8 @@ async function renderChannelStatus() {
     const header = document.createElement('div');
     header.className = 'channel-panel-header';
     header.innerHTML = '<span class="channel-panel-arrow">\u25B6</span>'
-      + '<span class="channel-panel-title">Channels (' + entries.length + ')</span>'
-      + '<span class="channel-panel-icons">' + entries.map(([ch]) => '<span class="channel-panel-icon">' + (channelIcons[ch] || '\u{1F517}') + '</span>').join('') + '</span>';
+      + '<span class="channel-panel-title">Channels (' + entries.length + ')</span>';
+      // + '<span class="channel-panel-icons">' + entries.map(([ch]) => '<span class="channel-panel-icon">' + (channelIcons[ch] || '\u{1F517}') + '</span>').join('') + '</span>';
     header.onclick = () => panel.classList.toggle('open');
     panel.appendChild(header);
 
@@ -1592,13 +1603,18 @@ async function renderChannelStatus() {
         item.className = 'ch-item';
 
         const icon = channelIcons[ch] || '\u{1F517}';
-        item.innerHTML = '<span class="ch-item-icon">' + icon + '</span>';
+        item.innerHTML = '';
 
         const infoDiv = document.createElement('div');
         infoDiv.className = 'ch-item-info';
         const botName = accountCfg._botName ? ' @' + accountCfg._botName : '';
-        infoDiv.innerHTML = '<div class="ch-item-name">' + escHtml(channelNames[ch] || ch) + '</div>'
+        infoDiv.innerHTML = '<div style="display:flex;align-items:center;gap:8px;">'
+          + `<img class="ch-item-icon" src='./build/assets/${ch}.png'/>`
+          + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
+          + '<div class="ch-item-name">' + escHtml(channelNames[ch] || ch) + '</div>'
           + (botName ? '<div class="ch-item-bot">' + escHtml(botName) + '</div>' : '')
+          + '</div>'
+          + '</div>'
           + '<div class="ch-item-meta">Account: ' + escHtml(accountId) + '</div>';
 
         // Paired users
@@ -2689,11 +2705,85 @@ function initKeyboard() {
 }
 
 // ---------------------------------------------------------------------------
+// Custom Select Component
+// ---------------------------------------------------------------------------
+function initCustomSelect(sel) {
+  if (sel._cs) return;
+  sel._cs = true;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'cs-wrap';
+  if (sel.style.flex) wrap.style.flex = sel.style.flex;
+  sel.parentNode.insertBefore(wrap, sel);
+
+  const trigger = document.createElement('div');
+  trigger.className = (sel.className || '') + ' cs-trigger';
+
+  const dropdown = document.createElement('div');
+  dropdown.className = 'cs-dropdown';
+
+  sel.style.display = 'none';
+  wrap.appendChild(sel);
+  wrap.appendChild(trigger);
+  wrap.appendChild(dropdown);
+
+  function syncTrigger() {
+    const opt = sel.options[sel.selectedIndex];
+    trigger.textContent = opt ? opt.text : '';
+  }
+
+  function buildDropdown() {
+    dropdown.innerHTML = '';
+    Array.from(sel.options).forEach((opt, i) => {
+      const item = document.createElement('div');
+      item.className = 'cs-opt' + (i === sel.selectedIndex ? ' active' : '');
+      item.textContent = opt.text;
+      item.onclick = (e) => {
+        e.stopPropagation();
+        sel.value = opt.value;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        dropdown.classList.remove('open');
+        syncTrigger();
+        Array.from(dropdown.children).forEach((c, j) => c.classList.toggle('active', j === i));
+      };
+      dropdown.appendChild(item);
+    });
+  }
+
+  trigger.onclick = (e) => {
+    e.stopPropagation();
+    const wasOpen = dropdown.classList.contains('open');
+    document.querySelectorAll('.cs-dropdown.open').forEach(d => d.classList.remove('open'));
+    if (!wasOpen) {
+      buildDropdown();
+      dropdown.classList.add('open');
+    }
+  };
+
+  sel.addEventListener('change', syncTrigger);
+  new MutationObserver(() => {
+    syncTrigger();
+    if (dropdown.classList.contains('open')) buildDropdown();
+  }).observe(sel, { childList: true, subtree: false });
+
+  syncTrigger();
+}
+
+function initAllCustomSelects() {
+  document.querySelectorAll('select').forEach(initCustomSelect);
+}
+
+document.addEventListener('click', () => {
+  document.querySelectorAll('.cs-dropdown.open').forEach(d => d.classList.remove('open'));
+});
+
+// ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
 (async () => {
   try {
     initKeyboard();
+    initAllCustomSelects();
     renderChannelFields();
     // Refresh subscription/app state first so agent limits use the real plan.
     await refreshState();
