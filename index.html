@@ -869,7 +869,7 @@ function buildModelPickerList() {
   for (const [label, models] of Object.entries(groups)) {
     const group = document.createElement('div');
     group.className = 'model-picker-group';
-    group.innerHTML = `<div class="model-picker-label"><img src="./build/assets/${escHtml(label)}.png"/><span>${escHtml(label)}</span></div>`;
+    group.innerHTML = `<div class="model-picker-label"><img src="./build/assets/model/${escHtml(label)}.png"/><span>${escHtml(label)}</span></div>`;
     for (const m of models) {
       const locked = m.available === false;
       const item = document.createElement('div');
