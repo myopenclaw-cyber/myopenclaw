@@ -10,6 +10,10 @@ on:
         description: 'Branch to build'
         required: false
         default: 'V3'
+      runtime_tag:
+        description: 'Runtime tag to publish/update (for example: runtime-v1.1.1)'
+        required: false
+        default: ''
 
 jobs:
   build-windows-runtime:
@@ -279,7 +283,7 @@ jobs:
   create-release:
     needs: [build-windows-runtime, build-mac-silicon-runtime, build-mac-intel-runtime]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
     steps:
@@ -302,6 +306,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ github.event.inputs.runtime_tag || github.ref_name }}
           files: |
             artifacts/openclaw-runtime-windows/openclaw-runtime-windows.zip
             artifacts/openclaw-runtime-mac-silicon/openclaw-runtime-mac-silicon.zip
@@ -321,10 +326,58 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Upload runtime packages to R2 CDN
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID || secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY || secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET || secrets.CLOUDFLARE_R2_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID || secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY || secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          TAG_NAME="${{ github.event.inputs.runtime_tag || github.ref_name }}"
+          if [ -z "$TAG_NAME" ]; then
+            echo "Missing runtime tag. Provide workflow_dispatch input runtime_tag or push a runtime-v* tag."
+            exit 1
+          fi
+          RUNTIME_VERSION="${TAG_NAME#runtime-}"
+
+          if [ -z "$R2_ACCOUNT_ID" ] || [ -z "$R2_ACCESS_KEY_ID" ] || [ -z "$R2_SECRET_ACCESS_KEY" ] || [ -z "$R2_BUCKET" ]; then
+            echo "Missing R2 configuration. Expected secrets: R2_ACCOUNT_ID/R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY/R2_BUCKET"
+            echo "or CLOUDFLARE_ACCOUNT_ID/CLOUDFLARE_R2_ACCESS_KEY_ID/CLOUDFLARE_R2_SECRET_ACCESS_KEY/CLOUDFLARE_R2_BUCKET"
+            exit 1
+          fi
+
+          ENDPOINT_URL="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          RUNTIME_PREFIX="runtime/${RUNTIME_VERSION}"
+
+          aws s3 cp artifacts/openclaw-runtime-windows/openclaw-runtime-windows.zip "s3://${R2_BUCKET}/${RUNTIME_PREFIX}/openclaw-runtime-windows.zip" \
+            --endpoint-url "${ENDPOINT_URL}" \
+            --content-type application/zip
+
+          aws s3 cp artifacts/openclaw-runtime-mac-silicon/openclaw-runtime-mac-silicon.zip "s3://${R2_BUCKET}/${RUNTIME_PREFIX}/openclaw-runtime-mac-silicon.zip" \
+            --endpoint-url "${ENDPOINT_URL}" \
+            --content-type application/zip
+
+          aws s3 cp artifacts/openclaw-runtime-mac-intel/openclaw-runtime-mac-intel.zip "s3://${R2_BUCKET}/${RUNTIME_PREFIX}/openclaw-runtime-mac-intel.zip" \
+            --endpoint-url "${ENDPOINT_URL}" \
+            --content-type application/zip
+
+          echo "Uploaded runtime packages to R2 path: ${RUNTIME_PREFIX}"
+
       - name: Get release URLs
         run: |
-          TAG_NAME=${GITHUB_REF#refs/tags/}
+          TAG_NAME="${{ github.event.inputs.runtime_tag || github.ref_name }}"
+          if [ -z "$TAG_NAME" ]; then
+            echo "Missing runtime tag. Provide workflow_dispatch input runtime_tag or push a runtime-v* tag."
+            exit 1
+          fi
+          RUNTIME_VERSION="${TAG_NAME#runtime-}"
           REPO="${{ github.repository }}"
           echo "Windows: https://github.com/${REPO}/releases/download/${TAG_NAME}/openclaw-runtime-windows.zip"
           echo "Mac Silicon: https://github.com/${REPO}/releases/download/${TAG_NAME}/openclaw-runtime-mac-silicon.zip"
           echo "Mac Intel: https://github.com/${REPO}/releases/download/${TAG_NAME}/openclaw-runtime-mac-intel.zip"
+          echo "CDN Windows: https://cdn.myopenclaws.app/runtime/${RUNTIME_VERSION}/openclaw-runtime-windows.zip"
+          echo "CDN Mac Silicon: https://cdn.myopenclaws.app/runtime/${RUNTIME_VERSION}/openclaw-runtime-mac-silicon.zip"
+          echo "CDN Mac Intel: https://cdn.myopenclaws.app/runtime/${RUNTIME_VERSION}/openclaw-runtime-mac-intel.zip"
