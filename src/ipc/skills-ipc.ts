@@ -203,6 +203,24 @@ async function gatewayRpc(
   });
 }
 
+function formatMarketplaceHttpError(resp: Response): string {
+  if (resp.status === 429) {
+    const retryAfter = resp.headers.get('retry-after');
+    return retryAfter
+      ? `Skill marketplace is temporarily rate limited. Please try again in ${retryAfter} seconds.`
+      : 'Skill marketplace is temporarily rate limited. Please wait a moment and try again.';
+  }
+  return `HTTP ${resp.status}`;
+}
+
+function formatMarketplaceError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error || 'unknown');
+  if (message.includes('HTTP 429')) {
+    return 'Skill marketplace is temporarily rate limited. Please wait a moment and try again.';
+  }
+  return message;
+}
+
 export function registerSkillsHandlers(
   getGatewayHandle: () => GatewayHandle | null,
 ): void {
@@ -311,11 +329,11 @@ export function registerSkillsHandlers(
       if (sort) params.set('sort', sort);
       if (cursor) params.set('cursor', cursor);
       const resp = await fetch(`${CLAWHUB_API}/skills?${params}`);
-      if (!resp.ok) return { success: false, error: `HTTP ${resp.status}` };
+      if (!resp.ok) return { success: false, error: formatMarketplaceHttpError(resp) };
       const data = await resp.json();
       return { success: true, items: data.items || [], nextCursor: data.nextCursor || null };
     } catch (e: any) {
-      return { success: false, error: e.message };
+      return { success: false, error: formatMarketplaceError(e) };
     }
   });
 
@@ -325,11 +343,11 @@ export function registerSkillsHandlers(
       if (!query) return { success: false, error: 'query is required' };
       const params = new URLSearchParams({ q: query, limit: String(limit || 15) });
       const resp = await fetch(`${CLAWHUB_API}/search?${params}`);
-      if (!resp.ok) return { success: false, error: `HTTP ${resp.status}` };
+      if (!resp.ok) return { success: false, error: formatMarketplaceHttpError(resp) };
       const data = await resp.json();
       return { success: true, results: data.results || [] };
     } catch (e: any) {
-      return { success: false, error: e.message };
+      return { success: false, error: formatMarketplaceError(e) };
     }
   });
 
@@ -338,11 +356,11 @@ export function registerSkillsHandlers(
       const { slug } = payload || {};
       if (!slug) return { success: false, error: 'slug is required' };
       const resp = await fetch(`${CLAWHUB_API}/skills/${encodeURIComponent(slug)}`);
-      if (!resp.ok) return { success: false, error: `HTTP ${resp.status}` };
+      if (!resp.ok) return { success: false, error: formatMarketplaceHttpError(resp) };
       const data = await resp.json();
       return { success: true, ...data };
     } catch (e: any) {
-      return { success: false, error: e.message };
+      return { success: false, error: formatMarketplaceError(e) };
     }
   });
 
@@ -371,7 +389,7 @@ export function registerSkillsHandlers(
 
       return { success: true };
     } catch (e: any) {
-      return { success: false, error: e.message };
+      return { success: false, error: formatMarketplaceError(e) };
     }
   });
 
@@ -419,7 +437,7 @@ export function registerSkillsHandlers(
 
       return { success: true };
     } catch (e: any) {
-      return { success: false, error: e.message };
+      return { success: false, error: formatMarketplaceError(e) };
     }
   });
 

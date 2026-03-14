@@ -17997,6 +17997,20 @@ async function gatewayRpc(gw, method, params = {}) {
     };
   });
 }
+function formatMarketplaceHttpError(resp) {
+  if (resp.status === 429) {
+    const retryAfter = resp.headers.get("retry-after");
+    return retryAfter ? `Skill marketplace is temporarily rate limited. Please try again in ${retryAfter} seconds.` : "Skill marketplace is temporarily rate limited. Please wait a moment and try again.";
+  }
+  return `HTTP ${resp.status}`;
+}
+function formatMarketplaceError(error) {
+  const message = error instanceof Error ? error.message : String(error || "unknown");
+  if (message.includes("HTTP 429")) {
+    return "Skill marketplace is temporarily rate limited. Please wait a moment and try again.";
+  }
+  return message;
+}
 function registerSkillsHandlers(getGatewayHandle) {
   import_electron10.ipcMain.handle("skills-list", async () => {
     try {
@@ -18080,11 +18094,11 @@ function registerSkillsHandlers(getGatewayHandle) {
       if (sort) params.set("sort", sort);
       if (cursor) params.set("cursor", cursor);
       const resp = await fetch(`${CLAWHUB_API}/skills?${params}`);
-      if (!resp.ok) return { success: false, error: `HTTP ${resp.status}` };
+      if (!resp.ok) return { success: false, error: formatMarketplaceHttpError(resp) };
       const data = await resp.json();
       return { success: true, items: data.items || [], nextCursor: data.nextCursor || null };
     } catch (e) {
-      return { success: false, error: e.message };
+      return { success: false, error: formatMarketplaceError(e) };
     }
   });
   import_electron10.ipcMain.handle("marketplace-search", async (_event, payload) => {
@@ -18093,11 +18107,11 @@ function registerSkillsHandlers(getGatewayHandle) {
       if (!query) return { success: false, error: "query is required" };
       const params = new URLSearchParams({ q: query, limit: String(limit || 15) });
       const resp = await fetch(`${CLAWHUB_API}/search?${params}`);
-      if (!resp.ok) return { success: false, error: `HTTP ${resp.status}` };
+      if (!resp.ok) return { success: false, error: formatMarketplaceHttpError(resp) };
       const data = await resp.json();
       return { success: true, results: data.results || [] };
     } catch (e) {
-      return { success: false, error: e.message };
+      return { success: false, error: formatMarketplaceError(e) };
     }
   });
   import_electron10.ipcMain.handle("marketplace-detail", async (_event, payload) => {
@@ -18105,11 +18119,11 @@ function registerSkillsHandlers(getGatewayHandle) {
       const { slug } = payload || {};
       if (!slug) return { success: false, error: "slug is required" };
       const resp = await fetch(`${CLAWHUB_API}/skills/${encodeURIComponent(slug)}`);
-      if (!resp.ok) return { success: false, error: `HTTP ${resp.status}` };
+      if (!resp.ok) return { success: false, error: formatMarketplaceHttpError(resp) };
       const data = await resp.json();
       return { success: true, ...data };
     } catch (e) {
-      return { success: false, error: e.message };
+      return { success: false, error: formatMarketplaceError(e) };
     }
   });
   import_electron10.ipcMain.handle("marketplace-install", async (_event, payload) => {
@@ -18137,7 +18151,7 @@ function registerSkillsHandlers(getGatewayHandle) {
       }
       return { success: true };
     } catch (e) {
-      return { success: false, error: e.message };
+      return { success: false, error: formatMarketplaceError(e) };
     }
   });
   import_electron10.ipcMain.handle("marketplace-uninstall", async (_event, payload) => {
@@ -18178,7 +18192,7 @@ function registerSkillsHandlers(getGatewayHandle) {
       }
       return { success: true };
     } catch (e) {
-      return { success: false, error: e.message };
+      return { success: false, error: formatMarketplaceError(e) };
     }
   });
   import_electron10.ipcMain.handle("skills-configure", async (_event, payload) => {
@@ -18271,6 +18285,65 @@ function wsRpc(port, token, method, params = {}) {
     });
   });
 }
+function slugifyCronName(input) {
+  const slug = String(input || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
+  return slug || "scheduled-task";
+}
+function normalizeCronConfig(rawConfig, fallbackDescription) {
+  const schedule = rawConfig?.schedule || {};
+  const kind = schedule?.kind;
+  let normalizedSchedule;
+  if (kind === "cron") {
+    const expr = String(schedule.expr || "").trim();
+    if (!expr) throw new Error("Missing cron expression");
+    const tz = String(schedule.tz || "").trim();
+    normalizedSchedule = tz ? { kind: "cron", expr, tz } : { kind: "cron", expr };
+  } else if (kind === "every") {
+    const everyMs = Number(schedule.everyMs);
+    if (!Number.isFinite(everyMs) || everyMs < 1e3) throw new Error("Missing interval");
+    normalizedSchedule = { kind: "every", everyMs };
+  } else if (kind === "at") {
+    const at = String(schedule.at || "").trim();
+    if (!at) throw new Error("Missing timestamp");
+    normalizedSchedule = { kind: "at", at };
+  } else {
+    throw new Error("Missing schedule kind");
+  }
+  const description = String(fallbackDescription || "").trim();
+  return {
+    name: slugifyCronName(String(rawConfig?.name || "").trim() || description),
+    schedule: normalizedSchedule,
+    message: String(rawConfig?.message || "").trim() || description
+  };
+}
+function parseCronConfig(content, fallbackDescription) {
+  const cleaned = String(content || "").replace(/```json?\n?/g, "").replace(/```/g, "").trim();
+  if (!cleaned) return null;
+  const jsonStart = cleaned.indexOf("{");
+  const jsonEnd = cleaned.lastIndexOf("}");
+  if (jsonStart === -1 || jsonEnd === -1 || jsonEnd < jsonStart) return null;
+  try {
+    const parsed = JSON.parse(cleaned.slice(jsonStart, jsonEnd + 1));
+    return normalizeCronConfig(parsed, fallbackDescription);
+  } catch {
+    return null;
+  }
+}
+async function requestCronConfig(port, token, messages) {
+  const response = await import_axios12.default.post(`http://127.0.0.1:${port}/v1/chat/completions`, {
+    model: "openclaw:main",
+    messages,
+    stream: false,
+    temperature: 0
+  }, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    timeout: 3e4
+  });
+  return String(response?.data?.choices?.[0]?.message?.content || "").trim();
+}
 function registerCronHandlers(getGatewayHandle) {
   function requireGateway() {
     const gw = getGatewayHandle();
@@ -18350,30 +18423,52 @@ function registerCronHandlers(getGatewayHandle) {
         '  "message": "the prompt message to send to the agent when the job runs"',
         "}"
       ].join("\n");
-      const response = await import_axios12.default.post(`http://127.0.0.1:${port}/v1/chat/completions`, {
-        model: "openclaw:main",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: params.description }
-        ],
-        stream: false
-      }, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
-        },
-        timeout: 3e4
-      });
-      const content = response?.data?.choices?.[0]?.message?.content || "";
+      const content = await requestCronConfig(port, token, [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: params.description }
+      ]);
       if (!content) {
         return { success: false, error: "AI returned empty response" };
       }
-      const cleaned = content.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
-      if (!cleaned.startsWith("{")) {
-        return { success: false, error: content };
+      const directConfig = parseCronConfig(content, params.description);
+      if (directConfig) {
+        return { success: true, config: directConfig };
       }
-      const config = JSON.parse(cleaned);
-      return { success: true, config };
+      const repairPrompt = [
+        "You convert scheduling requests into structured cron job JSON.",
+        "The assistant reply may be a plain English confirmation instead of JSON.",
+        "Infer the correct schedule from the original request and the assistant reply.",
+        "Return ONLY valid JSON with this structure:",
+        "{",
+        '  "name": "short-kebab-case-name",',
+        '  "schedule": {',
+        '    "kind": "cron" | "every" | "at",',
+        '    "expr": "cron expression when kind=cron",',
+        '    "tz": "optional timezone like Asia/Shanghai",',
+        '    "everyMs": 60000,',
+        '    "at": "2026-03-15T09:00:00Z"',
+        "  },",
+        '  "message": "the prompt to send when the job runs"',
+        "}"
+      ].join("\n");
+      const repairedContent = await requestCronConfig(port, token, [
+        { role: "system", content: repairPrompt },
+        {
+          role: "user",
+          content: [
+            "Original request:",
+            params.description,
+            "",
+            "Assistant reply:",
+            content
+          ].join("\n")
+        }
+      ]);
+      const repairedConfig = parseCronConfig(repairedContent, params.description);
+      if (repairedConfig) {
+        return { success: true, config: repairedConfig, normalizedFromReply: true };
+      }
+      return { success: false, error: content };
     } catch (err) {
       return { success: false, error: err.message };
     }

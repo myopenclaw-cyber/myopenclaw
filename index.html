@@ -913,6 +913,14 @@ function showToast(msg, ms) {
   setTimeout(() => { if (t.parentNode) t.parentNode.removeChild(t); }, ms);
 }
 
+function formatMarketplaceErrorMessage(error) {
+  var message = String(error || 'unknown');
+  if (message.indexOf('429') !== -1 || message.toLowerCase().indexOf('rate limited') !== -1) {
+    return 'Skill marketplace is temporarily busy. Please wait a moment and try again.';
+  }
+  return message;
+}
+
 // ---------------------------------------------------------------------------
 // Premium modal
 // ---------------------------------------------------------------------------
@@ -2186,7 +2194,7 @@ async function mpDoSearch(q) {
   document.getElementById('mpLoadMore').style.display = 'none';
   var r = await window.electronAPI.marketplaceSearch({ query: q.trim(), limit: 20 });
   if (!r || !r.success) {
-    document.getElementById('mpStatus').textContent = 'Search failed: ' + (r && r.error || 'unknown');
+    document.getElementById('mpStatus').textContent = 'Search failed: ' + formatMarketplaceErrorMessage(r && r.error);
     return;
   }
   mpItems = (r.results || []).map(function(s) { return { slug: s.slug, displayName: s.displayName, summary: s.summary, stats: {}, score: s.score }; });
@@ -2200,7 +2208,7 @@ async function mpLoad() {
   if (mpItems.length === 0) { statusEl.textContent = 'Loading...'; gridEl.innerHTML = ''; }
   var r = await window.electronAPI.marketplaceList({ sort: mpSort, cursor: mpCursor, limit: 25 });
   if (!r || !r.success) {
-    statusEl.textContent = 'Failed: ' + (r && r.error || 'unknown');
+    statusEl.textContent = 'Failed: ' + formatMarketplaceErrorMessage(r && r.error);
     return;
   }
   mpItems = mpItems.concat(r.items || []);
@@ -2265,7 +2273,7 @@ function mpRender() {
         unBtn.disabled = true; unBtn.textContent = 'Uninstalling...';
         var r = await window.electronAPI.marketplaceUninstall({ slug: item.slug });
         if (r && r.success) { showToast('Uninstalled ' + item.slug); await loadSkills(); mpRender(); }
-        else { showToast('Failed: ' + (r && r.error || 'unknown')); unBtn.disabled = false; unBtn.textContent = 'Uninstall'; }
+        else { showToast('Failed: ' + formatMarketplaceErrorMessage(r && r.error)); unBtn.disabled = false; unBtn.textContent = 'Uninstall'; }
       };
       actions.appendChild(unBtn);
     } else {
@@ -2275,7 +2283,7 @@ function mpRender() {
         installBtn.disabled = true; installBtn.textContent = 'Installing...';
         var r = await window.electronAPI.marketplaceInstall({ slug: item.slug });
         if (r && r.success) { showToast('Installed ' + item.slug); await loadSkills(); mpRender(); }
-        else { showToast('Failed: ' + (r && r.error || 'unknown')); installBtn.disabled = false; installBtn.textContent = 'Install'; }
+        else { showToast('Failed: ' + formatMarketplaceErrorMessage(r && r.error)); installBtn.disabled = false; installBtn.textContent = 'Install'; }
       };
       actions.appendChild(installBtn);
     }
@@ -2385,7 +2393,7 @@ async function generateCronFromNL() {
     document.getElementById('cronMessage').value = cfg.message || '';
     populateCronAgentSelect(null);
     setCronMode('manual');
-    showToast('Generated! Review and save.');
+    showToast(r && r.normalizedFromReply ? 'Generated from assistant reply. Review and save.' : 'Generated! Review and save.');
   } catch (e) {
     showToast('Generate error: ' + e.message);
   } finally {

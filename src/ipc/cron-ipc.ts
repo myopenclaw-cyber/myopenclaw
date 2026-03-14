@@ -97,6 +97,96 @@ function wsRpc(
   });
 }
 
+type CronSchedule =
+  | { kind: 'cron'; expr: string; tz?: string }
+  | { kind: 'every'; everyMs: number }
+  | { kind: 'at'; at: string };
+
+type CronConfig = {
+  name: string;
+  schedule: CronSchedule;
+  message: string;
+};
+
+function slugifyCronName(input: string): string {
+  const slug = String(input || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  return slug || 'scheduled-task';
+}
+
+function normalizeCronConfig(rawConfig: any, fallbackDescription: string): CronConfig {
+  const schedule = rawConfig?.schedule || {};
+  const kind = schedule?.kind;
+
+  let normalizedSchedule: CronSchedule;
+  if (kind === 'cron') {
+    const expr = String(schedule.expr || '').trim();
+    if (!expr) throw new Error('Missing cron expression');
+    const tz = String(schedule.tz || '').trim();
+    normalizedSchedule = tz ? { kind: 'cron', expr, tz } : { kind: 'cron', expr };
+  } else if (kind === 'every') {
+    const everyMs = Number(schedule.everyMs);
+    if (!Number.isFinite(everyMs) || everyMs < 1000) throw new Error('Missing interval');
+    normalizedSchedule = { kind: 'every', everyMs };
+  } else if (kind === 'at') {
+    const at = String(schedule.at || '').trim();
+    if (!at) throw new Error('Missing timestamp');
+    normalizedSchedule = { kind: 'at', at };
+  } else {
+    throw new Error('Missing schedule kind');
+  }
+
+  const description = String(fallbackDescription || '').trim();
+  return {
+    name: slugifyCronName(String(rawConfig?.name || '').trim() || description),
+    schedule: normalizedSchedule,
+    message: String(rawConfig?.message || '').trim() || description,
+  };
+}
+
+function parseCronConfig(content: string, fallbackDescription: string): CronConfig | null {
+  const cleaned = String(content || '')
+    .replace(/```json?\n?/g, '')
+    .replace(/```/g, '')
+    .trim();
+  if (!cleaned) return null;
+
+  const jsonStart = cleaned.indexOf('{');
+  const jsonEnd = cleaned.lastIndexOf('}');
+  if (jsonStart === -1 || jsonEnd === -1 || jsonEnd < jsonStart) return null;
+
+  try {
+    const parsed = JSON.parse(cleaned.slice(jsonStart, jsonEnd + 1));
+    return normalizeCronConfig(parsed, fallbackDescription);
+  } catch {
+    return null;
+  }
+}
+
+async function requestCronConfig(
+  port: number,
+  token: string,
+  messages: Array<{ role: 'system' | 'user'; content: string }>,
+): Promise<string> {
+  const response = await axios.post(`http://127.0.0.1:${port}/v1/chat/completions`, {
+    model: 'openclaw:main',
+    messages,
+    stream: false,
+    temperature: 0,
+  }, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    timeout: 30000,
+  });
+
+  return String(response?.data?.choices?.[0]?.message?.content || '').trim();
+}
+
 // ---------------------------------------------------------------------------
 // IPC handler registration
 // ---------------------------------------------------------------------------
@@ -190,31 +280,58 @@ export function registerCronHandlers(
         '}',
       ].join('\n');
 
-      const response = await axios.post(`http://127.0.0.1:${port}/v1/chat/completions`, {
-        model: 'openclaw:main',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: params.description },
-        ],
-        stream: false,
-      }, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        timeout: 30000,
-      });
+      const content = await requestCronConfig(port, token, [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: params.description },
+      ]);
 
-      const content = response?.data?.choices?.[0]?.message?.content || '';
       if (!content) {
         return { success: false, error: 'AI returned empty response' };
       }
-      const cleaned = content.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
-      if (!cleaned.startsWith('{')) {
-        return { success: false, error: content };
+
+      const directConfig = parseCronConfig(content, params.description);
+      if (directConfig) {
+        return { success: true, config: directConfig };
       }
-      const config = JSON.parse(cleaned);
-      return { success: true, config };
+
+      const repairPrompt = [
+        'You convert scheduling requests into structured cron job JSON.',
+        'The assistant reply may be a plain English confirmation instead of JSON.',
+        'Infer the correct schedule from the original request and the assistant reply.',
+        'Return ONLY valid JSON with this structure:',
+        '{',
+        '  "name": "short-kebab-case-name",',
+        '  "schedule": {',
+        '    "kind": "cron" | "every" | "at",',
+        '    "expr": "cron expression when kind=cron",',
+        '    "tz": "optional timezone like Asia/Shanghai",',
+        '    "everyMs": 60000,',
+        '    "at": "2026-03-15T09:00:00Z"',
+        '  },',
+        '  "message": "the prompt to send when the job runs"',
+        '}',
+      ].join('\n');
+
+      const repairedContent = await requestCronConfig(port, token, [
+        { role: 'system', content: repairPrompt },
+        {
+          role: 'user',
+          content: [
+            'Original request:',
+            params.description,
+            '',
+            'Assistant reply:',
+            content,
+          ].join('\n'),
+        },
+      ]);
+
+      const repairedConfig = parseCronConfig(repairedContent, params.description);
+      if (repairedConfig) {
+        return { success: true, config: repairedConfig, normalizedFromReply: true };
+      }
+
+      return { success: false, error: content };
     } catch (err: any) {
       return { success: false, error: err.message };
     }
