@@ -2200,7 +2200,7 @@ var require_jsonfile = __commonJS({
       return obj;
     }
     var readFile = universalify.fromPromise(_readFile);
-    function readFileSync11(file, options = {}) {
+    function readFileSync12(file, options = {}) {
       if (typeof options === "string") {
         options = { encoding: options };
       }
@@ -2232,7 +2232,7 @@ var require_jsonfile = __commonJS({
     }
     module2.exports = {
       readFile,
-      readFileSync: readFileSync11,
+      readFileSync: readFileSync12,
       writeFile,
       writeFileSync: writeFileSync10
     };
@@ -19008,9 +19008,16 @@ function resolveAssetPath(...segments) {
 }
 function buildTrayIcon() {
   const iconPath = resolveAssetPath("build", "assets", "logo-openclaw.png");
-  const icon = import_electron14.nativeImage.createFromPath(iconPath);
-  if (icon.isEmpty()) {
+  let icon;
+  try {
+    const buf = fs12.readFileSync(iconPath);
+    icon = import_electron14.nativeImage.createFromBuffer(buf);
+  } catch {
     console.warn("[tray] Failed to load tray icon:", iconPath);
+    return null;
+  }
+  if (icon.isEmpty()) {
+    console.warn("[tray] Tray icon is empty:", iconPath);
     return null;
   }
   if (process.platform === "darwin") {
@@ -19180,6 +19187,20 @@ function createWindow() {
     const target = /^https?:\/\/127\.0\.0\.1:\d+\/?$/i.test(String(url || "")) ? buildDashboardUrl(url, gw?.baseUrl) : url;
     import_electron14.shell.openExternal(target);
     return { action: "deny" };
+  });
+  mainWindow.webContents.on("before-input-event", (_e, input) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (input.type !== "keyDown") return;
+    const meta = input.meta;
+    if (meta && input.key === "r") {
+      mainWindow.webContents.reload();
+    } else if (meta && input.shift && input.key === "i") {
+      if (mainWindow.webContents.isDevToolsOpened()) {
+        mainWindow.webContents.closeDevTools();
+      } else {
+        mainWindow.webContents.openDevTools();
+      }
+    }
   });
   mainWindow.webContents.on("render-process-gone", (_e, details) => {
     console.error("[renderer] process gone:", details.reason, details.exitCode);
