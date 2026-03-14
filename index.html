@@ -195,7 +195,8 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
   color: #04C83E
 }
 /* Agent items */
-.agent-item { display: flex; align-items: center; gap: 8px; padding: 12px; border: 1px solid rgba(107,70,255,0.15); background: rgba(255,255,255,0.5); border-radius: 10px; margin: 8px 0; }
+.agent-item { display: flex; flex-direction: column; padding: 12px; border: 1px solid rgba(107,70,255,0.15); background: rgba(255,255,255,0.5); border-radius: 10px; margin: 8px 0; }
+.agent-item-top { display: flex; align-items: center; gap: 8px; }
 .agent-item .agent-info { flex: 1; display: flex; align-items: center; gap: 8px; }
 .agent-item .agent-name { font-weight: 500; color: #000000; }
 .agent-item .active-badge { font-size: 12px; padding: 5px 10px; border-radius: 999px; background: rgba(4,200,62,0.1); color: #04C83E; border: none; font-weight: 500; }
@@ -277,15 +278,15 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
 .pairing-req-actions .dismiss { background: rgba(255,255,255,.08); color: #94a3b8; }
 .pairing-req-actions .dismiss:hover { background: rgba(255,255,255,.14); color: #e2e8f0; }
 /* Channel status panel */
-.channel-panel { margin-top: 12px; border: 1px solid rgba(107, 70, 255, 0.20); border-radius: 12px; overflow: hidden; background: rgba(107, 70, 255, 0.04);backdrop-filter: blur(2px); }
-.channel-panel-header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; cursor: pointer; user-select: none; }
+.channel-panel { margin-top: 12px; border-top: 1px solid rgba(107, 70, 255, 0.20);  overflow: hidden; background: rgba(107, 70, 255, 0.04);backdrop-filter: blur(2px); }
+.channel-panel-header { display: flex; align-items: center; gap: 8px; padding: 10px 0; cursor: pointer; user-select: none; }
 .channel-panel-header:hover { background: rgba(99,102,241,.08); }
 .channel-panel-title { font-size: 14px; font-weight: 600; color: #6B46ff; flex: 1; }
 .channel-panel-icons { display: flex; gap: 6px; }
 .channel-panel-icon { font-size: 16px; }
 .channel-panel-arrow { font-size: 12px; color: #6B46FF; transition: transform .2s; }
 .channel-panel.open .channel-panel-arrow { transform: rotate(90deg); }
-.channel-panel-body { display: none; padding: 0 14px 12px; }
+.channel-panel-body { display: none; padding: 0; }
 .channel-panel.open .channel-panel-body { display: block; }
 .ch-item { display: flex; align-items: flex-start; gap: 10px; padding: 12px; margin-top: 8px; background: rgba(107, 70, 255, 0.04); border: 1px solid rgba(107, 70, 255, 0.20); border-radius: 10px; backdrop-filter: blur(2px);}
 .ch-item-icon { width:24px;height:24px; flex-shrink: 0; }
@@ -1507,12 +1508,21 @@ async function refreshAgents() {
     addBtn.onclick = addAgent;
   }
 
+  // Fetch channel status for inline rendering
+  try {
+    const cr = await window.electronAPI.getChannelStatus();
+    if (cr && cr.success && cr.channels) _cachedChannelStatus = cr.channels;
+  } catch { /* ignore */ }
+
   // Render agent list
   const list = document.getElementById('agentList');
   list.innerHTML = '';
   agents.forEach(a => {
     const item = document.createElement('div');
     item.className = 'agent-item';
+
+    const topRow = document.createElement('div');
+    topRow.className = 'agent-item-top';
 
     const info = document.createElement('div');
     info.className = 'agent-info';
@@ -1528,7 +1538,7 @@ async function refreshAgents() {
       activeBadge.textContent = 'Current';
       info.appendChild(activeBadge);
     }
-    item.appendChild(info);
+    topRow.appendChild(info);
 
     const actions = document.createElement('div');
     actions.style.display = 'flex';
@@ -1571,13 +1581,17 @@ async function refreshAgents() {
     channelBtn.onclick = () => openChannelModal(a.id);
     actions.appendChild(channelBtn);
 
-    item.appendChild(actions);
+    topRow.appendChild(actions);
+    item.appendChild(topRow);
+
+    const chPanel = buildAgentChannelPanel(a.id, _cachedChannelStatus);
+    if (chPanel) item.appendChild(chPanel);
+
     list.appendChild(item);
   });
 
-  // Load and render channel status below agent list
-  renderChannelStatus();
 }
+
 
 // ---------------------------------------------------------------------------
 // Channel status display
@@ -1585,85 +1599,75 @@ async function refreshAgents() {
 const channelNames = { telegram: 'Telegram', discord: 'Discord', slack: 'Slack', whatsapp: 'WhatsApp', signal: 'Signal', imessage: 'iMessage', googlechat: 'Google Chat', irc: 'IRC' };
 let _cachedChannelStatus = null;
 
-async function renderChannelStatus() {
-  const prev = document.getElementById('channelStatusSection');
-  if (prev) prev.remove();
+function buildAgentChannelPanel(agentId, channels) {
+  if (!channels) return null;
+  const items = [];
+  for (const [ch, info] of Object.entries(channels)) {
+    const accountCfg = info.accounts && info.accounts[agentId];
+    if (!accountCfg) continue;
+    items.push({ ch, info, accountCfg });
+  }
+  if (!items.length) return null;
 
-  try {
-    const r = await window.electronAPI.getChannelStatus();
-    if (!r || !r.success || !r.channels) return;
-    _cachedChannelStatus = r.channels;
-    const entries = Object.entries(r.channels);
-    if (!entries.length) return;
+  const panel = document.createElement('div');
+  panel.className = 'channel-panel';
 
-    const panel = document.createElement('div');
-    panel.id = 'channelStatusSection';
-    panel.className = 'channel-panel';
+  const header = document.createElement('div');
+  header.className = 'channel-panel-header';
+  header.innerHTML = '<span class="channel-panel-arrow">\u25B6</span>'
+    + '<span class="channel-panel-title">Channels (' + items.length + ')</span>';
+  header.onclick = () => panel.classList.toggle('open');
+  panel.appendChild(header);
 
-    // Header (collapsed view): title + icons
-    const header = document.createElement('div');
-    header.className = 'channel-panel-header';
-    header.innerHTML = '<span class="channel-panel-arrow">\u25B6</span>'
-      + '<span class="channel-panel-title">Channels (' + entries.length + ')</span>';
-      // + '<span class="channel-panel-icons">' + entries.map(([ch]) => '<span class="channel-panel-icon">' + (channelIcons[ch] || '\u{1F517}') + '</span>').join('') + '</span>';
-    header.onclick = () => panel.classList.toggle('open');
-    panel.appendChild(header);
+  const body = document.createElement('div');
+  body.className = 'channel-panel-body';
 
-    // Body (expanded view)
-    const body = document.createElement('div');
-    body.className = 'channel-panel-body';
+  for (const { ch, accountCfg, info } of items) {
+    const item = document.createElement('div');
+    item.className = 'ch-item';
 
-    for (const [ch, info] of entries) {
-      for (const [accountId, accountCfg] of Object.entries(info.accounts || {})) {
-        const item = document.createElement('div');
-        item.className = 'ch-item';
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'ch-item-info';
+    const botName = accountCfg._botName ? ' @' + accountCfg._botName : '';
+    infoDiv.innerHTML = '<div style="display:flex;align-items:center;gap:8px;">'
+      + `<img class="ch-item-icon" src='./build/assets/${ch}.png' onerror="this.style.display='none'"/>`
+      + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
+      + '<div class="ch-item-name">' + escHtml(channelNames[ch] || ch) + '</div>'
+      + (botName ? '<div class="ch-item-bot">' + escHtml(botName) + '</div>' : '')
+      + '</div>'
+      + '</div>'
+      + '<div class="ch-item-meta">Account: ' + escHtml(agentId) + '</div>';
 
-        const icon = channelIcons[ch] || '\u{1F517}';
-        item.innerHTML = '';
-
-        const infoDiv = document.createElement('div');
-        infoDiv.className = 'ch-item-info';
-        const botName = accountCfg._botName ? ' @' + accountCfg._botName : '';
-        infoDiv.innerHTML = '<div style="display:flex;align-items:center;gap:8px;">'
-          + `<img class="ch-item-icon" src='./build/assets/${ch}.png'/>`
-          + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
-          + '<div class="ch-item-name">' + escHtml(channelNames[ch] || ch) + '</div>'
-          + (botName ? '<div class="ch-item-bot">' + escHtml(botName) + '</div>' : '')
-          + '</div>'
-          + '</div>'
-          + '<div class="ch-item-meta">Account: ' + escHtml(accountId) + '</div>';
-
-        // Paired users
-        const users = (info.pairedUsers && info.pairedUsers[accountId]) || [];
-        if (users.length) {
-          const list = document.createElement('div');
-          list.className = 'ch-paired-list';
-          for (const u of users) {
-            const tag = document.createElement('span');
-            tag.className = 'ch-paired-tag';
-            tag.textContent = u.username ? '@' + u.username : 'ID: ' + u.id;
-            list.appendChild(tag);
-          }
-          infoDiv.appendChild(list);
-        }
-
-        const actions = document.createElement('div');
-        actions.className = 'ch-item-actions';
-        const editBtn = document.createElement('button');
-        editBtn.textContent = 'Edit';
-        editBtn.onclick = (e) => { e.stopPropagation(); openChannelModalEdit(ch, accountId); };
-        actions.appendChild(editBtn);
-
-        item.appendChild(infoDiv);
-        item.appendChild(actions);
-        body.appendChild(item);
+    const users = (info.pairedUsers && info.pairedUsers[agentId]) || [];
+    if (users.length) {
+      const pairedList = document.createElement('div');
+      pairedList.className = 'ch-paired-list';
+      for (const u of users) {
+        const tag = document.createElement('span');
+        tag.className = 'ch-paired-tag';
+        tag.textContent = u.username ? '@' + u.username : 'ID: ' + u.id;
+        pairedList.appendChild(tag);
       }
+      infoDiv.appendChild(pairedList);
     }
-    panel.appendChild(body);
 
-    const agentList = document.getElementById('agentList');
-    agentList.parentNode.insertBefore(panel, agentList.nextSibling);
-  } catch { /* ignore */ }
+    const actions = document.createElement('div');
+    actions.className = 'ch-item-actions';
+    const editBtn = document.createElement('button');
+    editBtn.textContent = 'Edit';
+    editBtn.onclick = (e) => { e.stopPropagation(); openChannelModalEdit(ch, agentId); };
+    actions.appendChild(editBtn);
+
+    item.appendChild(infoDiv);
+    item.appendChild(actions);
+    body.appendChild(item);
+  }
+  panel.appendChild(body);
+  return panel;
+}
+
+async function renderChannelStatus() {
+  await refreshAgents();
 }
 
 // ---------------------------------------------------------------------------
