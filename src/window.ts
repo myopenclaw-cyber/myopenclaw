@@ -30,6 +30,10 @@ let tray: Tray | null = null;
 let isAppQuitting = false;
 let quitCleanupPromise: Promise<void> | null = null;
 
+type SessionEndAwareWindow = BrowserWindow & {
+  on(event: 'query-session-end' | 'session-end', listener: () => void): BrowserWindow;
+};
+
 export function getMainWindow(): BrowserWindow | null {
   return mainWindow;
 }
@@ -159,8 +163,9 @@ function bindWindowLifecycle(window: BrowserWindow): void {
       killGateway();
     };
 
-    window.on('query-session-end', handleSystemSessionEnd);
-    window.on('session-end', handleSystemSessionEnd);
+    const sessionAwareWindow = window as SessionEndAwareWindow;
+    sessionAwareWindow.on('query-session-end', handleSystemSessionEnd);
+    sessionAwareWindow.on('session-end', handleSystemSessionEnd);
   }
 
   window.on('closed', () => {
@@ -187,8 +192,14 @@ export function showMainWindow(): void {
   refreshTrayMenu();
 }
 
+function getLiveGatewayHandle(): GatewayHandle | null {
+  if (!gatewayHandle?.process) return null;
+  if (gatewayHandle.process.killed || gatewayHandle.process.exitCode != null) return null;
+  return gatewayHandle;
+}
+
 function hasLiveGatewayProcess(): boolean {
-  return !!gatewayHandle?.process && !gatewayHandle.process.killed && gatewayHandle.process.exitCode == null;
+  return getLiveGatewayHandle() != null;
 }
 
 // ---------------------------------------------------------------------------
@@ -333,8 +344,9 @@ export function createWindow(): void {
 
       // Fast reopen: if gateway is still alive (macOS close-window-without-quit),
       // skip the entire startup flow and go straight to the main UI.
-      if (hasLiveGatewayProcess()) {
-        console.log('[startup] Gateway still alive (PID=%d), skipping startup flow', gatewayHandle.process.pid);
+      const liveGatewayHandle = getLiveGatewayHandle();
+      if (liveGatewayHandle?.process) {
+        console.log('[startup] Gateway still alive (PID=%d), skipping startup flow', liveGatewayHandle.process.pid);
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.loadFile('index.html');
           refreshTrayMenu();

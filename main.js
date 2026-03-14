@@ -18783,8 +18783,9 @@ function bindWindowLifecycle(window2) {
       destroyTray();
       killGateway();
     };
-    window2.on("query-session-end", handleSystemSessionEnd);
-    window2.on("session-end", handleSystemSessionEnd);
+    const sessionAwareWindow = window2;
+    sessionAwareWindow.on("query-session-end", handleSystemSessionEnd);
+    sessionAwareWindow.on("session-end", handleSystemSessionEnd);
   }
   window2.on("closed", () => {
     if (mainWindow === window2) {
@@ -18807,8 +18808,13 @@ function showMainWindow() {
   mainWindow.focus();
   refreshTrayMenu();
 }
+function getLiveGatewayHandle() {
+  if (!gatewayHandle?.process) return null;
+  if (gatewayHandle.process.killed || gatewayHandle.process.exitCode != null) return null;
+  return gatewayHandle;
+}
 function hasLiveGatewayProcess() {
-  return !!gatewayHandle?.process && !gatewayHandle.process.killed && gatewayHandle.process.exitCode == null;
+  return getLiveGatewayHandle() != null;
 }
 var updateLoadingStatus = (message, percent) => {
   try {
@@ -18899,8 +18905,9 @@ function createWindow() {
         }
         return;
       }
-      if (hasLiveGatewayProcess()) {
-        console.log("[startup] Gateway still alive (PID=%d), skipping startup flow", gatewayHandle.process.pid);
+      const liveGatewayHandle = getLiveGatewayHandle();
+      if (liveGatewayHandle?.process) {
+        console.log("[startup] Gateway still alive (PID=%d), skipping startup flow", liveGatewayHandle.process.pid);
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.loadFile("index.html");
           refreshTrayMenu();
