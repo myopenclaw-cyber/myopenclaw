@@ -69,7 +69,7 @@
       "icon": "build/assets/icon.ico"
     },
     "mac": {
-      "icon": "build/asssets/icon.icns",
+      "icon": "build/assets/icon.icns",
       "target": [
         {
           "target": "dmg"
