@@ -114,7 +114,6 @@ jobs:
         with:
           files: |
             ./artifacts/**/*-simple-*.exe
-            ./artifacts/**/*-simple-*.exe.blockmap
             ./artifacts/**/*-simple-*.dmg
             ./artifacts/**/*-simple-*.zip
             ./artifacts/**/*-simple-*.blockmap
