@@ -15909,6 +15909,7 @@ function execFileAsync(cmd, args, opts = {}) {
 }
 var _cachedCli;
 var _verifiedBins = /* @__PURE__ */ new Map();
+var _repairedRuntimeDirs = /* @__PURE__ */ new Set();
 function clearCliCache() {
   _cachedCli = void 0;
   _verifiedBins.clear();
@@ -15917,6 +15918,37 @@ function getRuntimeTargetLabel() {
   if (process.platform === "win32") return "windows";
   if (process.platform === "darwin") return process.arch === "arm64" ? "mac_silicon" : "mac_intel";
   return "linux";
+}
+function repairRuntimePermissions(baseDir) {
+  if (process.platform === "win32") return;
+  const resolvedBase = path4.resolve(baseDir);
+  if (_repairedRuntimeDirs.has(resolvedBase)) return;
+  const targets = [
+    path4.join(resolvedBase, "openclaw-deps", ".bin"),
+    path4.join(resolvedBase, "node")
+  ];
+  for (const dir of targets) {
+    if (!fs3.existsSync(dir)) continue;
+    try {
+      (0, import_child_process2.execFileSync)("chmod", ["-R", "+x", dir], { stdio: "pipe" });
+      console.log(`[runtime] Repaired permissions: ${dir}`);
+    } catch (e) {
+      console.log(`[runtime] Permission repair skipped for ${dir}: ${e.message}`);
+    }
+    try {
+      (0, import_child_process2.execFileSync)("xattr", ["-rd", "com.apple.quarantine", dir], { stdio: "pipe" });
+    } catch {
+    }
+    try {
+      (0, import_child_process2.execFileSync)("xattr", ["-rd", "com.apple.provenance", dir], { stdio: "pipe" });
+    } catch {
+    }
+  }
+  _repairedRuntimeDirs.add(resolvedBase);
+}
+function repairKnownRuntimePermissions() {
+  repairRuntimePermissions(path4.join(__dirname, "resources"));
+  repairRuntimePermissions(DOWNLOADED_RUNTIME_DIR);
 }
 async function downloadFile(url, outputPath, onProgress) {
   const writer = fs3.createWriteStream(outputPath);
@@ -15962,11 +15994,13 @@ function findRuntimeDir() {
   if (!embeddedBase.includes(".asar")) {
     const embeddedDir = path4.join(embeddedBase, "openclaw-deps", "openclaw", "dist");
     if (fs3.existsSync(path4.join(embeddedDir, "entry.js")) || fs3.existsSync(path4.join(embeddedDir, "entry.mjs"))) {
+      repairRuntimePermissions(embeddedBase);
       return embeddedBase;
     }
   }
   const dlDir = path4.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", "openclaw", "dist");
   if (fs3.existsSync(path4.join(dlDir, "entry.js")) || fs3.existsSync(path4.join(dlDir, "entry.mjs"))) {
+    repairRuntimePermissions(DOWNLOADED_RUNTIME_DIR);
     return DOWNLOADED_RUNTIME_DIR;
   }
   return null;
@@ -16000,22 +16034,7 @@ async function ensureEmbeddedRuntime(updateLoadingStatus2) {
     await execFileAsync("tar", ["-xf", zipPath, "-C", DOWNLOADED_RUNTIME_DIR], { stdio: "pipe", windowsHide: true });
   } else {
     await execFileAsync("unzip", ["-o", zipPath, "-d", DOWNLOADED_RUNTIME_DIR], { stdio: "pipe" });
-    const binDir = path4.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", ".bin");
-    const nodeDir = path4.join(DOWNLOADED_RUNTIME_DIR, "node");
-    for (const dir of [binDir, nodeDir]) {
-      if (fs3.existsSync(dir)) {
-        await execFileAsync("chmod", ["-R", "+x", dir], { stdio: "pipe" });
-        try {
-          await execFileAsync("xattr", ["-rd", "com.apple.quarantine", dir], { stdio: "pipe" });
-        } catch {
-        }
-        try {
-          await execFileAsync("xattr", ["-rd", "com.apple.provenance", dir], { stdio: "pipe" });
-        } catch {
-        }
-        console.log(`[runtime] Fixed permissions: ${dir}`);
-      }
-    }
+    repairRuntimePermissions(DOWNLOADED_RUNTIME_DIR);
   }
   if (!findRuntimeDir()) {
     throw new Error("Runtime extracted but dist/entry.(m)js not found. The runtime package may be incomplete.");
@@ -16047,6 +16066,7 @@ function addWindowsFirewallRule(nodeExePath) {
   }
 }
 function buildNodeEnhancedPath() {
+  repairKnownRuntimePermissions();
   const nodeExe = process.platform === "win32" ? "node.exe" : "node";
   const nodeDirs = [
     path4.join(__dirname, "resources", "node"),
@@ -16085,6 +16105,7 @@ function verifyOpenClawCli(binPath) {
 }
 function findOpenClawCli() {
   if (_cachedCli !== void 0) return _cachedCli;
+  repairKnownRuntimePermissions();
   const binNames = process.platform === "win32" ? ["openclaw.cmd", "openclaw.exe", "openclaw"] : ["openclaw"];
   const ownCandidates = [];
   for (const bin of binNames) {
@@ -16145,6 +16166,7 @@ function findOpenClawCli() {
   return null;
 }
 function findNodeBinary() {
+  repairKnownRuntimePermissions();
   const nodeExe = process.platform === "win32" ? "node.exe" : "node";
   try {
     const cmd = process.platform === "win32" ? "where" : "which";
@@ -17884,19 +17906,62 @@ function findClawHubCli() {
   }
   return null;
 }
+function findNpmCli() {
+  const candidates = [];
+  try {
+    const cmd = process.platform === "win32" ? "where" : "which";
+    const result = (0, import_child_process4.execFileSync)(cmd, ["npm"], { encoding: "utf8", timeout: 3e3, windowsHide: true }).trim();
+    if (result) candidates.push(result.split(/\r?\n/)[0]);
+  } catch {
+  }
+  const home = os4.homedir();
+  const nvmDir = path10.join(home, ".nvm", "versions", "node");
+  try {
+    if (fs10.existsSync(nvmDir)) {
+      const versions = fs10.readdirSync(nvmDir).filter((v) => v.startsWith("v")).sort((a, b) => b.localeCompare(a, void 0, { numeric: true }));
+      for (const ver of versions) {
+        candidates.push(path10.join(nvmDir, ver, "bin", process.platform === "win32" ? "npm.cmd" : "npm"));
+      }
+    }
+  } catch {
+  }
+  if (process.platform === "win32") {
+    const appData = process.env.APPDATA || path10.join(home, "AppData", "Roaming");
+    candidates.push(path10.join(appData, "npm", "npm.cmd"));
+    const pf = process.env.ProgramFiles || "C:\\Program Files";
+    candidates.push(path10.join(pf, "nodejs", "npm.cmd"));
+    candidates.push(path10.join(pf, "nodejs", "npm"));
+  } else {
+    candidates.push("/usr/local/bin/npm");
+    candidates.push("/opt/homebrew/bin/npm");
+  }
+  const seen = /* @__PURE__ */ new Set();
+  for (const p of candidates) {
+    const resolved = path10.resolve(p);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    if (fs10.existsSync(p)) return p;
+  }
+  return null;
+}
 function installClawHubCli() {
   return new Promise((resolve5, reject) => {
     console.log("[skills] clawhub not found, auto-installing via npm...");
-    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+    const npmCmd = findNpmCli();
+    if (!npmCmd) {
+      reject(new Error("Failed to auto-install clawhub: npm was not found. Install Node.js/npm or install clawhub manually."));
+      return;
+    }
+    const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(npmCmd);
     (0, import_child_process4.execFile)(npmCmd, ["install", "-g", "clawhub"], {
       timeout: 12e4,
       encoding: "utf8",
-      shell: process.platform === "win32",
+      shell: useShell ? true : void 0,
       windowsHide: true
     }, (err, stdout, stderr) => {
       if (err) {
         console.error("[skills] clawhub install failed:", stderr || err.message);
-        reject(new Error("Failed to auto-install clawhub: " + (stderr || err.message)));
+        reject(new Error("Failed to auto-install clawhub: " + formatSkillServiceError(stderr || stdout || err.message)));
       } else {
         console.log("[skills] clawhub installed successfully");
         const bin = findClawHubCli();
@@ -17922,7 +17987,7 @@ function runClawHubCliWithBin(bin, args) {
       shell: useShell ? true : void 0,
       windowsHide: true
     }, (err, stdout, stderr) => {
-      if (err) reject(new Error(stderr || stdout || err.message));
+      if (err) reject(new Error(formatSkillServiceError(stderr || stdout || err.message)));
       else resolve5(stdout);
     });
   });
@@ -18004,8 +18069,20 @@ function formatMarketplaceHttpError(resp) {
   }
   return `HTTP ${resp.status}`;
 }
+function stripAnsi(value) {
+  return value.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
+}
+function formatSkillServiceError(error) {
+  const raw = error instanceof Error ? error.message : String(error || "unknown");
+  const message = stripAnsi(raw).replace(/\s+/g, " ").trim();
+  const lower = message.toLowerCase();
+  if (lower.includes("http 429") || lower.includes("rate limited") || lower.includes("rate limit exceeded") || lower.includes("too many requests")) {
+    return "Skill service is temporarily busy. Please wait a moment and try again.";
+  }
+  return message;
+}
 function formatMarketplaceError(error) {
-  const message = error instanceof Error ? error.message : String(error || "unknown");
+  const message = formatSkillServiceError(error);
   if (message.includes("HTTP 429")) {
     return "Skill marketplace is temporarily rate limited. Please wait a moment and try again.";
   }

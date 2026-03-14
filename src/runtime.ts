@@ -31,6 +31,7 @@ let _cachedCli: string | null | undefined; // undefined = not yet resolved
 
 // Mtime-based verification cache — avoids spawning `openclaw --version` if binary is unchanged
 let _verifiedBins = new Map<string, number>(); // path → mtimeMs
+let _repairedRuntimeDirs = new Set<string>();
 
 export function clearCliCache(): void {
   _cachedCli = undefined;
@@ -41,6 +42,37 @@ export function getRuntimeTargetLabel(): string {
   if (process.platform === 'win32') return 'windows';
   if (process.platform === 'darwin') return process.arch === 'arm64' ? 'mac_silicon' : 'mac_intel';
   return 'linux';
+}
+
+function repairRuntimePermissions(baseDir: string): void {
+  if (process.platform === 'win32') return;
+
+  const resolvedBase = path.resolve(baseDir);
+  if (_repairedRuntimeDirs.has(resolvedBase)) return;
+
+  const targets = [
+    path.join(resolvedBase, 'openclaw-deps', '.bin'),
+    path.join(resolvedBase, 'node'),
+  ];
+
+  for (const dir of targets) {
+    if (!fs.existsSync(dir)) continue;
+    try {
+      execFileSync('chmod', ['-R', '+x', dir], { stdio: 'pipe' });
+      console.log(`[runtime] Repaired permissions: ${dir}`);
+    } catch (e: any) {
+      console.log(`[runtime] Permission repair skipped for ${dir}: ${e.message}`);
+    }
+    try { execFileSync('xattr', ['-rd', 'com.apple.quarantine', dir], { stdio: 'pipe' }); } catch { /* ok */ }
+    try { execFileSync('xattr', ['-rd', 'com.apple.provenance', dir], { stdio: 'pipe' }); } catch { /* ok */ }
+  }
+
+  _repairedRuntimeDirs.add(resolvedBase);
+}
+
+function repairKnownRuntimePermissions(): void {
+  repairRuntimePermissions(path.join(__dirname, 'resources'));
+  repairRuntimePermissions(DOWNLOADED_RUNTIME_DIR);
 }
 
 export async function downloadFile(url: string, outputPath: string, onProgress?: (percent: number) => void): Promise<void> {
@@ -87,11 +119,13 @@ export function findRuntimeDir(): string | null {
   if (!embeddedBase.includes('.asar')) {
     const embeddedDir = path.join(embeddedBase, 'openclaw-deps', 'openclaw', 'dist');
     if (fs.existsSync(path.join(embeddedDir, 'entry.js')) || fs.existsSync(path.join(embeddedDir, 'entry.mjs'))) {
+      repairRuntimePermissions(embeddedBase);
       return embeddedBase;
     }
   }
   const dlDir = path.join(DOWNLOADED_RUNTIME_DIR, 'openclaw-deps', 'openclaw', 'dist');
   if (fs.existsSync(path.join(dlDir, 'entry.js')) || fs.existsSync(path.join(dlDir, 'entry.mjs'))) {
+    repairRuntimePermissions(DOWNLOADED_RUNTIME_DIR);
     return DOWNLOADED_RUNTIME_DIR;
   }
   return null;
@@ -132,18 +166,7 @@ export async function ensureEmbeddedRuntime(updateLoadingStatus: LoadingStatusCa
     await execFileAsync('tar', ['-xf', zipPath, '-C', DOWNLOADED_RUNTIME_DIR], { stdio: 'pipe', windowsHide: true });
   } else {
     await execFileAsync('unzip', ['-o', zipPath, '-d', DOWNLOADED_RUNTIME_DIR], { stdio: 'pipe' });
-    // Fix permissions on extracted binaries (unzip may strip execute bits)
-    // Also remove macOS quarantine attributes that block execution
-    const binDir = path.join(DOWNLOADED_RUNTIME_DIR, 'openclaw-deps', '.bin');
-    const nodeDir = path.join(DOWNLOADED_RUNTIME_DIR, 'node');
-    for (const dir of [binDir, nodeDir]) {
-      if (fs.existsSync(dir)) {
-        await execFileAsync('chmod', ['-R', '+x', dir], { stdio: 'pipe' });
-        try { await execFileAsync('xattr', ['-rd', 'com.apple.quarantine', dir], { stdio: 'pipe' }); } catch { /* ok */ }
-        try { await execFileAsync('xattr', ['-rd', 'com.apple.provenance', dir], { stdio: 'pipe' }); } catch { /* ok */ }
-        console.log(`[runtime] Fixed permissions: ${dir}`);
-      }
-    }
+    repairRuntimePermissions(DOWNLOADED_RUNTIME_DIR);
   }
 
   if (!findRuntimeDir()) {
@@ -175,6 +198,7 @@ function addWindowsFirewallRule(nodeExePath: string): void {
 }
 
 export function buildNodeEnhancedPath(): string {
+  repairKnownRuntimePermissions();
   const nodeExe = process.platform === 'win32' ? 'node.exe' : 'node';
   const nodeDirs = [
     path.join(__dirname, 'resources', 'node'),
@@ -217,6 +241,7 @@ export function verifyOpenClawCli(binPath: string): boolean {
 
 export function findOpenClawCli(): string | null {
   if (_cachedCli !== undefined) return _cachedCli;
+  repairKnownRuntimePermissions();
 
   // --- Priority 1: MyOpenClaw's own embedded/downloaded runtime ---
   // This ensures full isolation from any global OpenClaw installation.
@@ -292,6 +317,7 @@ export function findOpenClawCli(): string | null {
 }
 
 export function findNodeBinary(): string {
+  repairKnownRuntimePermissions();
   const nodeExe = process.platform === 'win32' ? 'node.exe' : 'node';
 
   // 1. System node with sufficient version

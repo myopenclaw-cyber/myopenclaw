@@ -67,19 +67,67 @@ function findClawHubCli(): string | null {
   return null;
 }
 
+function findNpmCli(): string | null {
+  const candidates: string[] = [];
+
+  try {
+    const cmd = process.platform === 'win32' ? 'where' : 'which';
+    const result = execFileSync(cmd, ['npm'], { encoding: 'utf8', timeout: 3000, windowsHide: true }).trim();
+    if (result) candidates.push(result.split(/\r?\n/)[0]);
+  } catch { /* not in PATH */ }
+
+  const home = os.homedir();
+  const nvmDir = path.join(home, '.nvm', 'versions', 'node');
+  try {
+    if (fs.existsSync(nvmDir)) {
+      const versions = fs.readdirSync(nvmDir)
+        .filter(v => v.startsWith('v'))
+        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+      for (const ver of versions) {
+        candidates.push(path.join(nvmDir, ver, 'bin', process.platform === 'win32' ? 'npm.cmd' : 'npm'));
+      }
+    }
+  } catch { /* ignore */ }
+
+  if (process.platform === 'win32') {
+    const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+    candidates.push(path.join(appData, 'npm', 'npm.cmd'));
+    const pf = process.env.ProgramFiles || 'C:\\Program Files';
+    candidates.push(path.join(pf, 'nodejs', 'npm.cmd'));
+    candidates.push(path.join(pf, 'nodejs', 'npm'));
+  } else {
+    candidates.push('/usr/local/bin/npm');
+    candidates.push('/opt/homebrew/bin/npm');
+  }
+
+  const seen = new Set<string>();
+  for (const p of candidates) {
+    const resolved = path.resolve(p);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
 function installClawHubCli(): Promise<string> {
   return new Promise((resolve, reject) => {
     console.log('[skills] clawhub not found, auto-installing via npm...');
-    const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+    const npmCmd = findNpmCli();
+    if (!npmCmd) {
+      reject(new Error('Failed to auto-install clawhub: npm was not found. Install Node.js/npm or install clawhub manually.'));
+      return;
+    }
+    const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(npmCmd);
     execFile(npmCmd, ['install', '-g', 'clawhub'], {
       timeout: 120000,
       encoding: 'utf8',
-      shell: process.platform === 'win32',
+      shell: useShell ? true : undefined,
       windowsHide: true,
     }, (err, stdout, stderr) => {
       if (err) {
         console.error('[skills] clawhub install failed:', stderr || err.message);
-        reject(new Error('Failed to auto-install clawhub: ' + (stderr || err.message)));
+        reject(new Error('Failed to auto-install clawhub: ' + formatSkillServiceError(stderr || stdout || err.message)));
       } else {
         console.log('[skills] clawhub installed successfully');
         const bin = findClawHubCli();
@@ -108,7 +156,7 @@ function runClawHubCliWithBin(bin: string, args: string[]): Promise<string> {
       shell: useShell ? true : undefined,
       windowsHide: true,
     }, (err, stdout, stderr) => {
-      if (err) reject(new Error(stderr || stdout || err.message));
+      if (err) reject(new Error(formatSkillServiceError(stderr || stdout || err.message)));
       else resolve(stdout);
     });
   });
@@ -213,8 +261,27 @@ function formatMarketplaceHttpError(resp: Response): string {
   return `HTTP ${resp.status}`;
 }
 
+function stripAnsi(value: string): string {
+  return value.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '');
+}
+
+function formatSkillServiceError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error || 'unknown');
+  const message = stripAnsi(raw).replace(/\s+/g, ' ').trim();
+  const lower = message.toLowerCase();
+  if (
+    lower.includes('http 429')
+    || lower.includes('rate limited')
+    || lower.includes('rate limit exceeded')
+    || lower.includes('too many requests')
+  ) {
+    return 'Skill service is temporarily busy. Please wait a moment and try again.';
+  }
+  return message;
+}
+
 function formatMarketplaceError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error || 'unknown');
+  const message = formatSkillServiceError(error);
   if (message.includes('HTTP 429')) {
     return 'Skill marketplace is temporarily rate limited. Please wait a moment and try again.';
   }
@@ -376,7 +443,6 @@ export function registerSkillsHandlers(
         '--force',
       ]);
 
-      // Tell gateway to load the newly downloaded skill, then enable it
       const gw = getGatewayHandle();
       if (gw?.baseUrl) {
         try {

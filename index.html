@@ -664,7 +664,7 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
             </div>
             <div class="row" style="justify-content:flex-end;margin-top:6px">
               <button class="alt" onclick="closeCronForm()">Cancel</button>
-              <button id="cronGenerateBtn" onclick="generateCronFromNL()" style="margin-left:8px">Generate</button>
+              <button id="cronGenerateBtn" onclick="generateCronFromNL()" style="margin-left:8px">Create Job</button>
             </div>
           </div>
 
@@ -924,12 +924,28 @@ function showToast(msg, ms) {
   setTimeout(() => { if (t.parentNode) t.parentNode.removeChild(t); }, ms);
 }
 
-function formatMarketplaceErrorMessage(error) {
-  var message = String(error || 'unknown');
-  if (message.indexOf('429') !== -1 || message.toLowerCase().indexOf('rate limited') !== -1) {
-    return 'Skill marketplace is temporarily busy. Please wait a moment and try again.';
+function formatSkillErrorMessage(error) {
+  var message = String(error || 'unknown')
+    .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  var lower = message.toLowerCase();
+  if (
+    message.indexOf('429') !== -1
+    || lower.indexOf('rate limited') !== -1
+    || lower.indexOf('rate limit exceeded') !== -1
+    || lower.indexOf('too many requests') !== -1
+  ) {
+    return 'Skill service is temporarily busy. Please wait a moment and try again.';
+  }
+  if (lower.indexOf('clawhub') !== -1 && (lower.indexOf('npm') !== -1 || lower.indexOf('not found') !== -1 || lower.indexOf('enoent') !== -1)) {
+    return 'Skill installation helper is unavailable. Install Node.js/npm or the clawhub CLI, then try again.';
   }
   return message;
+}
+
+function formatMarketplaceErrorMessage(error) {
+  return formatSkillErrorMessage(error);
 }
 
 // ---------------------------------------------------------------------------
@@ -2026,7 +2042,7 @@ function buildSkillCard(skill) {
       if (statusEl) { statusEl.textContent = 'Setting up skill...'; statusEl.style.display = ''; }
       const installR = await window.electronAPI.skillsInstall({ name: skill.skillKey, installId: installOpts[0].id });
       if (!installR || !installR.success) {
-        if (statusEl) statusEl.textContent = 'Setup failed: ' + (installR?.error || 'unknown');
+        if (statusEl) statusEl.textContent = 'Setup failed: ' + formatSkillErrorMessage(installR && installR.error);
         checkbox.checked = false; checkbox.disabled = false; return;
       }
     }
@@ -2036,8 +2052,8 @@ function buildSkillCard(skill) {
     checkbox.disabled = false;
     if (!r || !r.success) {
       checkbox.checked = !checkbox.checked;
-      if (statusEl) { statusEl.textContent = 'Failed: ' + (r && r.error || 'unknown'); }
-      showToast('Toggle failed: ' + (r && r.error || 'unknown'));
+      if (statusEl) { statusEl.textContent = 'Failed: ' + formatSkillErrorMessage(r && r.error); }
+      showToast('Toggle failed: ' + formatSkillErrorMessage(r && r.error));
     } else {
       skill.enabled = checkbox.checked;
         skill.disabled = !checkbox.checked;
@@ -2382,11 +2398,11 @@ async function generateCronFromNL() {
   if (!input) { showToast('Please describe the cron task'); return; }
   var btn = document.getElementById('cronGenerateBtn');
   btn.disabled = true;
-  btn.textContent = 'Generating...';
+  btn.textContent = 'Creating...';
   try {
     var r = await window.electronAPI.cronGenerate({ description: input });
     if (!r || !r.success || !r.config) {
-      showToast('Generate failed: ' + (r && r.error || 'unknown'));
+      showToast('Create failed: ' + (r && r.error || 'unknown'));
       return;
     }
     var cfg = r.config;
@@ -2407,14 +2423,22 @@ async function generateCronFromNL() {
       if (atEl) atEl.value = (cfg.schedule && cfg.schedule.at) || '';
     }
     document.getElementById('cronMessage').value = cfg.message || '';
-    populateCronAgentSelect(null);
-    setCronMode('manual');
-    showToast(r && r.normalizedFromReply ? 'Generated from assistant reply. Review and save.' : 'Generated! Review and save.');
+    populateCronAgentSelect(appState && appState.activeAgentId ? appState.activeAgentId : null);
+    var created = await saveCronJob({
+      successMessage: r && r.normalizedFromReply
+        ? 'Job created from assistant reply.'
+        : 'Job created.',
+      keepFormOpenOnFailure: true,
+    });
+    if (!created) {
+      setCronMode('manual');
+      showToast('Could not create automatically. Review the generated config and save manually.');
+    }
   } catch (e) {
-    showToast('Generate error: ' + e.message);
+    showToast('Create error: ' + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Generate';
+    btn.textContent = 'Create Job';
   }
 }
 
@@ -2466,12 +2490,13 @@ function populateCronAgentSelect(selectedId) {
   var sel = document.getElementById('cronAgentSelect');
   if (!sel) return;
   sel.innerHTML = '';
+  var preferredId = selectedId || (appState && appState.activeAgentId) || 'main';
   if (appState && appState.agents) {
     appState.agents.forEach(function(a) {
       var o = document.createElement('option');
       o.value = a.id;
       o.textContent = a.name;
-      if (selectedId === a.id) o.selected = true;
+      if (preferredId === a.id) o.selected = true;
       sel.appendChild(o);
     });
   }
@@ -2483,29 +2508,30 @@ function populateCronAgentSelect(selectedId) {
   }
 }
 
-async function saveCronJob() {
+async function saveCronJob(options) {
+  options = options || {};
   var editId = document.getElementById('cronEditId').value;
   var name = document.getElementById('cronJobName').value.trim();
-  if (!name) { showToast('Job name is required'); return; }
+  if (!name) { showToast('Job name is required'); return false; }
 
   var kind = document.getElementById('cronScheduleKind').value;
   var schedule;
   if (kind === 'cron') {
     var exprEl2 = document.getElementById('cronExpr');
     var expr = exprEl2 ? exprEl2.value.trim() : '';
-    if (!expr) { showToast('Cron expression is required'); return; }
+    if (!expr) { showToast('Cron expression is required'); return false; }
     var tzEl2 = document.getElementById('cronTz');
     var tz = tzEl2 ? tzEl2.value.trim() : '';
     schedule = tz ? { kind: 'cron', expr: expr, tz: tz } : { kind: 'cron', expr: expr };
   } else if (kind === 'every') {
     var evEl2 = document.getElementById('cronEveryMs');
     var everyMs = evEl2 ? parseInt(evEl2.value, 10) : 0;
-    if (!everyMs || everyMs < 1000) { showToast('Interval must be >= 1000 ms'); return; }
+    if (!everyMs || everyMs < 1000) { showToast('Interval must be >= 1000 ms'); return false; }
     schedule = { kind: 'every', everyMs: everyMs };
   } else {
     var atEl2 = document.getElementById('cronAt');
     var at = atEl2 ? atEl2.value.trim() : '';
-    if (!at) { showToast('ISO timestamp is required'); return; }
+    if (!at) { showToast('ISO timestamp is required'); return false; }
     schedule = { kind: 'at', at: at };
   }
 
@@ -2524,10 +2550,15 @@ async function saveCronJob() {
     });
   }
 
-  if (!r || !r.success) { showToast('Failed: ' + (r && r.error || 'unknown')); return; }
+  if (!r || !r.success) {
+    showToast('Failed: ' + (r && r.error || 'unknown'));
+    if (options.keepFormOpenOnFailure) setCronMode('manual');
+    return false;
+  }
   closeCronForm();
-  showToast(editId ? 'Job updated' : 'Job created');
+  showToast(options.successMessage || (editId ? 'Job updated' : 'Job created'));
   await loadCronJobs();
+  return true;
 }
 
 async function loadCronJobs() {
