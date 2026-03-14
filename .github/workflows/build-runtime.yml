@@ -293,6 +293,24 @@ jobs:
           ref: ${{ github.event.inputs.branch || github.ref }}
           lfs: true
 
+      - name: Resolve runtime tag
+        id: runtime_meta
+        run: |
+          TAG_NAME="${{ github.event.inputs.runtime_tag || github.ref_name }}"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -z "${{ github.event.inputs.runtime_tag }}" ]; then
+            echo "workflow_dispatch requires runtime_tag, for example: runtime-v1.1.1"
+            exit 1
+          fi
+
+          if [ -z "$TAG_NAME" ] || [[ "$TAG_NAME" != runtime-v* ]]; then
+            echo "Invalid runtime tag: '$TAG_NAME'. Expected format: runtime-v*"
+            exit 1
+          fi
+
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          echo "runtime_version=${TAG_NAME#runtime-}" >> "$GITHUB_OUTPUT"
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -304,9 +322,10 @@ jobs:
           ls -lh artifacts/*/
 
       - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.event.inputs.runtime_tag || github.ref_name }}
+          tag_name: ${{ steps.runtime_meta.outputs.tag_name }}
           files: |
             artifacts/openclaw-runtime-windows/openclaw-runtime-windows.zip
             artifacts/openclaw-runtime-mac-silicon/openclaw-runtime-mac-silicon.zip
@@ -336,12 +355,8 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY || secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
         run: |
-          TAG_NAME="${{ github.event.inputs.runtime_tag || github.ref_name }}"
-          if [ -z "$TAG_NAME" ]; then
-            echo "Missing runtime tag. Provide workflow_dispatch input runtime_tag or push a runtime-v* tag."
-            exit 1
-          fi
-          RUNTIME_VERSION="${TAG_NAME#runtime-}"
+          TAG_NAME="${{ steps.runtime_meta.outputs.tag_name }}"
+          RUNTIME_VERSION="${{ steps.runtime_meta.outputs.runtime_version }}"
 
           if [ -z "$R2_ACCOUNT_ID" ] || [ -z "$R2_ACCESS_KEY_ID" ] || [ -z "$R2_SECRET_ACCESS_KEY" ] || [ -z "$R2_BUCKET" ]; then
             echo "Missing R2 configuration. Expected secrets: R2_ACCOUNT_ID/R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY/R2_BUCKET"
@@ -368,12 +383,8 @@ jobs:
 
       - name: Get release URLs
         run: |
-          TAG_NAME="${{ github.event.inputs.runtime_tag || github.ref_name }}"
-          if [ -z "$TAG_NAME" ]; then
-            echo "Missing runtime tag. Provide workflow_dispatch input runtime_tag or push a runtime-v* tag."
-            exit 1
-          fi
-          RUNTIME_VERSION="${TAG_NAME#runtime-}"
+          TAG_NAME="${{ steps.runtime_meta.outputs.tag_name }}"
+          RUNTIME_VERSION="${{ steps.runtime_meta.outputs.runtime_version }}"
           REPO="${{ github.repository }}"
           echo "Windows: https://github.com/${REPO}/releases/download/${TAG_NAME}/openclaw-runtime-windows.zip"
           echo "Mac Silicon: https://github.com/${REPO}/releases/download/${TAG_NAME}/openclaw-runtime-mac-silicon.zip"
