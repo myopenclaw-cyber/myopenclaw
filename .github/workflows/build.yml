@@ -33,18 +33,19 @@ jobs:
       - name: Build Windows Simple
         run: |
           $env:BUILD_VARIANT="simple"
-          $env:TARGET_LABEL="windows"
           npx electron-builder --win --x64 --publish never -c build/simple.json --config.compression=maximum
         shell: powershell
 
-      - name: Upload Windows artifact
+      - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: MyOpenClaw-Windows-x64
           path: |
-            dist/**/*-simple-windows.exe
+            dist/**/*-simple-*.exe
+            dist/**/*-simple-*.exe.blockmap
+            dist/**/latest.yml
 
-  build-mac-silicon:
+  build-mac:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -75,69 +76,26 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
           rm /tmp/signing.p12
 
-      - name: Build Mac Apple Silicon Simple
+      - name: Build Mac Simple
         env:
           BUILD_VARIANT: simple
-          TARGET_LABEL: mac_silicon
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: |
-          npx electron-builder --mac --arm64 --publish never -c build/simple.json --config.compression=maximum --config.directories.output=dist-mac-silicon
+          npx electron-builder --mac --x64 --arm64 --publish never -c build/simple.json --config.compression=maximum --config.directories.output=dist-mac
 
-      - name: Upload Mac Silicon artifact
+      - name: Upload Mac artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: MyOpenClaw-Mac-Silicon
-          path: dist-mac-silicon/**/*.dmg
-
-  build-mac-intel:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.branch || github.ref }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Build TypeScript
-        run: npm run build:ts
-
-      - name: Import signing certificate
-        env:
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-        run: |
-          echo "$CSC_LINK" | base64 --decode > /tmp/signing.p12
-          security create-keychain -p "" build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "" build.keychain
-          security import /tmp/signing.p12 -k build.keychain -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
-          rm /tmp/signing.p12
-
-      - name: Build Mac Intel Simple (cross-compile on ARM)
-        env:
-          BUILD_VARIANT: simple
-          TARGET_LABEL: mac_intel
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-        run: |
-          npx electron-builder --mac --x64 --publish never -c build/simple.json --config.compression=maximum --config.directories.output=dist-mac-intel
-
-      - name: Upload Mac Intel artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: MyOpenClaw-Mac-Intel
-          path: dist-mac-intel/**/*.dmg
+          name: MyOpenClaw-Mac
+          path: |
+            dist-mac/**/*-simple-*.dmg
+            dist-mac/**/*-simple-*.zip
+            dist-mac/**/*-simple-*.blockmap
+            dist-mac/**/latest-mac.yml
 
   create-release:
-    needs: [build-windows, build-mac-silicon, build-mac-intel]
+    needs: [build-windows, build-mac]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
@@ -156,16 +114,21 @@ jobs:
         with:
           files: |
             ./artifacts/**/*-simple-*.exe
+            ./artifacts/**/*-simple-*.exe.blockmap
             ./artifacts/**/*-simple-*.dmg
+            ./artifacts/**/*-simple-*.zip
+            ./artifacts/**/*-simple-*.blockmap
+            ./artifacts/**/latest.yml
+            ./artifacts/**/latest-mac.yml
           draft: false
           prerelease: false
           body: |
             ## MyOpenClaw Release
 
             ### Downloads
-            - **Windows 10/11 (64-bit)**: MyOpenClaw-simple-windows.exe
-            - **macOS Apple Silicon (M1/M2/M3/M4)**: MyOpenClaw-simple-mac_silicon.dmg
-            - **macOS Intel**: MyOpenClaw-simple-mac_intel.dmg
+            - **Windows 10/11 (64-bit)**: MyOpenClaw-simple-x64.exe
+            - **macOS Apple Silicon (M1/M2/M3/M4)**: MyOpenClaw-simple-arm64.dmg
+            - **macOS Intel**: MyOpenClaw-simple-x64.dmg
 
             ### Installation
             1. Download the appropriate file for your platform
@@ -175,6 +138,6 @@ jobs:
             ### Notes
             - This is the Simple version (lightweight, ~80MB)
             - OpenClaw runtime will be downloaded automatically on first launch
-            - No technical knowledge required
+            - Auto-update metadata is published with each release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

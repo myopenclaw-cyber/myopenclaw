@@ -8,6 +8,7 @@ import { handleDeepLink } from './deep-link';
 import { createWindow, getMainWindow, isQuitInProgress, prepareAppQuit, registerAllIpcHandlers, showMainWindow } from './window';
 import { initFileLogger } from './logger';
 import { startPerfMonitor } from './perf-monitor';
+import { initializeAutoUpdater, scheduleAutoUpdateCheck } from './updater';
 
 // ---------------------------------------------------------------------------
 // File logger — write all console output to ~/.myopenclaw/myopenclaw.log
@@ -101,6 +102,11 @@ if (!gotTheLock) {
     startPerfMonitor();
     console.log('[app] creating window...');
     createWindow();
+    initializeAutoUpdater({
+      getMainWindow,
+      beforeInstall: () => prepareAppQuit('update-install'),
+    });
+    scheduleAutoUpdateCheck();
 
     // macOS: handle deep link that launched the app
     const launchUrl = process.argv.find(arg => arg.startsWith(`${PROTOCOL}://`));

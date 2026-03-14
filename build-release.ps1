@@ -19,7 +19,7 @@ function Run-Build($variant, $configFile) {
   Get-ChildItem $outDir -File -Filter "*.__uninstaller.exe" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 
   if ($Platform -eq 'win') {
-    $cmd = "set BUILD_VARIANT=$variant&& set TARGET_LABEL=windows&& npx electron-builder --win --x64 -c $configFile --config.directories.output=$outDir --config.compression=maximum"
+    $cmd = "set BUILD_VARIANT=$variant&& npx electron-builder --win --x64 -c $configFile --config.directories.output=$outDir --config.compression=maximum"
   } else {
     $cmd = "set BUILD_VARIANT=$variant&& npx electron-builder --mac --x64 --arm64 -c $configFile --config.directories.output=$outDir --config.compression=maximum"
   }
