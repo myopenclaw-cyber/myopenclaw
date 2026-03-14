@@ -1,6 +1,6 @@
 {
   "name": "myopenclaw",
-  "version": "0.3.55",
+  "version": "0.3.56",
   "description": "MyOpenClaw - Desktop client for OpenClaw",
   "main": "main.js",
   "scripts": {

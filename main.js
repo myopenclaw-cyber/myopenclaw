@@ -16000,6 +16000,10 @@ function clearDownloadedRuntime() {
   _repairedRuntimeDirs.delete(path4.resolve(DOWNLOADED_RUNTIME_DIR));
   clearCliCache();
 }
+function runtimeEntryExists(baseDir) {
+  const distDir = path4.join(baseDir, "openclaw-deps", "openclaw", "dist");
+  return fs3.existsSync(path4.join(distDir, "entry.js")) || fs3.existsSync(path4.join(distDir, "entry.mjs"));
+}
 function repairRuntimePermissions(baseDir) {
   if (process.platform === "win32") return;
   const resolvedBase = path4.resolve(baseDir);
@@ -16073,14 +16077,12 @@ async function downloadWithFallback(urls, outputPath, onProgress) {
 function findRuntimeDir() {
   const embeddedBase = path4.join(__dirname, "resources");
   if (!embeddedBase.includes(".asar")) {
-    const embeddedDir = path4.join(embeddedBase, "openclaw-deps", "openclaw", "dist");
-    if (fs3.existsSync(path4.join(embeddedDir, "entry.js")) || fs3.existsSync(path4.join(embeddedDir, "entry.mjs"))) {
+    if (runtimeEntryExists(embeddedBase)) {
       repairRuntimePermissions(embeddedBase);
       return embeddedBase;
     }
   }
-  const dlDir = path4.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", "openclaw", "dist");
-  if (fs3.existsSync(path4.join(dlDir, "entry.js")) || fs3.existsSync(path4.join(dlDir, "entry.mjs"))) {
+  if (runtimeEntryExists(DOWNLOADED_RUNTIME_DIR)) {
     if (!shouldUseDownloadedRuntime()) {
       console.log("[runtime] Cached downloaded runtime is stale; waiting for refresh");
       return null;
@@ -16125,7 +16127,7 @@ async function ensureEmbeddedRuntime(updateLoadingStatus2) {
     await execFileAsync("unzip", ["-oq", zipPath, "-d", DOWNLOADED_RUNTIME_DIR], { stdio: "ignore" });
     repairRuntimePermissions(DOWNLOADED_RUNTIME_DIR);
   }
-  if (!findRuntimeDir()) {
+  if (!runtimeEntryExists(DOWNLOADED_RUNTIME_DIR)) {
     throw new Error("Runtime extracted but dist/entry.(m)js not found. The runtime package may be incomplete.");
   }
   writeDownloadedRuntimeStamp(target, getRuntimeCacheKey(config));
