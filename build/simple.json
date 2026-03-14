@@ -8,7 +8,7 @@
       "schemes": ["myopenclaw"]
     }
   ],
-  "artifactName": "${productName}-${env.BUILD_VARIANT}-${env.TARGET_LABEL}.${ext}",
+  "artifactName": "${productName}-${env.BUILD_VARIANT}-${arch}.${ext}",
   "files": [
     "main.js",
     "preload.js",
@@ -45,9 +45,20 @@
     "target": [
       {
         "target": "dmg"
+      },
+      {
+        "target": "zip"
       }
     ]
   },
+  "publish": [
+    {
+      "provider": "github",
+      "owner": "myopenclaw-cyber",
+      "repo": "myopenclaw",
+      "releaseType": "release"
+    }
+  ],
   "nsis": {
     "oneClick": false,
     "allowToChangeInstallationDirectory": true

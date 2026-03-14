@@ -17,6 +17,7 @@ import { registerChannelHandlers } from './ipc/channel-ipc';
 import { registerSkillsHandlers } from './ipc/skills-ipc';
 import { registerCronHandlers } from './ipc/cron-ipc';
 import { registerPairingHandlers } from './ipc/pairing-ipc';
+import { checkForAppUpdates } from './updater';
 import type { GatewayHandle, LoadingStatusCallback } from './types';
 
 // ---------------------------------------------------------------------------
@@ -28,7 +29,10 @@ let gatewayHandle: GatewayHandle | null = null;
 let tray: Tray | null = null;
 let isAppQuitting = false;
 let quitCleanupPromise: Promise<void> | null = null;
-let didShowTrayHint = false;
+
+type SessionEndAwareWindow = BrowserWindow & {
+  on(event: 'query-session-end' | 'session-end', listener: () => void): BrowserWindow;
+};
 
 export function getMainWindow(): BrowserWindow | null {
   return mainWindow;
@@ -52,6 +56,7 @@ export async function prepareAppQuit(reason: string = 'user-request'): Promise<v
 
   isAppQuitting = true;
   console.log(`[app] Preparing quit (${reason})`);
+  refreshTrayMenu();
   destroyTray();
 
   quitCleanupPromise = (async () => {
@@ -82,6 +87,10 @@ function buildTrayIcon() {
     console.warn('[tray] Failed to load tray icon:', iconPath);
     return null;
   }
+  if (process.platform === 'darwin') {
+    icon.setTemplateImage(true);
+    return icon.resize({ width: 18, height: 18 });
+  }
   if (process.platform === 'win32') {
     return icon.resize({ width: 16, height: 16 });
   }
@@ -96,50 +105,57 @@ function destroyTray(): void {
   tray = null;
 }
 
+function getTrayStatusLabel(): string {
+  if (isAppQuitting) return 'Status: Quitting';
+  if (hasLiveGatewayProcess()) return 'Status: Ready';
+  return 'Status: Starting';
+}
+
+function refreshTrayMenu(): void {
+  if (!tray) return;
+
+  tray.setToolTip(`MyOpenClaw\n${getTrayStatusLabel().replace('Status: ', '')}`);
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: getTrayStatusLabel(), enabled: false },
+    { type: 'separator' },
+    { label: 'Check for Updates...', click: () => { void checkForAppUpdates({ manual: true }); } },
+    { label: 'Open MyOpenClaw', click: () => showMainWindow() },
+    { label: 'Quit MyOpenClaw', click: () => app.quit() },
+  ]));
+}
+
 function ensureTray(): Tray | null {
-  if (process.platform !== 'win32') return null;
+  if (process.platform !== 'win32' && process.platform !== 'darwin') return null;
   if (tray) return tray;
 
   const icon = buildTrayIcon();
   if (!icon) return null;
 
   tray = new Tray(icon);
-  tray.setToolTip('MyOpenClaw');
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Open MyOpenClaw', click: () => showMainWindow() },
-    { type: 'separator' },
-    { label: 'Quit MyOpenClaw', click: () => app.quit() },
-  ]));
-  tray.on('click', () => showMainWindow());
-  tray.on('double-click', () => showMainWindow());
+  refreshTrayMenu();
+  if (process.platform === 'win32') {
+    tray.on('click', () => showMainWindow());
+    tray.on('double-click', () => showMainWindow());
+  }
   return tray;
-}
-
-function showTrayHintOnce(): void {
-  if (process.platform !== 'win32' || didShowTrayHint || !tray) return;
-  didShowTrayHint = true;
-  try {
-    tray.displayBalloon({
-      title: 'MyOpenClaw is still running',
-      content: 'The window was hidden to the system tray. Use the tray icon or Quit from the tray menu to fully exit.',
-    });
-  } catch {}
 }
 
 function hideMainWindowToBackground(): void {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.hide();
-  showTrayHintOnce();
+  refreshTrayMenu();
 }
 
 function bindWindowLifecycle(window: BrowserWindow): void {
-  if (process.platform === 'win32') {
+  if (process.platform === 'win32' || process.platform === 'darwin') {
     window.on('close', (event) => {
       if (isAppQuitting) return;
       event.preventDefault();
       hideMainWindowToBackground();
     });
+  }
 
+  if (process.platform === 'win32') {
     const handleSystemSessionEnd = () => {
       if (isAppQuitting) return;
       isAppQuitting = true;
@@ -147,15 +163,19 @@ function bindWindowLifecycle(window: BrowserWindow): void {
       killGateway();
     };
 
-    window.on('query-session-end', handleSystemSessionEnd);
-    window.on('session-end', handleSystemSessionEnd);
+    const sessionAwareWindow = window as SessionEndAwareWindow;
+    sessionAwareWindow.on('query-session-end', handleSystemSessionEnd);
+    sessionAwareWindow.on('session-end', handleSystemSessionEnd);
   }
 
   window.on('closed', () => {
     if (mainWindow === window) {
       mainWindow = null;
     }
+    refreshTrayMenu();
   });
+  window.on('show', () => refreshTrayMenu());
+  window.on('hide', () => refreshTrayMenu());
 }
 
 export function showMainWindow(): void {
@@ -169,6 +189,17 @@ export function showMainWindow(): void {
   }
   mainWindow.show();
   mainWindow.focus();
+  refreshTrayMenu();
+}
+
+function getLiveGatewayHandle(): GatewayHandle | null {
+  if (!gatewayHandle?.process) return null;
+  if (gatewayHandle.process.killed || gatewayHandle.process.exitCode != null) return null;
+  return gatewayHandle;
+}
+
+function hasLiveGatewayProcess(): boolean {
+  return getLiveGatewayHandle() != null;
 }
 
 // ---------------------------------------------------------------------------
@@ -206,6 +237,7 @@ export function registerAllIpcHandlers(): void {
 
   const onStartGateway = async () => {
     gatewayHandle = await startGateway(updateLoadingStatus);
+    refreshTrayMenu();
   };
 
   registerGatewayHandlers(getGW);
@@ -234,10 +266,12 @@ export function createWindow(): void {
 
   Menu.setApplicationMenu(null);
   ensureTray();
+  const useFastReopen = process.platform === 'darwin' && hasLiveGatewayProcess();
 
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    show: !useFastReopen,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -246,6 +280,15 @@ export function createWindow(): void {
     },
   });
   bindWindowLifecycle(mainWindow);
+
+  if (useFastReopen) {
+    mainWindow.once('ready-to-show', () => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      mainWindow.show();
+      mainWindow.focus();
+      refreshTrayMenu();
+    });
+  }
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     const gw = gatewayHandle;
@@ -278,6 +321,13 @@ export function createWindow(): void {
     console.error('[renderer] did-fail-load:', code, desc);
   });
 
+  if (useFastReopen) {
+    console.log('[startup] Fast macOS reopen: gateway is still alive, loading main UI directly');
+    mainWindow.loadFile('index.html');
+    refreshTrayMenu();
+    return;
+  }
+
   mainWindow.loadFile('loading.html');
 
   (async () => {
@@ -285,15 +335,22 @@ export function createWindow(): void {
       // E2E / CI mode: skip runtime download and gateway, load UI directly
       if (process.env.MYOPENCLAW_E2E === '1') {
         console.log('[startup] E2E mode: skipping runtime download and gateway start');
-        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadFile('index.html');
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.loadFile('index.html');
+          refreshTrayMenu();
+        }
         return;
       }
 
       // Fast reopen: if gateway is still alive (macOS close-window-without-quit),
       // skip the entire startup flow and go straight to the main UI.
-      if (gatewayHandle?.process && !gatewayHandle.process.killed) {
-        console.log('[startup] Gateway still alive (PID=%d), skipping startup flow', gatewayHandle.process.pid);
-        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadFile('index.html');
+      const liveGatewayHandle = getLiveGatewayHandle();
+      if (liveGatewayHandle?.process) {
+        console.log('[startup] Gateway still alive (PID=%d), skipping startup flow', liveGatewayHandle.process.pid);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.loadFile('index.html');
+          refreshTrayMenu();
+        }
         return;
       }
 
@@ -342,18 +399,22 @@ export function createWindow(): void {
 
       if (fs.existsSync(CONFIG_FILE)) {
         gatewayHandle = await startGateway(updateLoadingStatus);
+        refreshTrayMenu();
       } else {
         console.log('[startup] No gateway config after onboard, relay-only mode');
+        refreshTrayMenu();
       }
     } catch (err: any) {
       console.error('[startup] Error:', err.message);
       (global as any).__MYOPENCLAW_STARTUP_ERROR__ = err?.message || String(err);
       // Show error on loading screen before switching to main UI
       updateLoadingStatus(`Setup error: ${err?.message || 'Unknown error'}`, 0);
+      refreshTrayMenu();
       await new Promise(r => setTimeout(r, 3000)); // let user read the error
     }
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.loadFile('index.html');
+      refreshTrayMenu();
     }
   })();
 }

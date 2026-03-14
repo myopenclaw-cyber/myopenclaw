@@ -1,6 +1,6 @@
 {
   "name": "myopenclaw",
-  "version": "0.3.49",
+  "version": "0.3.50",
   "description": "MyOpenClaw - Desktop client for OpenClaw",
   "main": "main.js",
   "scripts": {
@@ -20,6 +20,7 @@
   "license": "ISC",
   "dependencies": {
     "axios": "^1.13.6",
+    "electron-updater": "^6.8.3",
     "ws": "^8.19.0"
   },
   "devDependencies": {
@@ -35,6 +36,7 @@
   "build": {
     "appId": "com.myopenclaw.app",
     "productName": "MyOpenClaw",
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
     "protocols": [
       {
         "name": "MyOpenClaw",
@@ -70,13 +72,21 @@
       "icon": "build/asssets/icon.icns",
       "target": [
         {
-          "target": "dmg",
-          "arch": [
-            "arm64"
-          ]
+          "target": "dmg"
+        },
+        {
+          "target": "zip"
         }
       ]
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "myopenclaw-cyber",
+        "repo": "myopenclaw",
+        "releaseType": "release"
+      }
+    ],
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
