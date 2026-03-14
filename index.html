@@ -20,7 +20,18 @@ body { margin: 0; font-family: 'Aspekta', -apple-system, BlinkMacSystemFont, san
 .gateway img { display: none; }
 .menu button { width: 100%; text-align: left; margin: 2px 0; padding: 10px 12px 10px 20px; border-radius: 0; border: none; border-left: 4px solid transparent; background: none; color: rgba(0,0,0,0.4); cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 500; transition: color 0.2s ease, border-color 0.2s ease; display: flex; align-items: center; gap: 10px; }
 .menu button:hover { color: rgba(0,0,0,0.7); }
-.menu button.active { background: none; color: #000000; font-weight: 700; border-left-color: #6B46FF; }
+.menu button.active { background: none; color: #000000; font-weight: 700; position: relative; }
+.menu button.active::before {
+  content: '';
+  display: block;
+  position: absolute;
+  top: 14px;
+  left: -21px;
+  width: 6px;
+  height: 26px;
+  background-image: url("./build/assets/indicator.png");
+  background-size: cover;
+}
 .menu button img { width: 28px; height: 28px; flex-shrink: 0; display: block; }
 .menu button .icon-act { display: none; }
 .menu button.active .icon-def { display: none; }
@@ -68,17 +79,20 @@ li { padding: 10px; border: 1px solid rgba(107,70,255,0.15); background: rgba(25
 hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; }
 .chat-title {color: #161835;font-size: 20px;font-weight: 600;margin-bottom:12px;}
 .chat-select {border-radius: 20px;border: 1px solid rgba(107, 70, 255, 0.20);background: rgba(255, 255, 255, 0.40);box-shadow: 0 10px 40px 0 rgba(0, 0, 0, 0.04);backdrop-filter: blur(2px);height:48px; appearance: none;-webkit-appearance: none;-moz-appearance: none; padding-right: 20px;background-image: url("./build/assets/arrow-down.png");background-repeat: no-repeat;background-position: right 10px center;background-size: 24px;}
-.chat-input-wrap { position: relative; }
-.model-tag-row { padding: 4px 0 0 42px; }
-.model-tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; font-size: 11px; font-weight: 500; color: #6b46ff; background: rgba(107,70,255,.08); border-radius: 10px; cursor: pointer; user-select: none; transition: background .15s; }
+.chat-input-wrap { position: relative; width: 100%;height: 173px;margin-top: 12px;border-radius: 20px;border: 1px solid rgba(107, 70, 255, 0.20);background: #FFF;padding: 20px 12px;}
+.chat-input-wrap textarea {border: none;outline: none;padding: 0;}
+.chat-input-wrap button.file-btn {background: url('./build/assets/plus.png') no-repeat center;width: 24px;height: 24px;background-size: cover;flex-shrink: 0;padding: 0;}
+.model-tag-row {  }
+.model-tag { display: inline-flex; align-items: center; gap: 4px; padding: 12px; font-size: 14px; font-weight: 500; color: #6b46ff; background: rgba(107,70,255,.08); border-radius: 20px; cursor: pointer; user-select: none; transition: background .15s; line-height: 18px;}
 .model-tag:hover { background: rgba(107,70,255,.16); }
-.model-tag::after { content: '\25BE'; font-size: 10px; opacity: .6; }
-.model-picker { display: none; position: absolute; bottom: 100%; left: 42px; margin-bottom: 6px; min-width: 220px; background: #1e2235; border: 1px solid rgba(255,255,255,.12); border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,.4); padding: 6px; z-index: 100; }
+.model-tag::after { content: ''; width: 14px; height: 14px; background: url('./build/assets/angle-down-small.png') no-repeat center; background-size: cover;}
+.model-picker { display: none; position: absolute; bottom: 60px; left: 42px; margin-bottom: 6px; min-width: 220px; background: #ffffff; border: 1px solid rgba(107, 70, 255, 0.20); border-radius: 20px; box-shadow: 0 10px 40px 0 rgba(0, 0, 0, 0.04); padding: 12px; z-index: 100; }
 .model-picker.open { display: block; }
 .model-picker-group { padding: 4px 0; }
-.model-picker-label { font-size: 10px; font-weight: 700; color: rgba(255,255,255,.35); text-transform: uppercase; letter-spacing: .5px; padding: 4px 10px 2px; }
+.model-picker-label { font-size: 16px; font-weight: 700; color: #000000; text-transform: uppercase; line-height: 24px; display:flex;align-items:center;}
+.model-picker-label img { width:24px;height:24px;margin-right:8px;}
 .model-picker-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; cursor: pointer; font-size: 12px; color: #cbd5e1; }
-.model-picker-item:hover { background: rgba(255,255,255,.08); }
+.model-picker-item:hover { background: rgba(151, 143, 143, 0.08); }
 .model-picker-item.active { background: rgba(107,70,255,.18); color: #a78bfa; }
 .model-picker-item .mp-check { width: 14px; text-align: center; font-size: 11px; color: #a78bfa; }
 .model-picker-item.locked { opacity: .45; cursor: not-allowed; }
@@ -367,16 +381,22 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
         <div id="filePreview" style="display:none"></div>
         <div class="chat-input-wrap">
           <div class="row">
-            <button onclick="pickFile()" title="Attach file" style="min-width:38px;padding:8px;font-size:16px;height: 38px;">&#128206;</button>
-            <textarea id="msg" rows="2" placeholder="Type your message... (Enter to send, Shift+Enter for new line)" style="max-height:48px"></textarea>
-            <button onclick="sendMsg()" style="height: 48px; width: 180px;">Send</button>
+            <textarea id="msg" rows="3" placeholder="Type your message... (Enter to send, Shift+Enter for new line)"></textarea>
+            <!-- <button onclick="sendMsg()" style="height: 48px; width: 180px;">Send</button> -->
           </div>
-          <div class="model-tag-row">
-            <span id="modelTag" class="model-tag" onclick="toggleModelPicker()"></span>
+          <div class="row" style="justify-content: space-between;">
+            <div class="row">
+              <button onclick="pickFile()" title="Attach file" class="file-btn"></button>
+              <div class="model-tag-row">
+                <span id="modelTag" class="model-tag" onclick="toggleModelPicker()"></span>
+              </div>
+                <div id="modelPicker" class="model-picker open">
+                <div class="model-picker-section" id="modelPickerList"></div>
+              </div>
+            </div>
+            <img src='./build/assets/send.png' style="cursor: pointer;width:36px;height: 36px;"  onclick="sendMsg()"/>
           </div>
-          <div id="modelPicker" class="model-picker">
-            <div class="model-picker-section" id="modelPickerList"></div>
-          </div>
+
         </div>
       </div>
     </section>
@@ -551,13 +571,13 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
                <span>$9.9/mo</span>
               <span>1,000</span>
               <span>All Major</span>
-              <span>3</span>
+              <span>5</span>
             </div>
              <div id="planCardPro" class="plan-wrap-item">
                <span>$29.9/mo</span>
               <span>5,000</span>
               <span>All + Latest</span>
-              <span>10</span>
+              <span>Unlimited</span>
             </div>
           </div>
 
@@ -698,14 +718,14 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
           <td class="plan-col-plus">Plus $9.9/mo</td>
           <td>1,000</td>
           <td>All Major</td>
-          <td>3</td>
+          <td>5</td>
           <td><button class="upgrade-btn" onclick="upgradePlan('plus');closePremium()">Upgrade</button></td>
         </tr>
         <tr>
           <td class="plan-col-pro">Pro $29.9/mo</td>
           <td>5,000</td>
           <td>All + Latest</td>
-          <td>10</td>
+          <td>Unlimited</td>
           <td><button class="upgrade-btn" onclick="upgradePlan('pro');closePremium()">Upgrade</button></td>
         </tr>
       </tbody>
@@ -839,7 +859,7 @@ function buildModelPickerList() {
   for (const [label, models] of Object.entries(groups)) {
     const group = document.createElement('div');
     group.className = 'model-picker-group';
-    group.innerHTML = '<div class="model-picker-label">' + escHtml(label) + '</div>';
+    group.innerHTML = `<div class="model-picker-label"><img src="./build/assets/${escHtml(label)}.png"/><span>${escHtml(label)}</span></div>`;
     for (const m of models) {
       const locked = m.available === false;
       const item = document.createElement('div');
