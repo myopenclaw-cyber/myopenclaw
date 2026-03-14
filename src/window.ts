@@ -1,10 +1,10 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { BrowserWindow, Menu, shell } from 'electron';
+import { app, BrowserWindow, Menu, Tray, nativeImage, shell } from 'electron';
 import { CONFIG_FILE, RELAY_BASE_URL } from './constants';
 import { buildDashboardUrl, loadAppState, saveAppState } from './config-store';
 import { findOpenClawCli, findRuntimeDir, findNodeBinary, ensureEmbeddedRuntime, ensureOpenClawInPath, runOpenClawOnboard, clearCliCache } from './runtime';
-import { startGateway } from './gateway';
+import { startGateway, stopGatewayGracefully, stopGatewayImmediately } from './gateway';
 import { registerGatewayHandlers } from './ipc/gateway-ipc';
 import { registerChatHandlers } from './ipc/chat-ipc';
 import { registerAppStateHandlers } from './ipc/app-state-ipc';
@@ -25,6 +25,10 @@ import type { GatewayHandle, LoadingStatusCallback } from './types';
 
 let mainWindow: BrowserWindow | null = null;
 let gatewayHandle: GatewayHandle | null = null;
+let tray: Tray | null = null;
+let isAppQuitting = false;
+let quitCleanupPromise: Promise<void> | null = null;
+let didShowTrayHint = false;
 
 export function getMainWindow(): BrowserWindow | null {
   return mainWindow;
@@ -35,9 +39,136 @@ export function getGatewayHandle(): GatewayHandle | null {
 }
 
 export function killGateway(): void {
-  if (gatewayHandle?.process) {
-    gatewayHandle.process.kill();
+  stopGatewayImmediately(gatewayHandle?.process ?? null);
+  gatewayHandle = null;
+}
+
+export function isQuitInProgress(): boolean {
+  return isAppQuitting;
+}
+
+export async function prepareAppQuit(reason: string = 'user-request'): Promise<void> {
+  if (quitCleanupPromise) return quitCleanupPromise;
+
+  isAppQuitting = true;
+  console.log(`[app] Preparing quit (${reason})`);
+  destroyTray();
+
+  quitCleanupPromise = (async () => {
+    try {
+      await stopGatewayGracefully(gatewayHandle?.process ?? null);
+    } catch (err: any) {
+      console.warn('[app] Graceful gateway shutdown failed, forcing stop:', err?.message || err);
+      killGateway();
+      return;
+    } finally {
+      gatewayHandle = null;
+    }
+  })().finally(() => {
+    quitCleanupPromise = null;
+  });
+
+  await quitCleanupPromise;
+}
+
+function resolveAssetPath(...segments: string[]): string {
+  return path.join(app.getAppPath(), ...segments);
+}
+
+function buildTrayIcon() {
+  const iconPath = resolveAssetPath('build', 'assets', 'logo-openclaw.png');
+  const icon = nativeImage.createFromPath(iconPath);
+  if (icon.isEmpty()) {
+    console.warn('[tray] Failed to load tray icon:', iconPath);
+    return null;
   }
+  if (process.platform === 'win32') {
+    return icon.resize({ width: 16, height: 16 });
+  }
+  return icon;
+}
+
+function destroyTray(): void {
+  if (!tray) return;
+  try {
+    tray.destroy();
+  } catch {}
+  tray = null;
+}
+
+function ensureTray(): Tray | null {
+  if (process.platform !== 'win32') return null;
+  if (tray) return tray;
+
+  const icon = buildTrayIcon();
+  if (!icon) return null;
+
+  tray = new Tray(icon);
+  tray.setToolTip('MyOpenClaw');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Open MyOpenClaw', click: () => showMainWindow() },
+    { type: 'separator' },
+    { label: 'Quit MyOpenClaw', click: () => app.quit() },
+  ]));
+  tray.on('click', () => showMainWindow());
+  tray.on('double-click', () => showMainWindow());
+  return tray;
+}
+
+function showTrayHintOnce(): void {
+  if (process.platform !== 'win32' || didShowTrayHint || !tray) return;
+  didShowTrayHint = true;
+  try {
+    tray.displayBalloon({
+      title: 'MyOpenClaw is still running',
+      content: 'The window was hidden to the system tray. Use the tray icon or Quit from the tray menu to fully exit.',
+    });
+  } catch {}
+}
+
+function hideMainWindowToBackground(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.hide();
+  showTrayHintOnce();
+}
+
+function bindWindowLifecycle(window: BrowserWindow): void {
+  if (process.platform === 'win32') {
+    window.on('close', (event) => {
+      if (isAppQuitting) return;
+      event.preventDefault();
+      hideMainWindowToBackground();
+    });
+
+    const handleSystemSessionEnd = () => {
+      if (isAppQuitting) return;
+      isAppQuitting = true;
+      destroyTray();
+      killGateway();
+    };
+
+    window.on('query-session-end', handleSystemSessionEnd);
+    window.on('session-end', handleSystemSessionEnd);
+  }
+
+  window.on('closed', () => {
+    if (mainWindow === window) {
+      mainWindow = null;
+    }
+  });
+}
+
+export function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.show();
+  mainWindow.focus();
 }
 
 // ---------------------------------------------------------------------------
@@ -96,7 +227,13 @@ export function registerAllIpcHandlers(): void {
 // ---------------------------------------------------------------------------
 
 export function createWindow(): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    showMainWindow();
+    return;
+  }
+
   Menu.setApplicationMenu(null);
+  ensureTray();
 
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -108,6 +245,7 @@ export function createWindow(): void {
       webviewTag: true,
     },
   });
+  bindWindowLifecycle(mainWindow);
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     const gw = gatewayHandle;
@@ -147,6 +285,14 @@ export function createWindow(): void {
       // E2E / CI mode: skip runtime download and gateway, load UI directly
       if (process.env.MYOPENCLAW_E2E === '1') {
         console.log('[startup] E2E mode: skipping runtime download and gateway start');
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadFile('index.html');
+        return;
+      }
+
+      // Fast reopen: if gateway is still alive (macOS close-window-without-quit),
+      // skip the entire startup flow and go straight to the main UI.
+      if (gatewayHandle?.process && !gatewayHandle.process.killed) {
+        console.log('[startup] Gateway still alive (PID=%d), skipping startup flow', gatewayHandle.process.pid);
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadFile('index.html');
         return;
       }

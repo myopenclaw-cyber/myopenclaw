@@ -21,6 +21,7 @@ export function registerAgentHandlers(): void {
     const name = (typeof data === 'string' ? data : data?.name) || `Agent ${state.agents.length + 1}`;
     const newAgent = { id: crypto.randomUUID(), name, channels: [] as string[] };
     state.agents.push(newAgent);
+    state.activeAgentId = newAgent.id;
     saveAppState(state);
     return newAgent;
   });

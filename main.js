@@ -103,6 +103,19 @@ function getDefaultAppState() {
     deviceToken: ""
   };
 }
+function normalizePlan(plan) {
+  if (plan === "pro") return "pro";
+  if (plan === "premium" || plan === "plus") return "premium";
+  return "free";
+}
+function applyPlanToState(state, plan, planExpiresAt) {
+  const normalized = normalizePlan(plan);
+  state.premiumTier = normalized;
+  state.isPremium = normalized !== "free";
+  state.plan = normalized;
+  if (planExpiresAt !== void 0) state.planExpiresAt = planExpiresAt;
+  return normalized;
+}
 function getPlanFeatures(plan) {
   const features = {
     free: { maxAgents: 1, canUseRelay: true, modelTier: "basic" },
@@ -120,9 +133,7 @@ function loadAppState() {
       return getDefaultAppState();
     }
     const state = { ...getDefaultAppState(), ...JSON.parse(fs.readFileSync(APP_STATE_FILE, "utf8")) };
-    if (!state.premiumTier) state.premiumTier = state.isPremium ? "premium" : "free";
-    state.isPremium = state.premiumTier !== "free";
-    if (!state.plan || state.plan === "free") state.plan = state.premiumTier;
+    applyPlanToState(state, state.plan || state.premiumTier || (state.isPremium ? "premium" : "free"));
     return state;
   } catch (error) {
     console.error("[app-state] load failed, using default:", error.message);
@@ -1098,6 +1109,92 @@ async function stopExistingGateway() {
   } catch {
   }
 }
+function stopExistingGatewaySync() {
+  const lockFile = resolveGatewayLockFile();
+  if (!fs4.existsSync(lockFile)) {
+    return;
+  }
+  const cli = findOpenClawCli();
+  if (!cli) return;
+  try {
+    const env = {
+      ...process.env,
+      PATH: buildNodeEnhancedPath(),
+      OPENCLAW_STATE_DIR: OPENCLAW_CONFIG_DIR,
+      OPENCLAW_CONFIG_PATH: CONFIG_FILE
+    };
+    const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(cli);
+    (0, import_child_process3.execFileSync)(cli, ["gateway", "stop"], {
+      encoding: "utf8",
+      timeout: 5e3,
+      stdio: "pipe",
+      env,
+      shell: useShell,
+      ...process.platform === "win32" ? { windowsHide: true } : {}
+    });
+    console.log("[gateway] Stopped existing gateway via CLI");
+  } catch {
+  }
+}
+function isProcessRunning(proc) {
+  return !!proc?.pid && proc.exitCode == null && proc.signalCode == null && !proc.killed;
+}
+async function waitForProcessExit(proc, timeoutMs) {
+  if (!isProcessRunning(proc)) return true;
+  return await new Promise((resolve5) => {
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      proc.off("exit", onExit);
+      proc.off("close", onExit);
+      resolve5(result);
+    };
+    const onExit = () => finish(true);
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    proc.once("exit", onExit);
+    proc.once("close", onExit);
+  });
+}
+function forceKillProcess(proc) {
+  if (!isProcessRunning(proc)) return;
+  try {
+    if (process.platform === "win32" && proc.pid) {
+      (0, import_child_process3.execFileSync)("taskkill", ["/PID", String(proc.pid), "/T", "/F"], {
+        timeout: 5e3,
+        stdio: "pipe",
+        windowsHide: true
+      });
+      return;
+    }
+    proc.kill("SIGKILL");
+  } catch (err) {
+    console.warn("[gateway] Force kill failed:", err?.message || err);
+  }
+}
+async function stopGatewayGracefully(gatewayProcess, timeoutMs = 3e3) {
+  try {
+    await stopExistingGateway();
+  } catch (err) {
+    console.warn("[gateway] CLI stop failed:", err?.message || err);
+  }
+  const exited = await waitForProcessExit(gatewayProcess, Math.max(1e3, timeoutMs - 500));
+  if (!exited) {
+    console.warn("[gateway] Gateway did not stop in time, forcing shutdown");
+    forceKillProcess(gatewayProcess);
+    await waitForProcessExit(gatewayProcess, 1e3);
+  }
+  updateGatewayProcess(null);
+}
+function stopGatewayImmediately(gatewayProcess) {
+  try {
+    stopExistingGatewaySync();
+  } catch {
+  }
+  forceKillProcess(gatewayProcess);
+  updateGatewayProcess(null);
+}
 function resolveGatewayLockFile() {
   const hash = crypto3.createHash("sha256").update(path5.resolve(CONFIG_FILE)).digest("hex").slice(0, 8);
   const uid = process.getuid?.();
@@ -1834,6 +1931,26 @@ function registerAppStateHandlers() {
 
 // src/ipc/subscription-ipc.ts
 var import_electron4 = require("electron");
+var import_axios8 = __toESM(require("axios"));
+async function syncSubscriptionFromRelay(state) {
+  const relay = state.relay;
+  const baseUrl = (relay?.baseUrl || RELAY_BASE_URL).replace(/\/+$/, "");
+  const freshJwt = await refreshJwtIfNeeded(baseUrl);
+  const authToken = freshJwt || relay?.accessToken || relay?.authToken;
+  if (!authToken) return false;
+  const headers = {
+    Authorization: `Bearer ${authToken}`
+  };
+  if (state.deviceId) headers["X-Device-Id"] = state.deviceId;
+  const response = await import_axios8.default.get(`${baseUrl}/v1/usage`, { headers, timeout: 15e3 });
+  const remotePlan = normalizePlan(response.data?.usage?.plan);
+  const currentPlan = normalizePlan(state.plan || state.premiumTier);
+  if (remotePlan !== currentPlan) {
+    applyPlanToState(state, remotePlan);
+    saveAppState(state);
+  }
+  return true;
+}
 function registerSubscriptionHandlers() {
   import_electron4.ipcMain.handle("set-user-api-key", async (_event, apiKey) => {
     const state = loadAppState();
@@ -1844,9 +1961,7 @@ function registerSubscriptionHandlers() {
   });
   import_electron4.ipcMain.handle("set-premium-status", async (_event, isPremium) => {
     const state = loadAppState();
-    state.premiumTier = isPremium ? "premium" : "free";
-    state.isPremium = state.premiumTier !== "free";
-    state.plan = state.premiumTier;
+    applyPlanToState(state, isPremium ? "premium" : "free");
     saveAppState(state);
     return { success: true, state };
   });
@@ -1855,14 +1970,17 @@ function registerSubscriptionHandlers() {
     if (!["free", "premium", "pro"].includes(tier)) {
       return { success: false, error: "Invalid tier" };
     }
-    state.premiumTier = tier;
-    state.isPremium = tier !== "free";
-    state.plan = tier;
+    applyPlanToState(state, tier);
     saveAppState(state);
     return { success: true, state };
   });
   import_electron4.ipcMain.handle("get-subscription-status", async () => {
     const state = loadAppState();
+    try {
+      await syncSubscriptionFromRelay(state);
+    } catch (e) {
+      console.warn("[subscription] relay sync skipped:", e?.message || e);
+    }
     const plan = state.plan || state.premiumTier || "free";
     const features = getPlanFeatures(plan);
     return { plan, planExpiresAt: state.planExpiresAt || null, features };
@@ -1873,10 +1991,7 @@ function registerSubscriptionHandlers() {
       return { success: false, error: "Invalid plan" };
     }
     const state = loadAppState();
-    state.plan = plan;
-    state.planExpiresAt = null;
-    state.premiumTier = plan;
-    state.isPremium = plan !== "free";
+    applyPlanToState(state, plan, null);
     saveAppState(state);
     return { success: true, mock: true };
   });
@@ -1886,10 +2001,7 @@ function registerSubscriptionHandlers() {
       return { success: false, error: "Invalid plan" };
     }
     const state = loadAppState();
-    state.plan = plan;
-    state.planExpiresAt = expiresAt || null;
-    state.premiumTier = plan;
-    state.isPremium = plan !== "free";
+    applyPlanToState(state, plan, expiresAt || null);
     saveAppState(state);
     return { success: true };
   });
@@ -1914,6 +2026,7 @@ function registerAgentHandlers() {
     const name = (typeof data === "string" ? data : data?.name) || `Agent ${state.agents.length + 1}`;
     const newAgent = { id: crypto5.randomUUID(), name, channels: [] };
     state.agents.push(newAgent);
+    state.activeAgentId = newAgent.id;
     saveAppState(state);
     return newAgent;
   });
@@ -2111,7 +2224,7 @@ function registerProviderHandlers(getGatewayHandle, onStartGateway) {
 
 // src/ipc/relay-ipc.ts
 var import_electron7 = require("electron");
-var import_axios8 = __toESM(require("axios"));
+var import_axios9 = __toESM(require("axios"));
 function registerRelayHandlers() {
   import_electron7.ipcMain.handle("save-relay-config", async (_event, config) => {
     try {
@@ -2186,7 +2299,7 @@ function registerRelayHandlers() {
       const jwt = state.relay?.accessToken || state.relay?.authToken;
       if (jwt) headers["Authorization"] = `Bearer ${jwt}`;
       if (state.deviceId) headers["X-Device-Id"] = state.deviceId;
-      const res = await import_axios8.default.get(`${baseUrl}/v1/models`, { headers, timeout: 1e4 });
+      const res = await import_axios9.default.get(`${baseUrl}/v1/models`, { headers, timeout: 1e4 });
       const models = res.data?.data || [];
       return { success: true, models };
     } catch (e) {
@@ -2211,7 +2324,7 @@ function registerRelayHandlers() {
 
 // src/ipc/device-ipc.ts
 var import_electron8 = require("electron");
-var import_axios9 = __toESM(require("axios"));
+var import_axios10 = __toESM(require("axios"));
 function registerDeviceHandlers() {
   import_electron8.ipcMain.handle("get-device-id", async () => {
     const state = loadAppState();
@@ -2230,7 +2343,7 @@ function registerDeviceHandlers() {
       const headers = {};
       if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
       if (deviceId) headers["X-Device-Id"] = deviceId;
-      const response = await import_axios9.default.get(`${baseUrl}/v1/usage`, { headers, timeout: 2e4 });
+      const response = await import_axios10.default.get(`${baseUrl}/v1/usage`, { headers, timeout: 2e4 });
       return response.data;
     } catch (err) {
       return { success: false, error: err.message };
@@ -2242,7 +2355,7 @@ function registerDeviceHandlers() {
 var fs9 = __toESM(require("fs"));
 var path9 = __toESM(require("path"));
 var import_electron9 = require("electron");
-var import_axios10 = __toESM(require("axios"));
+var import_axios11 = __toESM(require("axios"));
 function maskToken(token) {
   if (!token || token.length <= 12) return "****";
   const prefix = token.slice(0, 10);
@@ -2255,7 +2368,7 @@ async function fetchTelegramBotName(botToken) {
   const cached = botNameCache.get(cacheKey);
   if (cached !== void 0) return cached;
   try {
-    const res = await import_axios10.default.get(`https://api.telegram.org/bot${botToken}/getMe`, { timeout: 5e3 });
+    const res = await import_axios11.default.get(`https://api.telegram.org/bot${botToken}/getMe`, { timeout: 5e3 });
     const name = res.data?.result?.username || "";
     botNameCache.set(cacheKey, name);
     return name;
@@ -2708,7 +2821,7 @@ function registerSkillsHandlers(getGatewayHandle) {
 
 // src/ipc/cron-ipc.ts
 var crypto7 = __toESM(require("crypto"));
-var import_axios11 = __toESM(require("axios"));
+var import_axios12 = __toESM(require("axios"));
 var import_electron11 = require("electron");
 function wsRpc(port, token, method, params = {}) {
   return new Promise((resolve5, reject) => {
@@ -2858,7 +2971,7 @@ function registerCronHandlers(getGatewayHandle) {
         '  "message": "the prompt message to send to the agent when the job runs"',
         "}"
       ].join("\n");
-      const response = await import_axios11.default.post(`http://127.0.0.1:${port}/v1/chat/completions`, {
+      const response = await import_axios12.default.post(`http://127.0.0.1:${port}/v1/chat/completions`, {
         model: "openclaw:main",
         messages: [
           { role: "system", content: systemPrompt },
@@ -3013,13 +3126,127 @@ function registerPairingHandlers() {
 // src/window.ts
 var mainWindow = null;
 var gatewayHandle = null;
+var tray = null;
+var isAppQuitting = false;
+var quitCleanupPromise = null;
+var didShowTrayHint = false;
 function getMainWindow() {
   return mainWindow;
 }
 function killGateway() {
-  if (gatewayHandle?.process) {
-    gatewayHandle.process.kill();
+  stopGatewayImmediately(gatewayHandle?.process ?? null);
+  gatewayHandle = null;
+}
+function isQuitInProgress() {
+  return isAppQuitting;
+}
+async function prepareAppQuit(reason = "user-request") {
+  if (quitCleanupPromise) return quitCleanupPromise;
+  isAppQuitting = true;
+  console.log(`[app] Preparing quit (${reason})`);
+  destroyTray();
+  quitCleanupPromise = (async () => {
+    try {
+      await stopGatewayGracefully(gatewayHandle?.process ?? null);
+    } catch (err) {
+      console.warn("[app] Graceful gateway shutdown failed, forcing stop:", err?.message || err);
+      killGateway();
+      return;
+    } finally {
+      gatewayHandle = null;
+    }
+  })().finally(() => {
+    quitCleanupPromise = null;
+  });
+  await quitCleanupPromise;
+}
+function resolveAssetPath(...segments) {
+  return path12.join(import_electron13.app.getAppPath(), ...segments);
+}
+function buildTrayIcon() {
+  const iconPath = resolveAssetPath("build", "assets", "logo-openclaw.png");
+  const icon = import_electron13.nativeImage.createFromPath(iconPath);
+  if (icon.isEmpty()) {
+    console.warn("[tray] Failed to load tray icon:", iconPath);
+    return null;
   }
+  if (process.platform === "win32") {
+    return icon.resize({ width: 16, height: 16 });
+  }
+  return icon;
+}
+function destroyTray() {
+  if (!tray) return;
+  try {
+    tray.destroy();
+  } catch {
+  }
+  tray = null;
+}
+function ensureTray() {
+  if (process.platform !== "win32") return null;
+  if (tray) return tray;
+  const icon = buildTrayIcon();
+  if (!icon) return null;
+  tray = new import_electron13.Tray(icon);
+  tray.setToolTip("MyOpenClaw");
+  tray.setContextMenu(import_electron13.Menu.buildFromTemplate([
+    { label: "Open MyOpenClaw", click: () => showMainWindow() },
+    { type: "separator" },
+    { label: "Quit MyOpenClaw", click: () => import_electron13.app.quit() }
+  ]));
+  tray.on("click", () => showMainWindow());
+  tray.on("double-click", () => showMainWindow());
+  return tray;
+}
+function showTrayHintOnce() {
+  if (process.platform !== "win32" || didShowTrayHint || !tray) return;
+  didShowTrayHint = true;
+  try {
+    tray.displayBalloon({
+      title: "MyOpenClaw is still running",
+      content: "The window was hidden to the system tray. Use the tray icon or Quit from the tray menu to fully exit."
+    });
+  } catch {
+  }
+}
+function hideMainWindowToBackground() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.hide();
+  showTrayHintOnce();
+}
+function bindWindowLifecycle(window) {
+  if (process.platform === "win32") {
+    window.on("close", (event) => {
+      if (isAppQuitting) return;
+      event.preventDefault();
+      hideMainWindowToBackground();
+    });
+    const handleSystemSessionEnd = () => {
+      if (isAppQuitting) return;
+      isAppQuitting = true;
+      destroyTray();
+      killGateway();
+    };
+    window.on("query-session-end", handleSystemSessionEnd);
+    window.on("session-end", handleSystemSessionEnd);
+  }
+  window.on("closed", () => {
+    if (mainWindow === window) {
+      mainWindow = null;
+    }
+  });
+}
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.show();
+  mainWindow.focus();
 }
 var updateLoadingStatus = (message, percent) => {
   try {
@@ -3053,7 +3280,12 @@ function registerAllIpcHandlers() {
   registerPairingHandlers();
 }
 function createWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    showMainWindow();
+    return;
+  }
   import_electron13.Menu.setApplicationMenu(null);
+  ensureTray();
   mainWindow = new import_electron13.BrowserWindow({
     width: 1200,
     height: 800,
@@ -3064,6 +3296,7 @@ function createWindow() {
       webviewTag: true
     }
   });
+  bindWindowLifecycle(mainWindow);
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     const gw = gatewayHandle;
     const target = /^https?:\/\/127\.0\.0\.1:\d+\/?$/i.test(String(url || "")) ? buildDashboardUrl(url, gw?.baseUrl) : url;
@@ -3081,6 +3314,11 @@ function createWindow() {
     try {
       if (process.env.MYOPENCLAW_E2E === "1") {
         console.log("[startup] E2E mode: skipping runtime download and gateway start");
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadFile("index.html");
+        return;
+      }
+      if (gatewayHandle?.process && !gatewayHandle.process.killed) {
+        console.log("[startup] Gateway still alive (PID=%d), skipping startup flow", gatewayHandle.process.pid);
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadFile("index.html");
         return;
       }
@@ -3168,17 +3406,24 @@ import_electron14.app.on("open-url", (event, url) => {
   handleDeepLink(url, getMainWindow);
 });
 var gotTheLock = import_electron14.app.requestSingleInstanceLock();
+var exitRequested = false;
+function requestAppExit(reason) {
+  if (exitRequested) return;
+  exitRequested = true;
+  console.log(`[app] Exit requested (${reason})`);
+  void prepareAppQuit(reason).catch((err) => {
+    console.error("[app] Quit cleanup failed:", err?.message || err);
+  }).finally(() => {
+    import_electron14.app.exit(0);
+  });
+}
 if (!gotTheLock) {
   import_electron14.app.quit();
 } else {
   import_electron14.app.on("second-instance", (_event, argv) => {
     const deepLinkUrl = argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
     if (deepLinkUrl) handleDeepLink(deepLinkUrl, getMainWindow);
-    const mainWindow2 = getMainWindow();
-    if (mainWindow2) {
-      if (mainWindow2.isMinimized()) mainWindow2.restore();
-      mainWindow2.focus();
-    }
+    showMainWindow();
   });
   registerAllIpcHandlers();
   import_electron14.app.whenReady().then(() => {
@@ -3197,10 +3442,16 @@ if (!gotTheLock) {
     if (launchUrl) handleDeepLink(launchUrl, getMainWindow);
   });
   import_electron14.app.on("window-all-closed", () => {
-    killGateway();
-    if (process.platform !== "darwin") import_electron14.app.quit();
+    if (process.platform === "linux") {
+      requestAppExit("window-all-closed");
+    }
+  });
+  import_electron14.app.on("before-quit", (event) => {
+    if (exitRequested || isQuitInProgress()) return;
+    event.preventDefault();
+    requestAppExit("before-quit");
   });
   import_electron14.app.on("activate", () => {
-    if (import_electron14.BrowserWindow.getAllWindows().length === 0) createWindow();
+    showMainWindow();
   });
 }

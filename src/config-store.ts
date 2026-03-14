@@ -85,6 +85,21 @@ export function getDefaultAppState(): AppState {
   };
 }
 
+export function normalizePlan(plan: string | null | undefined): PremiumTier {
+  if (plan === 'pro') return 'pro';
+  if (plan === 'premium' || plan === 'plus') return 'premium';
+  return 'free';
+}
+
+export function applyPlanToState(state: AppState, plan: string | null | undefined, planExpiresAt?: string | null): PremiumTier {
+  const normalized = normalizePlan(plan);
+  state.premiumTier = normalized;
+  state.isPremium = normalized !== 'free';
+  state.plan = normalized;
+  if (planExpiresAt !== undefined) state.planExpiresAt = planExpiresAt;
+  return normalized;
+}
+
 export function getPlanFeatures(plan: string): PlanFeatures {
   const features: Record<string, PlanFeatures> = {
     free: { maxAgents: 1, canUseRelay: true, modelTier: 'basic' },
@@ -102,9 +117,7 @@ export function loadAppState(): AppState {
       return getDefaultAppState();
     }
     const state: AppState = { ...getDefaultAppState(), ...JSON.parse(fs.readFileSync(APP_STATE_FILE, 'utf8')) };
-    if (!state.premiumTier) state.premiumTier = state.isPremium ? 'premium' : 'free';
-    state.isPremium = state.premiumTier !== 'free';
-    if (!state.plan || state.plan === 'free') state.plan = state.premiumTier;
+    applyPlanToState(state, state.plan || state.premiumTier || (state.isPremium ? 'premium' : 'free'));
     return state;
   } catch (error: any) {
     console.error('[app-state] load failed, using default:', error.message);
