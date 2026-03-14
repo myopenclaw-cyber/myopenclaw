@@ -9,6 +9,27 @@ import { CONFIG_FILE, OPENCLAW_CONFIG_DIR, DOWNLOADED_RUNTIME_DIR } from '../con
 import type { GatewayHandle } from '../types';
 import { buildConnectParams, handleConnectResponse } from '../device-identity';
 
+function findBundledClawHubCliScript(): string | null {
+  try {
+    const packageJsonPath = require.resolve('clawhub/package.json');
+    const packageDir = path.dirname(packageJsonPath);
+    const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+    const binEntry = typeof pkg?.bin === 'string'
+      ? pkg.bin
+      : typeof pkg?.bin?.clawhub === 'string'
+        ? pkg.bin.clawhub
+        : typeof pkg?.bin?.clawdhub === 'string'
+          ? pkg.bin.clawdhub
+          : null;
+
+    if (!binEntry) return null;
+    const scriptPath = path.resolve(packageDir, binEntry);
+    return fs.existsSync(scriptPath) ? scriptPath : null;
+  } catch {
+    return null;
+  }
+}
+
 function findClawHubCli(): string | null {
   const candidates: string[] = [];
 
@@ -139,11 +160,33 @@ function installClawHubCli(): Promise<string> {
 }
 
 function runClawHubCli(args: string[]): Promise<string> {
+  const bundledScript = findBundledClawHubCliScript();
+  if (bundledScript) {
+    return runClawHubCliWithBundledScript(bundledScript, args);
+  }
+
   let bin = findClawHubCli();
   if (!bin) {
     return installClawHubCli().then(installedBin => runClawHubCliWithBin(installedBin, args));
   }
   return runClawHubCliWithBin(bin, args);
+}
+
+function runClawHubCliWithBundledScript(scriptPath: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(process.execPath, [scriptPath, ...args], {
+      timeout: 120000,
+      encoding: 'utf8',
+      windowsHide: true,
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: '1',
+      },
+    }, (err, stdout, stderr) => {
+      if (err) reject(new Error(formatSkillServiceError(stderr || stdout || err.message)));
+      else resolve(stdout);
+    });
+  });
 }
 
 function runClawHubCliWithBin(bin: string, args: string[]): Promise<string> {

@@ -32,6 +32,20 @@ let _cachedCli: string | null | undefined; // undefined = not yet resolved
 // Mtime-based verification cache — avoids spawning `openclaw --version` if binary is unchanged
 let _verifiedBins = new Map<string, number>(); // path → mtimeMs
 let _repairedRuntimeDirs = new Set<string>();
+const DOWNLOADED_RUNTIME_STAMP_FILE = path.join(DOWNLOADED_RUNTIME_DIR, '.runtime-info.json');
+
+type RuntimeTargetConfig = {
+  version?: string;
+  urls?: string[];
+  url?: string;
+};
+
+type RuntimeManifest = Record<string, RuntimeTargetConfig>;
+
+type DownloadedRuntimeStamp = {
+  target: string;
+  cacheKey: string;
+};
 
 export function clearCliCache(): void {
   _cachedCli = undefined;
@@ -42,6 +56,83 @@ export function getRuntimeTargetLabel(): string {
   if (process.platform === 'win32') return 'windows';
   if (process.platform === 'darwin') return process.arch === 'arm64' ? 'mac_silicon' : 'mac_intel';
   return 'linux';
+}
+
+function readBundledRuntimeManifest(): RuntimeManifest | null {
+  const manifestPath = path.join(__dirname, 'resources', 'runtime-manifest.json');
+  if (!fs.existsSync(manifestPath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  } catch (e: any) {
+    console.log(`[runtime] Failed to read runtime-manifest.json: ${e.message}`);
+    return null;
+  }
+}
+
+function getRuntimeTargetConfig(
+  manifest: RuntimeManifest | null,
+  target: string = getRuntimeTargetLabel(),
+): RuntimeTargetConfig | null {
+  const config = manifest?.[target];
+  return config && typeof config === 'object' ? config : null;
+}
+
+function getRuntimeUrls(config: RuntimeTargetConfig | null): string[] {
+  if (!config) return [];
+  return Array.isArray(config.urls) ? config.urls : (config.url ? [config.url] : []);
+}
+
+function getRuntimeCacheKey(config: RuntimeTargetConfig | null): string {
+  if (!config) return 'none';
+  const version = typeof config.version === 'string' ? config.version.trim() : '';
+  if (version) return `version:${version}`;
+  return `urls:${getRuntimeUrls(config).join('|')}`;
+}
+
+function readDownloadedRuntimeStamp(): DownloadedRuntimeStamp | null {
+  if (!fs.existsSync(DOWNLOADED_RUNTIME_STAMP_FILE)) return null;
+  try {
+    const raw = JSON.parse(fs.readFileSync(DOWNLOADED_RUNTIME_STAMP_FILE, 'utf8'));
+    if (typeof raw?.target === 'string' && typeof raw?.cacheKey === 'string') {
+      return { target: raw.target, cacheKey: raw.cacheKey };
+    }
+  } catch { /* ignore invalid stamp */ }
+  return null;
+}
+
+function writeDownloadedRuntimeStamp(target: string, cacheKey: string): void {
+  fs.mkdirSync(DOWNLOADED_RUNTIME_DIR, { recursive: true });
+  fs.writeFileSync(
+    DOWNLOADED_RUNTIME_STAMP_FILE,
+    JSON.stringify({ target, cacheKey }, null, 2),
+    'utf8',
+  );
+}
+
+function isDownloadedRuntimeCurrent(
+  config: RuntimeTargetConfig | null,
+  target: string = getRuntimeTargetLabel(),
+): boolean {
+  if (!config) return true;
+  const stamp = readDownloadedRuntimeStamp();
+  if (!stamp) return false;
+  return stamp.target === target && stamp.cacheKey === getRuntimeCacheKey(config);
+}
+
+function shouldUseDownloadedRuntime(): boolean {
+  const manifest = readBundledRuntimeManifest();
+  const config = getRuntimeTargetConfig(manifest);
+  return isDownloadedRuntimeCurrent(config);
+}
+
+function clearDownloadedRuntime(): void {
+  try {
+    fs.rmSync(DOWNLOADED_RUNTIME_DIR, { recursive: true, force: true });
+  } catch (e: any) {
+    console.log(`[runtime] Failed to clear stale runtime cache: ${e.message}`);
+  }
+  _repairedRuntimeDirs.delete(path.resolve(DOWNLOADED_RUNTIME_DIR));
+  clearCliCache();
 }
 
 function repairRuntimePermissions(baseDir: string): void {
@@ -125,6 +216,10 @@ export function findRuntimeDir(): string | null {
   }
   const dlDir = path.join(DOWNLOADED_RUNTIME_DIR, 'openclaw-deps', 'openclaw', 'dist');
   if (fs.existsSync(path.join(dlDir, 'entry.js')) || fs.existsSync(path.join(dlDir, 'entry.mjs'))) {
+    if (!shouldUseDownloadedRuntime()) {
+      console.log('[runtime] Cached downloaded runtime is stale; waiting for refresh');
+      return null;
+    }
     repairRuntimePermissions(DOWNLOADED_RUNTIME_DIR);
     return DOWNLOADED_RUNTIME_DIR;
   }
@@ -132,26 +227,31 @@ export function findRuntimeDir(): string | null {
 }
 
 export async function ensureEmbeddedRuntime(updateLoadingStatus: LoadingStatusCallback): Promise<void> {
+  const manifest = readBundledRuntimeManifest();
+  const target = getRuntimeTargetLabel();
+  const config = getRuntimeTargetConfig(manifest, target);
+  const urls = getRuntimeUrls(config);
+
   if (findRuntimeDir()) {
     console.log('[runtime] Runtime found');
     updateLoadingStatus('Runtime ready', 72);
     return;
   }
 
-  const manifestPath = path.join(__dirname, 'resources', 'runtime-manifest.json');
-  if (!fs.existsSync(manifestPath)) {
+  if (!manifest) {
     throw new Error('Missing runtime-manifest.json. Cannot download runtime automatically.');
   }
-
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  const target = getRuntimeTargetLabel();
-  const urls: string[] = manifest?.[target]?.urls || (manifest?.[target]?.url ? [manifest[target].url] : []);
 
   if (!urls.length) {
     throw new Error(`No runtime download URL configured for platform "${target}". Please download the runtime manually or use the full installer.`);
   }
 
   const zipPath = path.join(os.tmpdir(), `myopenclaw-runtime-${target}.zip`);
+
+  if (fs.existsSync(DOWNLOADED_RUNTIME_DIR)) {
+    console.log('[runtime] Clearing stale downloaded runtime before refresh...');
+    clearDownloadedRuntime();
+  }
 
   console.log(`[runtime] Downloading runtime for ${target}...`);
   updateLoadingStatus('Downloading openclaw ...', 52);
@@ -172,6 +272,8 @@ export async function ensureEmbeddedRuntime(updateLoadingStatus: LoadingStatusCa
   if (!findRuntimeDir()) {
     throw new Error('Runtime extracted but dist/entry.(m)js not found. The runtime package may be incomplete.');
   }
+
+  writeDownloadedRuntimeStamp(target, getRuntimeCacheKey(config));
 
   if (process.platform === 'win32') {
     addWindowsFirewallRule(path.join(DOWNLOADED_RUNTIME_DIR, 'node', 'node.exe'));
@@ -202,7 +304,7 @@ export function buildNodeEnhancedPath(): string {
   const nodeExe = process.platform === 'win32' ? 'node.exe' : 'node';
   const nodeDirs = [
     path.join(__dirname, 'resources', 'node'),
-    path.join(DOWNLOADED_RUNTIME_DIR, 'node'),
+    ...(shouldUseDownloadedRuntime() ? [path.join(DOWNLOADED_RUNTIME_DIR, 'node')] : []),
   ];
   const extra = nodeDirs.filter(d => fs.existsSync(path.join(d, nodeExe)));
   return extra.length > 0 ? `${extra.join(path.delimiter)}${path.delimiter}${process.env.PATH}` : process.env.PATH!;
@@ -255,7 +357,9 @@ export function findOpenClawCli(): string | null {
     if (!embeddedBin.includes('.asar')) {
       ownCandidates.push(embeddedBin);
     }
-    ownCandidates.push(path.join(DOWNLOADED_RUNTIME_DIR, 'openclaw-deps', '.bin', bin));
+    if (shouldUseDownloadedRuntime()) {
+      ownCandidates.push(path.join(DOWNLOADED_RUNTIME_DIR, 'openclaw-deps', '.bin', bin));
+    }
   }
 
   const seen = new Set<string>();
@@ -338,7 +442,7 @@ export function findNodeBinary(): string {
   // 2. Runtime bundled node
   const candidates = [
     path.join(__dirname, 'resources', 'node', nodeExe),
-    path.join(DOWNLOADED_RUNTIME_DIR, 'node', nodeExe),
+    ...(shouldUseDownloadedRuntime() ? [path.join(DOWNLOADED_RUNTIME_DIR, 'node', nodeExe)] : []),
   ];
   for (const p of candidates) {
     if (fs.existsSync(p)) {

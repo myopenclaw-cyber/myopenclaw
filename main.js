@@ -2225,7 +2225,7 @@ var require_jsonfile = __commonJS({
       await universalify.fromCallback(fs13.writeFile)(file, str, options);
     }
     var writeFile = universalify.fromPromise(_writeFile);
-    function writeFileSync9(file, obj, options = {}) {
+    function writeFileSync10(file, obj, options = {}) {
       const fs13 = options.fs || _fs;
       const str = stringify(obj, options);
       return fs13.writeFileSync(file, str, options);
@@ -2234,7 +2234,7 @@ var require_jsonfile = __commonJS({
       readFile,
       readFileSync: readFileSync11,
       writeFile,
-      writeFileSync: writeFileSync9
+      writeFileSync: writeFileSync10
     };
   }
 });
@@ -15910,6 +15910,7 @@ function execFileAsync(cmd, args, opts = {}) {
 var _cachedCli;
 var _verifiedBins = /* @__PURE__ */ new Map();
 var _repairedRuntimeDirs = /* @__PURE__ */ new Set();
+var DOWNLOADED_RUNTIME_STAMP_FILE = path4.join(DOWNLOADED_RUNTIME_DIR, ".runtime-info.json");
 function clearCliCache() {
   _cachedCli = void 0;
   _verifiedBins.clear();
@@ -15918,6 +15919,69 @@ function getRuntimeTargetLabel() {
   if (process.platform === "win32") return "windows";
   if (process.platform === "darwin") return process.arch === "arm64" ? "mac_silicon" : "mac_intel";
   return "linux";
+}
+function readBundledRuntimeManifest() {
+  const manifestPath = path4.join(__dirname, "resources", "runtime-manifest.json");
+  if (!fs3.existsSync(manifestPath)) return null;
+  try {
+    return JSON.parse(fs3.readFileSync(manifestPath, "utf8"));
+  } catch (e) {
+    console.log(`[runtime] Failed to read runtime-manifest.json: ${e.message}`);
+    return null;
+  }
+}
+function getRuntimeTargetConfig(manifest, target = getRuntimeTargetLabel()) {
+  const config = manifest?.[target];
+  return config && typeof config === "object" ? config : null;
+}
+function getRuntimeUrls(config) {
+  if (!config) return [];
+  return Array.isArray(config.urls) ? config.urls : config.url ? [config.url] : [];
+}
+function getRuntimeCacheKey(config) {
+  if (!config) return "none";
+  const version = typeof config.version === "string" ? config.version.trim() : "";
+  if (version) return `version:${version}`;
+  return `urls:${getRuntimeUrls(config).join("|")}`;
+}
+function readDownloadedRuntimeStamp() {
+  if (!fs3.existsSync(DOWNLOADED_RUNTIME_STAMP_FILE)) return null;
+  try {
+    const raw = JSON.parse(fs3.readFileSync(DOWNLOADED_RUNTIME_STAMP_FILE, "utf8"));
+    if (typeof raw?.target === "string" && typeof raw?.cacheKey === "string") {
+      return { target: raw.target, cacheKey: raw.cacheKey };
+    }
+  } catch {
+  }
+  return null;
+}
+function writeDownloadedRuntimeStamp(target, cacheKey) {
+  fs3.mkdirSync(DOWNLOADED_RUNTIME_DIR, { recursive: true });
+  fs3.writeFileSync(
+    DOWNLOADED_RUNTIME_STAMP_FILE,
+    JSON.stringify({ target, cacheKey }, null, 2),
+    "utf8"
+  );
+}
+function isDownloadedRuntimeCurrent(config, target = getRuntimeTargetLabel()) {
+  if (!config) return true;
+  const stamp = readDownloadedRuntimeStamp();
+  if (!stamp) return false;
+  return stamp.target === target && stamp.cacheKey === getRuntimeCacheKey(config);
+}
+function shouldUseDownloadedRuntime() {
+  const manifest = readBundledRuntimeManifest();
+  const config = getRuntimeTargetConfig(manifest);
+  return isDownloadedRuntimeCurrent(config);
+}
+function clearDownloadedRuntime() {
+  try {
+    fs3.rmSync(DOWNLOADED_RUNTIME_DIR, { recursive: true, force: true });
+  } catch (e) {
+    console.log(`[runtime] Failed to clear stale runtime cache: ${e.message}`);
+  }
+  _repairedRuntimeDirs.delete(path4.resolve(DOWNLOADED_RUNTIME_DIR));
+  clearCliCache();
 }
 function repairRuntimePermissions(baseDir) {
   if (process.platform === "win32") return;
@@ -16000,28 +16064,36 @@ function findRuntimeDir() {
   }
   const dlDir = path4.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", "openclaw", "dist");
   if (fs3.existsSync(path4.join(dlDir, "entry.js")) || fs3.existsSync(path4.join(dlDir, "entry.mjs"))) {
+    if (!shouldUseDownloadedRuntime()) {
+      console.log("[runtime] Cached downloaded runtime is stale; waiting for refresh");
+      return null;
+    }
     repairRuntimePermissions(DOWNLOADED_RUNTIME_DIR);
     return DOWNLOADED_RUNTIME_DIR;
   }
   return null;
 }
 async function ensureEmbeddedRuntime(updateLoadingStatus2) {
+  const manifest = readBundledRuntimeManifest();
+  const target = getRuntimeTargetLabel();
+  const config = getRuntimeTargetConfig(manifest, target);
+  const urls = getRuntimeUrls(config);
   if (findRuntimeDir()) {
     console.log("[runtime] Runtime found");
     updateLoadingStatus2("Runtime ready", 72);
     return;
   }
-  const manifestPath = path4.join(__dirname, "resources", "runtime-manifest.json");
-  if (!fs3.existsSync(manifestPath)) {
+  if (!manifest) {
     throw new Error("Missing runtime-manifest.json. Cannot download runtime automatically.");
   }
-  const manifest = JSON.parse(fs3.readFileSync(manifestPath, "utf8"));
-  const target = getRuntimeTargetLabel();
-  const urls = manifest?.[target]?.urls || (manifest?.[target]?.url ? [manifest[target].url] : []);
   if (!urls.length) {
     throw new Error(`No runtime download URL configured for platform "${target}". Please download the runtime manually or use the full installer.`);
   }
   const zipPath = path4.join(os2.tmpdir(), `myopenclaw-runtime-${target}.zip`);
+  if (fs3.existsSync(DOWNLOADED_RUNTIME_DIR)) {
+    console.log("[runtime] Clearing stale downloaded runtime before refresh...");
+    clearDownloadedRuntime();
+  }
   console.log(`[runtime] Downloading runtime for ${target}...`);
   updateLoadingStatus2("Downloading openclaw ...", 52);
   await downloadWithFallback(urls, zipPath, (p) => {
@@ -16039,6 +16111,7 @@ async function ensureEmbeddedRuntime(updateLoadingStatus2) {
   if (!findRuntimeDir()) {
     throw new Error("Runtime extracted but dist/entry.(m)js not found. The runtime package may be incomplete.");
   }
+  writeDownloadedRuntimeStamp(target, getRuntimeCacheKey(config));
   if (process.platform === "win32") {
     addWindowsFirewallRule(path4.join(DOWNLOADED_RUNTIME_DIR, "node", "node.exe"));
   }
@@ -16070,7 +16143,7 @@ function buildNodeEnhancedPath() {
   const nodeExe = process.platform === "win32" ? "node.exe" : "node";
   const nodeDirs = [
     path4.join(__dirname, "resources", "node"),
-    path4.join(DOWNLOADED_RUNTIME_DIR, "node")
+    ...shouldUseDownloadedRuntime() ? [path4.join(DOWNLOADED_RUNTIME_DIR, "node")] : []
   ];
   const extra = nodeDirs.filter((d) => fs3.existsSync(path4.join(d, nodeExe)));
   return extra.length > 0 ? `${extra.join(path4.delimiter)}${path4.delimiter}${process.env.PATH}` : process.env.PATH;
@@ -16113,7 +16186,9 @@ function findOpenClawCli() {
     if (!embeddedBin.includes(".asar")) {
       ownCandidates.push(embeddedBin);
     }
-    ownCandidates.push(path4.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", ".bin", bin));
+    if (shouldUseDownloadedRuntime()) {
+      ownCandidates.push(path4.join(DOWNLOADED_RUNTIME_DIR, "openclaw-deps", ".bin", bin));
+    }
   }
   const seen = /* @__PURE__ */ new Set();
   for (const p of ownCandidates) {
@@ -16184,7 +16259,7 @@ function findNodeBinary() {
   }
   const candidates = [
     path4.join(__dirname, "resources", "node", nodeExe),
-    path4.join(DOWNLOADED_RUNTIME_DIR, "node", nodeExe)
+    ...shouldUseDownloadedRuntime() ? [path4.join(DOWNLOADED_RUNTIME_DIR, "node", nodeExe)] : []
   ];
   for (const p of candidates) {
     if (fs3.existsSync(p)) {
@@ -17860,6 +17935,19 @@ var os4 = __toESM(require("os"));
 var path10 = __toESM(require("path"));
 var import_child_process4 = require("child_process");
 var import_electron10 = require("electron");
+function findBundledClawHubCliScript() {
+  try {
+    const packageJsonPath = require.resolve("clawhub/package.json");
+    const packageDir = path10.dirname(packageJsonPath);
+    const pkg = JSON.parse(fs10.readFileSync(packageJsonPath, "utf8"));
+    const binEntry = typeof pkg?.bin === "string" ? pkg.bin : typeof pkg?.bin?.clawhub === "string" ? pkg.bin.clawhub : typeof pkg?.bin?.clawdhub === "string" ? pkg.bin.clawdhub : null;
+    if (!binEntry) return null;
+    const scriptPath = path10.resolve(packageDir, binEntry);
+    return fs10.existsSync(scriptPath) ? scriptPath : null;
+  } catch {
+    return null;
+  }
+}
 function findClawHubCli() {
   const candidates = [];
   try {
@@ -17972,11 +18060,31 @@ function installClawHubCli() {
   });
 }
 function runClawHubCli(args) {
+  const bundledScript = findBundledClawHubCliScript();
+  if (bundledScript) {
+    return runClawHubCliWithBundledScript(bundledScript, args);
+  }
   let bin = findClawHubCli();
   if (!bin) {
     return installClawHubCli().then((installedBin) => runClawHubCliWithBin(installedBin, args));
   }
   return runClawHubCliWithBin(bin, args);
+}
+function runClawHubCliWithBundledScript(scriptPath, args) {
+  return new Promise((resolve5, reject) => {
+    (0, import_child_process4.execFile)(process.execPath, [scriptPath, ...args], {
+      timeout: 12e4,
+      encoding: "utf8",
+      windowsHide: true,
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: "1"
+      }
+    }, (err, stdout, stderr) => {
+      if (err) reject(new Error(formatSkillServiceError(stderr || stdout || err.message)));
+      else resolve5(stdout);
+    });
+  });
 }
 function runClawHubCliWithBin(bin, args) {
   const useShell = process.platform === "win32";
