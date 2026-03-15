@@ -18,6 +18,7 @@ import { registerSkillsHandlers } from './ipc/skills-ipc';
 import { registerCronHandlers } from './ipc/cron-ipc';
 import { registerPairingHandlers } from './ipc/pairing-ipc';
 import { checkForAppUpdates } from './updater';
+import { ensureMainAgentSoul } from './soul';
 import type { GatewayHandle, LoadingStatusCallback } from './types';
 
 // ---------------------------------------------------------------------------
@@ -405,6 +406,7 @@ export function createWindow(): void {
       }
 
       if (fs.existsSync(CONFIG_FILE)) {
+        await ensureMainAgentSoul();
         gatewayHandle = await startGateway(updateLoadingStatus);
         refreshTrayMenu();
       } else {

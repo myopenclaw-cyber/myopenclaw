@@ -34,6 +34,8 @@ import_electron.contextBridge.exposeInMainWorld("electronAPI", {
   setAgentChannels: (payload) => import_electron.ipcRenderer.invoke("set-agent-channels", payload),
   deleteAgent: (agentId) => import_electron.ipcRenderer.invoke("delete-agent", agentId),
   setActiveAgent: (id) => import_electron.ipcRenderer.invoke("set-active-agent", id),
+  getAgentSoul: (agentId) => import_electron.ipcRenderer.invoke("get-agent-soul", agentId),
+  setAgentSoul: (agentId, soul) => import_electron.ipcRenderer.invoke("set-agent-soul", { agentId, soul }),
   // Provider config
   saveProviderConfig: (payload) => import_electron.ipcRenderer.invoke("save-provider-config", payload),
   getProviderConfig: () => import_electron.ipcRenderer.invoke("get-provider-config"),
