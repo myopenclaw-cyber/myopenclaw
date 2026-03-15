@@ -2,6 +2,7 @@ import * as crypto from 'crypto';
 import { ipcMain } from 'electron';
 import { loadAppState, saveAppState, getPlanFeatures } from '../config-store';
 import { writeAgentSoulMd, removeAgentWorkspace, registerAgentInGatewayConfig, unregisterAgentFromGatewayConfig, copyMainAuthToAgent } from '../soul';
+import { syncAgentModelRegistries } from '../auth';
 
 export function registerAgentHandlers(): void {
   ipcMain.handle('list-agents', async () => {
@@ -27,6 +28,7 @@ export function registerAgentHandlers(): void {
     writeAgentSoulMd(newAgent.id, undefined);
     registerAgentInGatewayConfig(newAgent.id);
     copyMainAuthToAgent(newAgent.id);
+    syncAgentModelRegistries();
     return newAgent;
   });
 

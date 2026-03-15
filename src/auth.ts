@@ -8,26 +8,38 @@ export function syncAuthProfileForProvider(providerId: string, apiKey: string, a
   try {
     const key = String(apiKey || '').trim();
     if (!providerId || !key) return;
-    fs.mkdirSync(AUTH_PROFILES_DIR, { recursive: true });
-    let auth: any = { version: 1, profiles: {}, lastGood: {}, usageStats: {} };
-    if (fs.existsSync(AUTH_PROFILES_FILE)) {
-      auth = JSON.parse(fs.readFileSync(AUTH_PROFILES_FILE, 'utf8').replace(/^\uFEFF/, ''));
-      auth.version = auth.version || 1;
-      auth.profiles = auth.profiles || {};
-      auth.lastGood = auth.lastGood || {};
-      auth.usageStats = auth.usageStats || {};
-    }
-    const bind = (pid: string) => {
-      const profileId = `${pid}:default`;
-      auth.profiles[profileId] = { type: 'api_key', provider: pid, key };
-      auth.lastGood[pid] = profileId;
+
+    const buildAuthPayload = () => {
+      let auth: any = { version: 1, profiles: {}, lastGood: {}, usageStats: {} };
+      if (fs.existsSync(AUTH_PROFILES_FILE)) {
+        auth = JSON.parse(fs.readFileSync(AUTH_PROFILES_FILE, 'utf8').replace(/^\uFEFF/, ''));
+        auth.version = auth.version || 1;
+        auth.profiles = auth.profiles || {};
+        auth.lastGood = auth.lastGood || {};
+        auth.usageStats = auth.usageStats || {};
+      }
+      const bind = (pid: string) => {
+        const profileId = `${pid}:default`;
+        auth.profiles[profileId] = { type: 'api_key', provider: pid, key };
+        auth.lastGood[pid] = profileId;
+      };
+      bind(providerId);
+      if (String(api).trim() === 'anthropic-messages') bind('anthropic');
+      return auth;
     };
-    bind(providerId);
-    if (String(api).trim() === 'anthropic-messages') bind('anthropic');
+
+    const auth = buildAuthPayload();
     const newContent = JSON.stringify(auth, null, 2);
-    const oldContent = fs.existsSync(AUTH_PROFILES_FILE) ? fs.readFileSync(AUTH_PROFILES_FILE, 'utf8') : '';
-    if (newContent !== oldContent) {
-      fs.writeFileSync(AUTH_PROFILES_FILE, newContent, 'utf8');
+
+    // Write to all agents (main + others)
+    for (const agentId of getAllAgentIds()) {
+      const agentDir = path.join(OPENCLAW_CONFIG_DIR, 'agents', agentId, 'agent');
+      const profileFile = path.join(agentDir, 'auth-profiles.json');
+      fs.mkdirSync(agentDir, { recursive: true });
+      const oldContent = fs.existsSync(profileFile) ? fs.readFileSync(profileFile, 'utf8') : '';
+      if (newContent !== oldContent) {
+        fs.writeFileSync(profileFile, newContent, 'utf8');
+      }
     }
   } catch (e: any) {
     console.error('[auth-profile-sync] failed:', e.message);
@@ -42,10 +54,84 @@ export function ensureAuthProfilesFromEmbeddedConfig(): void {
       const key = String(p?.apiKey || '').trim();
       if (!key) continue;
       syncAuthProfileForProvider(providerId, key, p?.api || '');
+      syncAgentModelRegistries();
       break;
     }
   } catch (e: any) {
     console.error('[auth-profile-sync-bootstrap] failed:', e.message);
+  }
+}
+
+function buildRelayRuntimeApiKey(explicitRelayApiKey?: string): string {
+  const state = loadAppState();
+  const jwt = String(explicitRelayApiKey || state.relay?.accessToken || '').trim();
+  if (jwt) return jwt;
+  const deviceToken = String(state.deviceToken || '').trim();
+  if (deviceToken) return deviceToken;
+  const deviceId = String(state.deviceId || '').trim();
+  if (deviceId) return `device:${deviceId}`;
+  return '';
+}
+
+function buildAgentModelsPayload(explicitRelayApiKey?: string): any {
+  const gatewayCfg: any = fs.existsSync(CONFIG_FILE)
+    ? JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8').replace(/^\uFEFF/, ''))
+    : {};
+  const embeddedCfg = loadEmbeddedConfig();
+  const mergedProviders: Record<string, any> = {};
+
+  for (const [providerId, provider] of Object.entries(gatewayCfg?.models?.providers || {})) {
+    mergedProviders[providerId] = JSON.parse(JSON.stringify(provider));
+  }
+
+  for (const [providerId, provider] of Object.entries(embeddedCfg?.models?.providers || {})) {
+    mergedProviders[providerId] = {
+      ...(mergedProviders[providerId] || {}),
+      ...JSON.parse(JSON.stringify(provider)),
+    };
+  }
+
+  const relayApiKey = buildRelayRuntimeApiKey(explicitRelayApiKey);
+  if (mergedProviders.relay) {
+    if (relayApiKey) {
+      mergedProviders.relay.apiKey = relayApiKey;
+    } else if (mergedProviders.relay.apiKey !== undefined) {
+      delete mergedProviders.relay.apiKey;
+    }
+  }
+
+  return {
+    mode: gatewayCfg?.models?.mode || embeddedCfg?.models?.mode || 'merge',
+    providers: mergedProviders,
+  };
+}
+
+function getAllAgentIds(): string[] {
+  const state = loadAppState();
+  const ids = new Set<string>(['main']);
+  for (const agent of state.agents || []) {
+    if (String(agent?.id || '').trim()) ids.add(String(agent.id));
+  }
+  return Array.from(ids);
+}
+
+function getAgentModelsFile(agentId: string): string {
+  return path.join(OPENCLAW_CONFIG_DIR, 'agents', agentId, 'agent', 'models.json');
+}
+
+export function syncAgentModelRegistries(explicitRelayApiKey?: string): void {
+  try {
+    const payload = JSON.stringify(buildAgentModelsPayload(explicitRelayApiKey), null, 2);
+    for (const agentId of getAllAgentIds()) {
+      const modelsFile = getAgentModelsFile(agentId);
+      fs.mkdirSync(path.dirname(modelsFile), { recursive: true });
+      const current = fs.existsSync(modelsFile) ? fs.readFileSync(modelsFile, 'utf8') : '';
+      if (current !== payload) {
+        fs.writeFileSync(modelsFile, payload, 'utf8');
+      }
+    }
+  } catch (e: any) {
+    console.error('[auth-model-sync] failed:', e.message);
   }
 }
 
@@ -96,6 +182,7 @@ export async function refreshJwtIfNeeded(relayBaseUrl?: string): Promise<string>
     state.relay.accessToken = tokens.accessToken;
     state.relay.refreshToken = tokens.refreshToken || refreshToken;
     saveAppState(state);
+    syncAgentModelRegistries(tokens.accessToken);
     console.log('[auth] JWT refreshed successfully');
     return tokens.accessToken;
   } catch (e: any) {
@@ -230,6 +317,7 @@ export async function ensureGatewayProviderOrRelay(): Promise<void> {
       fs.writeFileSync(CONFIG_FILE, newContent, 'utf8');
       console.log('[auth] Configured relay provider fallback:', relayUrl);
     }
+    syncAgentModelRegistries(relayApiKey);
   } catch (e: any) {
     console.error('[auth] ensureGatewayProviderOrRelay failed:', e.message);
   }
