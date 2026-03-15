@@ -108,6 +108,19 @@ type CronConfig = {
   message: string;
 };
 
+function validateCronConfig(config: CronConfig): CronConfig {
+  if (config.schedule.kind === 'at') {
+    const atMs = Date.parse(config.schedule.at);
+    if (!Number.isFinite(atMs)) {
+      throw new Error('Invalid timestamp');
+    }
+    if (atMs < Date.now()) {
+      throw new Error('Generated timestamp is in the past. Please review the schedule.');
+    }
+  }
+  return config;
+}
+
 function slugifyCronName(input: string): string {
   const slug = String(input || '')
     .toLowerCase()
@@ -140,11 +153,11 @@ function normalizeCronConfig(rawConfig: any, fallbackDescription: string): CronC
   }
 
   const description = String(fallbackDescription || '').trim();
-  return {
+  return validateCronConfig({
     name: slugifyCronName(String(rawConfig?.name || '').trim() || description),
     schedule: normalizedSchedule,
     message: String(rawConfig?.message || '').trim() || description,
-  };
+  });
 }
 
 function parseCronConfig(content: string, fallbackDescription: string): CronConfig | null {
@@ -170,13 +183,17 @@ async function requestCronConfig(
   port: number,
   token: string,
   messages: Array<{ role: 'system' | 'user'; content: string }>,
+  options: { toolChoice?: 'none' } = {},
 ): Promise<string> {
-  const response = await axios.post(`http://127.0.0.1:${port}/v1/chat/completions`, {
+  const body: Record<string, unknown> = {
     model: 'openclaw:main',
     messages,
     stream: false,
     temperature: 0,
-  }, {
+  };
+  if (options.toolChoice) body.tool_choice = options.toolChoice;
+
+  const response = await axios.post(`http://127.0.0.1:${port}/v1/chat/completions`, body, {
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
@@ -185,6 +202,34 @@ async function requestCronConfig(
   });
 
   return String(response?.data?.choices?.[0]?.message?.content || '').trim();
+}
+
+function extractJobId(job: any): string {
+  return String(job?.jobId || job?.id || '').trim();
+}
+
+async function listCronJobs(port: number, token: string): Promise<any[]> {
+  const payload = await wsRpc(port, token, 'cron.list', {}) as { jobs?: any[] };
+  return Array.isArray(payload?.jobs) ? payload.jobs : [];
+}
+
+async function detectNewCronJobs(
+  port: number,
+  token: string,
+  beforeIds: Set<string>,
+): Promise<any[]> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const jobs = await listCronJobs(port, token);
+    const created = jobs.filter((job) => {
+      const id = extractJobId(job);
+      return id && !beforeIds.has(id);
+    });
+    if (created.length) return created;
+    if (attempt < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+  }
+  return [];
 }
 
 // ---------------------------------------------------------------------------
@@ -263,9 +308,17 @@ export function registerCronHandlers(
   ipcMain.handle('cron-generate', async (_event, params: { description: string }) => {
     try {
       const { port, token } = requireGateway();
+      const beforeJobs = await listCronJobs(port, token);
+      const beforeJobIds = new Set(beforeJobs.map((job) => extractJobId(job)).filter(Boolean));
+      const nowIso = new Date().toISOString();
       const systemPrompt = [
         'You are a cron job configuration assistant.',
-        'Parse the user\'s natural language description into a structured cron job config.',
+        'If the user is clearly asking to create or schedule a cron job, use the available cron tools to create it directly.',
+        'If you successfully create the cron job, reply with a brief confirmation only.',
+        'If you cannot safely create it directly, parse the user\'s natural language description into a structured cron job config.',
+        `Current time: ${nowIso}`,
+        'Never claim the job is already created unless the cron tool actually succeeded.',
+        'Never return a past timestamp when the user asks for a future reminder or schedule.',
         'Return ONLY valid JSON (no markdown fences, no explanation) with this structure:',
         '{',
         '  "name": "short-kebab-case-name",',
@@ -289,6 +342,16 @@ export function registerCronHandlers(
         return { success: false, error: 'AI returned empty response' };
       }
 
+      const createdJobs = await detectNewCronJobs(port, token, beforeJobIds);
+      if (createdJobs.length) {
+        return {
+          success: true,
+          created: true,
+          jobs: createdJobs,
+          assistantReply: content,
+        };
+      }
+
       const directConfig = parseCronConfig(content, params.description);
       if (directConfig) {
         return { success: true, config: directConfig };
@@ -298,6 +361,9 @@ export function registerCronHandlers(
         'You convert scheduling requests into structured cron job JSON.',
         'The assistant reply may be a plain English confirmation instead of JSON.',
         'Infer the correct schedule from the original request and the assistant reply.',
+        `Current time: ${nowIso}`,
+        'Never claim the job is already created.',
+        'Never return a past timestamp when the request implies a future schedule.',
         'Return ONLY valid JSON with this structure:',
         '{',
         '  "name": "short-kebab-case-name",',
@@ -324,7 +390,7 @@ export function registerCronHandlers(
             content,
           ].join('\n'),
         },
-      ]);
+      ], { toolChoice: 'none' });
 
       const repairedConfig = parseCronConfig(repairedContent, params.description);
       if (repairedConfig) {

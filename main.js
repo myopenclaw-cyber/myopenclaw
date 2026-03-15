@@ -2200,7 +2200,7 @@ var require_jsonfile = __commonJS({
       return obj;
     }
     var readFile = universalify.fromPromise(_readFile);
-    function readFileSync12(file, options = {}) {
+    function readFileSync13(file, options = {}) {
       if (typeof options === "string") {
         options = { encoding: options };
       }
@@ -2232,7 +2232,7 @@ var require_jsonfile = __commonJS({
     }
     module2.exports = {
       readFile,
-      readFileSync: readFileSync12,
+      readFileSync: readFileSync13,
       writeFile,
       writeFileSync: writeFileSync11
     };
@@ -18689,6 +18689,18 @@ function wsRpc(port, token, method, params = {}) {
     });
   });
 }
+function validateCronConfig(config) {
+  if (config.schedule.kind === "at") {
+    const atMs = Date.parse(config.schedule.at);
+    if (!Number.isFinite(atMs)) {
+      throw new Error("Invalid timestamp");
+    }
+    if (atMs < Date.now()) {
+      throw new Error("Generated timestamp is in the past. Please review the schedule.");
+    }
+  }
+  return config;
+}
 function slugifyCronName(input) {
   const slug = String(input || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
   return slug || "scheduled-task";
@@ -18714,11 +18726,11 @@ function normalizeCronConfig(rawConfig, fallbackDescription) {
     throw new Error("Missing schedule kind");
   }
   const description = String(fallbackDescription || "").trim();
-  return {
+  return validateCronConfig({
     name: slugifyCronName(String(rawConfig?.name || "").trim() || description),
     schedule: normalizedSchedule,
     message: String(rawConfig?.message || "").trim() || description
-  };
+  });
 }
 function parseCronConfig(content, fallbackDescription) {
   const cleaned = String(content || "").replace(/```json?\n?/g, "").replace(/```/g, "").trim();
@@ -18733,13 +18745,15 @@ function parseCronConfig(content, fallbackDescription) {
     return null;
   }
 }
-async function requestCronConfig(port, token, messages) {
-  const response = await import_axios12.default.post(`http://127.0.0.1:${port}/v1/chat/completions`, {
+async function requestCronConfig(port, token, messages, options = {}) {
+  const body = {
     model: "openclaw:main",
     messages,
     stream: false,
     temperature: 0
-  }, {
+  };
+  if (options.toolChoice) body.tool_choice = options.toolChoice;
+  const response = await import_axios12.default.post(`http://127.0.0.1:${port}/v1/chat/completions`, body, {
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
@@ -18747,6 +18761,27 @@ async function requestCronConfig(port, token, messages) {
     timeout: 3e4
   });
   return String(response?.data?.choices?.[0]?.message?.content || "").trim();
+}
+function extractJobId(job) {
+  return String(job?.jobId || job?.id || "").trim();
+}
+async function listCronJobs(port, token) {
+  const payload = await wsRpc(port, token, "cron.list", {});
+  return Array.isArray(payload?.jobs) ? payload.jobs : [];
+}
+async function detectNewCronJobs(port, token, beforeIds) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const jobs = await listCronJobs(port, token);
+    const created = jobs.filter((job) => {
+      const id = extractJobId(job);
+      return id && !beforeIds.has(id);
+    });
+    if (created.length) return created;
+    if (attempt < 2) {
+      await new Promise((resolve5) => setTimeout(resolve5, 250 * (attempt + 1)));
+    }
+  }
+  return [];
 }
 function registerCronHandlers(getGatewayHandle) {
   function requireGateway() {
@@ -18811,9 +18846,17 @@ function registerCronHandlers(getGatewayHandle) {
   import_electron11.ipcMain.handle("cron-generate", async (_event, params) => {
     try {
       const { port, token } = requireGateway();
+      const beforeJobs = await listCronJobs(port, token);
+      const beforeJobIds = new Set(beforeJobs.map((job) => extractJobId(job)).filter(Boolean));
+      const nowIso = (/* @__PURE__ */ new Date()).toISOString();
       const systemPrompt = [
         "You are a cron job configuration assistant.",
-        "Parse the user's natural language description into a structured cron job config.",
+        "If the user is clearly asking to create or schedule a cron job, use the available cron tools to create it directly.",
+        "If you successfully create the cron job, reply with a brief confirmation only.",
+        "If you cannot safely create it directly, parse the user's natural language description into a structured cron job config.",
+        `Current time: ${nowIso}`,
+        "Never claim the job is already created unless the cron tool actually succeeded.",
+        "Never return a past timestamp when the user asks for a future reminder or schedule.",
         "Return ONLY valid JSON (no markdown fences, no explanation) with this structure:",
         "{",
         '  "name": "short-kebab-case-name",',
@@ -18834,6 +18877,15 @@ function registerCronHandlers(getGatewayHandle) {
       if (!content) {
         return { success: false, error: "AI returned empty response" };
       }
+      const createdJobs = await detectNewCronJobs(port, token, beforeJobIds);
+      if (createdJobs.length) {
+        return {
+          success: true,
+          created: true,
+          jobs: createdJobs,
+          assistantReply: content
+        };
+      }
       const directConfig = parseCronConfig(content, params.description);
       if (directConfig) {
         return { success: true, config: directConfig };
@@ -18842,6 +18894,9 @@ function registerCronHandlers(getGatewayHandle) {
         "You convert scheduling requests into structured cron job JSON.",
         "The assistant reply may be a plain English confirmation instead of JSON.",
         "Infer the correct schedule from the original request and the assistant reply.",
+        `Current time: ${nowIso}`,
+        "Never claim the job is already created.",
+        "Never return a past timestamp when the request implies a future schedule.",
         "Return ONLY valid JSON with this structure:",
         "{",
         '  "name": "short-kebab-case-name",',
@@ -18867,7 +18922,7 @@ function registerCronHandlers(getGatewayHandle) {
             content
           ].join("\n")
         }
-      ]);
+      ], { toolChoice: "none" });
       const repairedConfig = parseCronConfig(repairedContent, params.description);
       if (repairedConfig) {
         return { success: true, config: repairedConfig, normalizedFromReply: true };
@@ -19210,7 +19265,7 @@ function buildTrayIcon() {
   const iconPath = resolveAssetPath("build", "assets", "logo-openclaw.png");
   let icon;
   try {
-    const buf = fs12.readFileSync(iconPath);
+    const buf = fs13.readFileSync(iconPath);
     icon = import_electron14.nativeImage.createFromBuffer(buf);
   } catch {
     console.warn("[tray] Failed to load tray icon:", iconPath);

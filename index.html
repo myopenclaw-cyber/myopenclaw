@@ -2543,14 +2543,27 @@ async function generateCronFromNL() {
   btn.textContent = 'Creating...';
   try {
     var r = await window.electronAPI.cronGenerate({ description: input });
-    if (!r || !r.success || !r.config) {
+    if (!r || !r.success) {
+      showToast('Create failed: ' + (r && r.error || 'unknown'));
+      return;
+    }
+    if (r.created) {
+      closeCronForm();
+      showToast('Job created.');
+      await loadCronJobs();
+      setTimeout(function() { loadCronJobs(); }, 500);
+      return;
+    }
+    if (!r.config) {
       showToast('Create failed: ' + (r && r.error || 'unknown'));
       return;
     }
     var cfg = r.config;
     document.getElementById('cronJobName').value = cfg.name || '';
     var kind = (cfg.schedule && cfg.schedule.kind) || 'cron';
-    document.getElementById('cronScheduleKind').value = kind;
+    var cronKindSel = document.getElementById('cronScheduleKind');
+    cronKindSel.value = kind;
+    cronKindSel.dispatchEvent(new Event('change', { bubbles: true }));
     cronScheduleKindChanged();
     if (kind === 'cron') {
       var exprEl = document.getElementById('cronExpr');
@@ -2588,7 +2601,9 @@ function openCronAddForm() {
   document.getElementById('cronFormTitle').textContent = 'Add Cron Job';
   document.getElementById('cronEditId').value = '';
   document.getElementById('cronJobName').value = '';
-  document.getElementById('cronScheduleKind').value = 'cron';
+  var cronKindSel = document.getElementById('cronScheduleKind');
+  cronKindSel.value = 'cron';
+  cronKindSel.dispatchEvent(new Event('change', { bubbles: true }));
   cronScheduleKindChanged();
   document.getElementById('cronMessage').value = '';
   document.getElementById('cronNLInput').value = '';
@@ -2603,7 +2618,9 @@ function openCronEditForm(job) {
   document.getElementById('cronEditId').value = job.id;
   document.getElementById('cronJobName').value = job.name || '';
   var kind = (job.schedule && job.schedule.kind) || 'cron';
-  document.getElementById('cronScheduleKind').value = kind;
+  var cronKindSel = document.getElementById('cronScheduleKind');
+  cronKindSel.value = kind;
+  cronKindSel.dispatchEvent(new Event('change', { bubbles: true }));
   cronScheduleKindChanged();
   if (kind === 'cron') {
     var exprEl = document.getElementById('cronExpr');
@@ -2618,7 +2635,7 @@ function openCronEditForm(job) {
     if (atEl) atEl.value = job.schedule.at || '';
   }
   document.getElementById('cronMessage').value = (job.payload && job.payload.message) || '';
-  var agentId = job.payload && job.payload.agentId;
+  var agentId = job.agentId;
   populateCronAgentSelect(agentId || null);
   setCronMode('manual');
   document.getElementById('cronForm').style.display = 'block';
@@ -2674,21 +2691,37 @@ async function saveCronJob(options) {
     var atEl2 = document.getElementById('cronAt');
     var at = atEl2 ? atEl2.value.trim() : '';
     if (!at) { showToast('ISO timestamp is required'); return false; }
+    var atMs = Date.parse(at);
+    if (!Number.isFinite(atMs)) { showToast('ISO timestamp is invalid'); return false; }
+    if (atMs < Date.now()) { showToast('Scheduled time is in the past'); return false; }
     schedule = { kind: 'at', at: at };
   }
 
   var message = document.getElementById('cronMessage').value.trim();
+  if (!message) { showToast('Message is required'); return false; }
   var cronAgentSel = document.getElementById('cronAgentSelect');
   var agentId = cronAgentSel ? (cronAgentSel.value || 'main') : 'main';
-  var payload = { kind: 'agentTurn', message: message, agentId: agentId, timeoutSeconds: 300 };
+  var payload = { kind: 'agentTurn', message: message, timeoutSeconds: 300 };
 
   var r;
   if (editId) {
-    r = await window.electronAPI.cronUpdate({ id: editId, name: name, schedule: schedule, payload: payload });
+    r = await window.electronAPI.cronUpdate({
+      id: editId,
+      patch: {
+        name: name,
+        schedule: schedule,
+        sessionTarget: 'isolated',
+        wakeMode: 'now',
+        agentId: agentId,
+        payload: payload,
+        delivery: { mode: 'none' },
+      },
+    });
   } else {
     r = await window.electronAPI.cronAdd({
       name: name, enabled: true, schedule: schedule,
-      sessionTarget: 'isolated', payload: payload, delivery: { mode: 'none' },
+      sessionTarget: 'isolated', wakeMode: 'now', agentId: agentId,
+      payload: payload, delivery: { mode: 'none' },
     });
   }
 
@@ -2700,6 +2733,7 @@ async function saveCronJob(options) {
   closeCronForm();
   showToast(options.successMessage || (editId ? 'Job updated' : 'Job created'));
   await loadCronJobs();
+  setTimeout(function() { loadCronJobs(); }, 500);
   return true;
 }
 
@@ -2741,7 +2775,7 @@ function renderCronJobList() {
     chk.checked = !!job.enabled;
     (function(j, c) {
       c.onchange = async function() {
-        var r2 = await window.electronAPI.cronUpdate({ id: j.id, enabled: c.checked });
+        var r2 = await window.electronAPI.cronUpdate({ id: j.id, patch: { enabled: c.checked } });
         if (!r2 || !r2.success) {
           c.checked = !c.checked;
           showToast('Toggle failed: ' + (r2 && r2.error || 'unknown'));
