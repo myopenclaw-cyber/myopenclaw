@@ -671,6 +671,36 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
             <button id="cronModeManual" class="alt" onclick="setCronMode('manual')" style="padding:5px 14px;font-size:12px;border-radius:8px">Manual Config</button>
           </div>
 
+          <div style="background:rgba(255,255,255,0.36);border:1px solid rgba(107,70,255,0.12);border-radius:10px;padding:12px;margin-bottom:12px">
+            <div class="row">
+              <label style="min-width:130px" class="small">Delivery Channel</label>
+              <select id="cronDeliveryChannel" onchange="cronDeliveryTargetChanged()">
+                <option value="">No auto delivery</option>
+                <option value="telegram">Telegram</option>
+                <option value="discord">Discord</option>
+                <option value="slack">Slack</option>
+                <option value="whatsapp">WhatsApp</option>
+                <option value="signal">Signal</option>
+                <option value="imessage">iMessage</option>
+                <option value="googlechat">Google Chat</option>
+                <option value="irc">IRC</option>
+              </select>
+            </div>
+            <div class="row" id="cronDeliveryTargetRow" style="display:none">
+              <label style="min-width:130px" class="small">Custom Recipient</label>
+              <input id="cronDeliveryTarget" placeholder="Recipient / room / chat id"/>
+            </div>
+            <div class="row" id="cronDeliveryPairedRow" style="display:none">
+              <label style="min-width:130px" class="small">Delivery Target</label>
+              <select id="cronDeliveryTargetSelect" onchange="cronDeliveryTargetPicked()">
+                <option value="">Choose a paired target...</option>
+              </select>
+            </div>
+            <div class="small" id="cronDeliveryHint" style="opacity:.65;margin-left:134px">
+              Optional. Set this if the cron result should be pushed to a specific channel target.
+            </div>
+          </div>
+
           <!-- Natural Language mode -->
           <div id="cronNLPane">
             <div class="row" style="margin-top:0">
@@ -701,7 +731,7 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
             </div>
             <div class="row">
               <label style="min-width:130px" class="small">Agent</label>
-              <select id="cronAgentSelect"></select>
+              <select id="cronAgentSelect" onchange="refreshCronDeliveryTargets()"></select>
             </div>
             <div class="row">
               <label style="min-width:130px" class="small">Prompt Message</label>
@@ -1776,7 +1806,7 @@ function buildAgentChannelPanel(agentId, channels) {
       for (const u of users) {
         const tag = document.createElement('span');
         tag.className = 'ch-paired-tag';
-        tag.textContent = u.username ? '@' + u.username : 'ID: ' + u.id;
+        tag.textContent = u.label || (u.username ? '@' + u.username : 'ID: ' + u.id);
         pairedList.appendChild(tag);
       }
       infoDiv.appendChild(pairedList);
@@ -2517,6 +2547,205 @@ function cronScheduleKindChanged() {
   }
 }
 
+function refreshCronDeliveryChannels() {
+  var channelEl = document.getElementById('cronDeliveryChannel');
+  var targetInput = document.getElementById('cronDeliveryTarget');
+  var targetSelect = document.getElementById('cronDeliveryTargetSelect');
+  var cronAgentSel = document.getElementById('cronAgentSelect');
+  var agentId = cronAgentSel ? (cronAgentSel.value || 'main') : 'main';
+  if (!channelEl) return;
+  var current = String(channelEl.value || '').trim();
+  var currentAllowed = !current;
+  Array.prototype.forEach.call(channelEl.options || [], function(opt) {
+    if (!opt.value) {
+      opt.disabled = false;
+      return;
+    }
+    var info = _cachedChannelStatus && _cachedChannelStatus[opt.value];
+    var configured = !!(info && info.accounts && info.accounts[agentId]);
+    opt.disabled = !configured;
+    if (configured && opt.value === current) currentAllowed = true;
+  });
+  if (!currentAllowed) {
+    channelEl.value = '';
+    if (targetInput) targetInput.value = '';
+    if (targetSelect) targetSelect.value = '';
+  }
+}
+
+function cronDeliveryTargetChanged() {
+  var channel = (document.getElementById('cronDeliveryChannel').value || '').trim();
+  var row = document.getElementById('cronDeliveryTargetRow');
+  var pairedRow = document.getElementById('cronDeliveryPairedRow');
+  var input = document.getElementById('cronDeliveryTarget');
+  var hint = document.getElementById('cronDeliveryHint');
+  var cronAgentSel = document.getElementById('cronAgentSelect');
+  var agentId = cronAgentSel ? (cronAgentSel.value || 'main') : 'main';
+  var placeholders = {
+    telegram: '6980644238 or -1001234567890',
+    discord: 'channel id',
+    slack: 'channel id',
+    whatsapp: 'chat id or group id',
+    signal: 'recipient / group id',
+    imessage: 'phone number or handle',
+    googlechat: 'space id / webhook target',
+    irc: '#channel',
+  };
+  if (!channel) {
+    row.style.display = 'none';
+    if (pairedRow) pairedRow.style.display = 'none';
+    if (input) input.value = '';
+    if (hint) hint.textContent = 'Optional. Set this if the cron result should be pushed to a specific channel target.';
+    return;
+  }
+  if (!_cachedChannelStatus || !_cachedChannelStatus[channel] || !(_cachedChannelStatus[channel].accounts && _cachedChannelStatus[channel].accounts[agentId])) {
+    document.getElementById('cronDeliveryChannel').value = '';
+    if (input) input.value = '';
+    row.style.display = 'none';
+    if (pairedRow) pairedRow.style.display = 'none';
+    if (hint) hint.textContent = 'This agent does not have that channel configured yet.';
+    return;
+  }
+  if (input) input.placeholder = placeholders[channel] || 'Recipient / room / chat id';
+  refreshCronDeliveryTargets();
+  if (hint) hint.textContent = channel === 'telegram'
+    ? 'Use a paired Telegram target when available. Switch to custom only if needed.'
+    : 'Use a paired target when available. Switch to custom only if needed.';
+}
+
+function cronDeliveryTargetPicked() {
+  var sel = document.getElementById('cronDeliveryTargetSelect');
+  var row = document.getElementById('cronDeliveryTargetRow');
+  var input = document.getElementById('cronDeliveryTarget');
+  if (!sel || !input || !row) return;
+  if (!sel.value) return;
+  if (sel.value === '__custom__') {
+    row.style.display = '';
+    return;
+  }
+  input.value = sel.value;
+  row.style.display = 'none';
+}
+
+function normalizeCronDeliveryTarget(channel, target) {
+  var raw = String(target || '').trim();
+  if (!raw) return '';
+  var prefix = String(channel || '').trim().toLowerCase() + ':';
+  if (prefix !== ':' && raw.toLowerCase().indexOf(prefix) === 0) {
+    return raw.slice(prefix.length);
+  }
+  return raw;
+}
+
+function refreshCronDeliveryTargets() {
+  var channel = (document.getElementById('cronDeliveryChannel').value || '').trim();
+  var row = document.getElementById('cronDeliveryTargetRow');
+  var pairedRow = document.getElementById('cronDeliveryPairedRow');
+  var sel = document.getElementById('cronDeliveryTargetSelect');
+  var input = document.getElementById('cronDeliveryTarget');
+  var cronAgentSel = document.getElementById('cronAgentSelect');
+  var agentId = cronAgentSel ? (cronAgentSel.value || 'main') : 'main';
+  if (!pairedRow || !sel || !row || !input) return;
+  var currentInput = normalizeCronDeliveryTarget(channel, input.value || '');
+  sel.innerHTML = '<option value="">Choose a paired target...</option>';
+  if (!channel || !_cachedChannelStatus || !_cachedChannelStatus[channel] || !(_cachedChannelStatus[channel].accounts && _cachedChannelStatus[channel].accounts[agentId])) {
+    pairedRow.style.display = 'none';
+    row.style.display = 'none';
+    return;
+  }
+  var info = _cachedChannelStatus[channel];
+  var accountInfo = (info && info.accounts && info.accounts[agentId]) || {};
+  var botName = accountInfo && accountInfo._botName ? ('@' + accountInfo._botName) : '';
+  var paired = (info && info.pairedUsers && info.pairedUsers[agentId]) || [];
+  var seen = {};
+  var matchedCurrent = false;
+  paired.forEach(function(entry) {
+    var raw = normalizeCronDeliveryTarget(channel, entry && (entry.id || entry.chatId || entry.target || entry.to));
+    if (!raw || raw === 'heartbeat' || seen[raw]) return;
+    seen[raw] = true;
+    var opt = document.createElement('option');
+    opt.value = raw;
+    if (channel === 'telegram' && botName) {
+      opt.textContent = botName + ' (' + raw + ')';
+    } else {
+      opt.textContent = (entry && (entry.label || (entry.username ? ('@' + entry.username) : ''))) || raw;
+    }
+    if (currentInput && currentInput === raw) {
+      opt.selected = true;
+      matchedCurrent = true;
+    }
+    sel.appendChild(opt);
+  });
+  if (sel.options.length > 1) {
+    var customOpt = document.createElement('option');
+    customOpt.value = '__custom__';
+    customOpt.textContent = 'Custom recipient...';
+    sel.appendChild(customOpt);
+    pairedRow.style.display = '';
+    if (currentInput && !matchedCurrent) {
+      sel.value = '__custom__';
+      row.style.display = '';
+    } else {
+      if (!currentInput) {
+        sel.selectedIndex = 1;
+      }
+      row.style.display = 'none';
+    }
+  } else {
+    pairedRow.style.display = 'none';
+    row.style.display = '';
+  }
+}
+
+function getCronDeliveryConfig() {
+  var channel = (document.getElementById('cronDeliveryChannel').value || '').trim();
+  var targetInput = document.getElementById('cronDeliveryTarget');
+  var targetSelect = document.getElementById('cronDeliveryTargetSelect');
+  var cronAgentSel = document.getElementById('cronAgentSelect');
+  var agentId = cronAgentSel ? (cronAgentSel.value || 'main') : 'main';
+  var target = '';
+  if (!channel) return { mode: 'none' };
+  if (!_cachedChannelStatus || !_cachedChannelStatus[channel] || !(_cachedChannelStatus[channel].accounts && _cachedChannelStatus[channel].accounts[agentId])) {
+    showToast('That channel is not configured for this agent');
+    return null;
+  }
+  if (targetSelect && targetSelect.parentElement && targetSelect.parentElement.style.display !== 'none' && targetSelect.value && targetSelect.value !== '__custom__') {
+    target = String(targetSelect.value || '').trim();
+  } else if (targetInput) {
+    target = String(targetInput.value || '').trim();
+  }
+  if (!target) {
+    showToast('Delivery target is required when a delivery channel is selected');
+    return null;
+  }
+  return { mode: 'announce', channel: channel, to: target };
+}
+
+function setCronDeliveryConfig(delivery) {
+  var channelEl = document.getElementById('cronDeliveryChannel');
+  var targetEl = document.getElementById('cronDeliveryTarget');
+  if (!channelEl || !targetEl) return;
+  refreshCronDeliveryChannels();
+  if (delivery && delivery.mode === 'announce' && delivery.channel && delivery.to) {
+    channelEl.value = String(delivery.channel);
+    targetEl.value = normalizeCronDeliveryTarget(delivery.channel, delivery.to);
+  } else {
+    channelEl.value = '';
+    targetEl.value = '';
+  }
+  cronDeliveryTargetChanged();
+  var sel = document.getElementById('cronDeliveryTargetSelect');
+  if (sel && targetEl.value) {
+    if ([].some.call(sel.options, function(opt) { return opt.value === targetEl.value; })) {
+      sel.value = targetEl.value;
+      document.getElementById('cronDeliveryTargetRow').style.display = 'none';
+    } else if ([].some.call(sel.options, function(opt) { return opt.value === '__custom__'; })) {
+      sel.value = '__custom__';
+      document.getElementById('cronDeliveryTargetRow').style.display = '';
+    }
+  }
+}
+
 function setCronMode(mode) {
   var nlPane = document.getElementById('cronNLPane');
   var manualPane = document.getElementById('cronManualPane');
@@ -2538,11 +2767,17 @@ function setCronMode(mode) {
 async function generateCronFromNL() {
   var input = document.getElementById('cronNLInput').value.trim();
   if (!input) { showToast('Please describe the cron task'); return; }
+  var delivery = getCronDeliveryConfig();
+  if (delivery === null) return;
   var btn = document.getElementById('cronGenerateBtn');
   btn.disabled = true;
   btn.textContent = 'Creating...';
   try {
-    var r = await window.electronAPI.cronGenerate({ description: input });
+    var r = await window.electronAPI.cronGenerate({
+      description: input,
+      agentId: (appState && appState.activeAgentId) || currentAgent || 'main',
+      delivery: delivery,
+    });
     if (!r || !r.success) {
       showToast('Create failed: ' + (r && r.error || 'unknown'));
       return;
@@ -2608,6 +2843,7 @@ function openCronAddForm() {
   document.getElementById('cronMessage').value = '';
   document.getElementById('cronNLInput').value = '';
   populateCronAgentSelect(null);
+  setCronDeliveryConfig(null);
   setCronMode('nl');
   document.getElementById('cronForm').style.display = 'block';
   document.getElementById('cronNLInput').focus();
@@ -2637,6 +2873,7 @@ function openCronEditForm(job) {
   document.getElementById('cronMessage').value = (job.payload && job.payload.message) || '';
   var agentId = job.agentId;
   populateCronAgentSelect(agentId || null);
+  setCronDeliveryConfig(job.delivery || null);
   setCronMode('manual');
   document.getElementById('cronForm').style.display = 'block';
 }
@@ -2665,6 +2902,8 @@ function populateCronAgentSelect(selectedId) {
     fallback.textContent = 'main';
     sel.appendChild(fallback);
   }
+  refreshCronDeliveryChannels();
+  cronDeliveryTargetChanged();
 }
 
 async function saveCronJob(options) {
@@ -2699,6 +2938,8 @@ async function saveCronJob(options) {
 
   var message = document.getElementById('cronMessage').value.trim();
   if (!message) { showToast('Message is required'); return false; }
+  var delivery = getCronDeliveryConfig();
+  if (delivery === null) return false;
   var cronAgentSel = document.getElementById('cronAgentSelect');
   var agentId = cronAgentSel ? (cronAgentSel.value || 'main') : 'main';
   var payload = { kind: 'agentTurn', message: message, timeoutSeconds: 300 };
@@ -2714,14 +2955,14 @@ async function saveCronJob(options) {
         wakeMode: 'now',
         agentId: agentId,
         payload: payload,
-        delivery: { mode: 'none' },
+        delivery: delivery,
       },
     });
   } else {
     r = await window.electronAPI.cronAdd({
       name: name, enabled: true, schedule: schedule,
       sessionTarget: 'isolated', wakeMode: 'now', agentId: agentId,
-      payload: payload, delivery: { mode: 'none' },
+      payload: payload, delivery: delivery,
     });
   }
 
@@ -2808,6 +3049,9 @@ function renderCronJobList() {
       '<span>Next: ' + cronFmtTime(state.nextRunAtMs) + '</span>',
     ];
     if (state.lastRunAtMs) parts.push('<span>Prev: ' + cronFmtTime(state.lastRunAtMs) + '</span>');
+    if (job.delivery && job.delivery.mode === 'announce' && job.delivery.channel && job.delivery.to) {
+      parts.push('<span>Deliver: ' + escHtml(String(job.delivery.channel) + ' \u2192 ' + String(job.delivery.to)) + '</span>');
+    }
     if (lastStatus) parts.push('<span class="cron-status-' + lastStatus + '">' + lastStatus + '</span>');
     meta.innerHTML = parts.join('');
     info.appendChild(meta);

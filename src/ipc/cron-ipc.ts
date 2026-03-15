@@ -1,8 +1,11 @@
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import axios from 'axios';
 import { ipcMain } from 'electron';
 import type { GatewayHandle } from '../types';
 import { buildConnectParams, handleConnectResponse } from '../device-identity';
+import { OPENCLAW_CONFIG_DIR } from '../constants';
 
 // ---------------------------------------------------------------------------
 // WebSocket JSON-RPC helper (native ws via dynamic require)
@@ -108,6 +111,32 @@ type CronConfig = {
   message: string;
 };
 
+type RoutedDelivery =
+  | { mode: 'none' }
+  | { mode: 'announce'; channel: string; to: string };
+
+type ChannelRoute = {
+  sessionKey: string;
+  channel: string;
+  to: string;
+};
+
+function normalizeExplicitDelivery(raw: unknown): RoutedDelivery | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const mode = String((raw as any).mode || '').trim();
+  if (!mode || mode === 'none') return { mode: 'none' };
+  if (mode !== 'announce') return null;
+
+  const channel = String((raw as any).channel || '').trim().toLowerCase();
+  let to = String((raw as any).to || '').trim();
+  if (!channel || !to) return null;
+  const prefix = `${channel}:`;
+  if (!to.toLowerCase().startsWith(prefix) && !/^[a-z0-9_-]+:/i.test(to)) {
+    to = `${prefix}${to}`;
+  }
+  return { mode: 'announce', channel, to };
+}
+
 function validateCronConfig(config: CronConfig): CronConfig {
   if (config.schedule.kind === 'at') {
     const atMs = Date.parse(config.schedule.at);
@@ -128,6 +157,116 @@ function slugifyCronName(input: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 48);
   return slug || 'scheduled-task';
+}
+
+function detectRequestedChannel(input: string): string | null {
+  const text = String(input || '').toLowerCase();
+  if (!text) return null;
+  const patterns: Array<[string, RegExp]> = [
+    ['telegram', /\btelegram\b|\btg\b|电报/],
+    ['discord', /\bdiscord\b/],
+    ['slack', /\bslack\b/],
+    ['whatsapp', /\bwhatsapp\b|\bwa\b/],
+    ['signal', /\bsignal\b/],
+    ['imessage', /\bimessage\b|\bi-message\b/],
+  ];
+  for (const [channel, pattern] of patterns) {
+    if (pattern.test(text)) return channel;
+  }
+  return null;
+}
+
+function loadSessionsIndex(agentId: string): Record<string, any> {
+  try {
+    const file = path.join(OPENCLAW_CONFIG_DIR, 'agents', agentId, 'sessions', 'sessions.json');
+    if (!fs.existsSync(file)) return {};
+    return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
+  } catch {
+    return {};
+  }
+}
+
+function findLatestChannelRoute(agentId: string, requestedChannel: string): ChannelRoute | null {
+  const rows = Object.entries(loadSessionsIndex(agentId))
+    .map(([sessionKey, entry]) => ({ sessionKey, entry: entry as any }))
+    .sort((a, b) => Number(b.entry?.updatedAt || 0) - Number(a.entry?.updatedAt || 0));
+
+  for (const row of rows) {
+    const channel = String(
+      row.entry?.deliveryContext?.channel
+      || row.entry?.lastChannel
+      || row.entry?.channel
+      || '',
+    ).trim().toLowerCase();
+    const to = String(
+      row.entry?.deliveryContext?.to
+      || row.entry?.lastTo
+      || '',
+    ).trim();
+    if (channel !== requestedChannel) continue;
+    if (!to || to === 'heartbeat') continue;
+    return {
+      sessionKey: row.sessionKey,
+      channel,
+      to,
+    };
+  }
+  return null;
+}
+
+function resolveCronRouting(agentId: string, hintText: string): { sessionKey?: string; delivery: RoutedDelivery } {
+  const requestedChannel = detectRequestedChannel(hintText);
+  if (requestedChannel) {
+    const route = findLatestChannelRoute(agentId, requestedChannel);
+    if (route) {
+      return {
+        sessionKey: route.sessionKey,
+        delivery: {
+          mode: 'announce',
+          channel: route.channel,
+          to: route.to,
+        },
+      };
+    }
+  }
+
+  return {
+    delivery: { mode: 'none' },
+  };
+}
+
+function applyCronRouting(
+  params: Record<string, unknown>,
+  hintText: string,
+  explicitDelivery?: RoutedDelivery | null,
+): Record<string, unknown> {
+  const normalized = { ...params };
+  const patch = normalized.patch && typeof normalized.patch === 'object'
+    ? { ...(normalized.patch as Record<string, unknown>) }
+    : null;
+  const agentId = String(
+    normalized.agentId
+    || patch?.agentId
+    || 'main',
+  );
+  const routing = explicitDelivery
+    ? { delivery: explicitDelivery }
+    : resolveCronRouting(agentId, hintText);
+
+  if (patch) {
+    patch.agentId = agentId;
+    patch.delivery = routing.delivery;
+    if (routing.sessionKey) patch.sessionKey = routing.sessionKey;
+    else delete patch.sessionKey;
+    normalized.patch = patch;
+  } else {
+    normalized.agentId = agentId;
+    normalized.delivery = routing.delivery;
+    if (routing.sessionKey) normalized.sessionKey = routing.sessionKey;
+    else delete normalized.sessionKey;
+  }
+
+  return normalized;
 }
 
 function normalizeCronConfig(rawConfig: any, fallbackDescription: string): CronConfig {
@@ -258,7 +397,9 @@ export function registerCronHandlers(
   ipcMain.handle('cron-add', async (_event, params: Record<string, unknown>) => {
     try {
       const { port, token } = requireGateway();
-      const payload = await wsRpc(port, token, 'cron.add', params);
+      const hintText = String((params?.payload as any)?.message || '');
+      const delivery = normalizeExplicitDelivery(params?.delivery);
+      const payload = await wsRpc(port, token, 'cron.add', applyCronRouting(params, hintText, delivery));
       return { success: true, ...(payload as object) };
     } catch (err: any) {
       return { success: false, error: err.message };
@@ -268,7 +409,22 @@ export function registerCronHandlers(
   ipcMain.handle('cron-update', async (_event, params: Record<string, unknown>) => {
     try {
       const { port, token } = requireGateway();
-      const payload = await wsRpc(port, token, 'cron.update', params);
+      const patch = (params?.patch as Record<string, unknown>) || {};
+      const hintText = String((patch?.payload as any)?.message || '');
+      const explicitDelivery = normalizeExplicitDelivery(patch?.delivery);
+      const shouldApplyRouting = !!(
+        hintText
+        || patch.agentId
+        || patch.payload
+        || patch.sessionTarget
+        || patch.delivery
+      );
+      const payload = await wsRpc(
+        port,
+        token,
+        'cron.update',
+        shouldApplyRouting ? applyCronRouting(params, hintText, explicitDelivery) : params,
+      );
       return { success: true, ...(payload as object) };
     } catch (err: any) {
       return { success: false, error: err.message };
@@ -305,11 +461,12 @@ export function registerCronHandlers(
     }
   });
 
-  ipcMain.handle('cron-generate', async (_event, params: { description: string }) => {
+  ipcMain.handle('cron-generate', async (_event, params: { description: string; agentId?: string; delivery?: RoutedDelivery }) => {
     try {
       const { port, token } = requireGateway();
       const beforeJobs = await listCronJobs(port, token);
       const beforeJobIds = new Set(beforeJobs.map((job) => extractJobId(job)).filter(Boolean));
+      const agentId = String(params?.agentId || 'main');
       const nowIso = new Date().toISOString();
       const systemPrompt = [
         'You are a cron job configuration assistant.',
@@ -344,10 +501,34 @@ export function registerCronHandlers(
 
       const createdJobs = await detectNewCronJobs(port, token, beforeJobIds);
       if (createdJobs.length) {
+        const routedJobs: any[] = [];
+        const routing = normalizeExplicitDelivery(params?.delivery)
+          ? { delivery: normalizeExplicitDelivery(params?.delivery)! }
+          : resolveCronRouting(agentId, params.description);
+        for (const job of createdJobs) {
+          const id = extractJobId(job);
+          if (!id) {
+            routedJobs.push(job);
+            continue;
+          }
+          try {
+            const updated = await wsRpc(port, token, 'cron.update', {
+              id,
+              patch: {
+                agentId,
+                sessionKey: routing.sessionKey,
+                delivery: routing.delivery,
+              },
+            }) as object;
+            routedJobs.push(updated);
+          } catch {
+            routedJobs.push(job);
+          }
+        }
         return {
           success: true,
           created: true,
-          jobs: createdJobs,
+          jobs: routedJobs,
           assistantReply: content,
         };
       }
