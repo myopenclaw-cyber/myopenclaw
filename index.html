@@ -890,7 +890,7 @@ function buildModelPickerList() {
       const item = document.createElement('div');
       item.className = 'model-picker-item' + (m.id === selectedModel ? ' active' : '') + (locked ? ' locked' : '');
       const check = locked ? '' : (m.id === selectedModel ? '\u2713' : '');
-      const credits = m.credits_per_message != null ? '<span class="mp-credits">' + m.credits_per_message + ' cr</span>' : '';
+      const credits = m.credits_per_message != null ? '<span class="mp-credits">' + m.credits_per_message + ' x credits</span>' : '';
       const tierLabel = locked && m.requires ? '<span class="mp-lock">' + m.requires + '</span>' : '';
       item.innerHTML =`<div class='row'><span class="mp-name">${escHtml(m.name || m.id)}</span>${tierLabel}</div><div class='row'>${credits}${check}</div>`
       // item.innerHTML = '<span class="mp-check">' + check + '</span><span class="mp-name">' + escHtml(m.name || m.id) + '</span>' + credits + tierLabel;
