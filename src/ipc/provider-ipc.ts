@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import { ipcMain } from 'electron';
 import { OPENCLAW_CONFIG_DIR, CONFIG_FILE, AUTH_PROFILES_DIR, AUTH_PROFILES_FILE } from '../constants';
 import { loadEmbeddedConfig, saveEmbeddedConfig, loadAppState } from '../config-store';
-import { syncAuthProfileForProvider } from '../auth';
+import { syncAuthProfileForProvider, syncAgentModelRegistries } from '../auth';
 import type { GatewayHandle, LoadingStatusCallback } from '../types';
 
 export function registerProviderHandlers(
@@ -38,6 +38,7 @@ export function registerProviderHandlers(
 
       saveEmbeddedConfig(cfg);
       syncAuthProfileForProvider(cleanProviderId, apiKey, autoApi);
+      syncAgentModelRegistries();
 
       const gw = getGatewayHandle();
       if (!gw?.baseUrl) {
@@ -119,6 +120,7 @@ export function registerProviderHandlers(
       cfg.agents.defaults.model.primary = 'openclaw:main';
       if (cfg.agents.defaults.model.fallback !== undefined) delete cfg.agents.defaults.model.fallback;
       saveEmbeddedConfig(cfg);
+      syncAgentModelRegistries();
       return { success: true };
     } catch (e: any) {
       return { success: false, error: e.message };
@@ -136,6 +138,7 @@ export function registerProviderHandlers(
 
       fs.mkdirSync(AUTH_PROFILES_DIR, { recursive: true });
       fs.writeFileSync(AUTH_PROFILES_FILE, JSON.stringify({ version: 1, profiles: {}, lastGood: {}, usageStats: {} }, null, 2), 'utf8');
+      syncAgentModelRegistries();
 
       return { success: true };
     } catch (e: any) {
@@ -166,6 +169,7 @@ export function registerProviderHandlers(
         },
       };
       fs.writeFileSync(CONFIG_FILE, JSON.stringify(openclawConfig, null, 2));
+      syncAgentModelRegistries();
       await onStartGateway();
       return { success: true };
     } catch (error: any) {

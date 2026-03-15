@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setAgentChannels: (payload: Record<string, unknown>) => ipcRenderer.invoke('set-agent-channels', payload),
   deleteAgent: (agentId: string) => ipcRenderer.invoke('delete-agent', agentId),
   setActiveAgent: (id: string) => ipcRenderer.invoke('set-active-agent', id),
+  getAgentSoul: (agentId: string) => ipcRenderer.invoke('get-agent-soul', agentId),
+  setAgentSoul: (agentId: string, soul: string) => ipcRenderer.invoke('set-agent-soul', { agentId, soul }),
 
   // Provider config
   saveProviderConfig: (payload: Record<string, unknown>) => ipcRenderer.invoke('save-provider-config', payload),
