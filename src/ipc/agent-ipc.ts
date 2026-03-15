@@ -1,6 +1,7 @@
 import * as crypto from 'crypto';
 import { ipcMain } from 'electron';
 import { loadAppState, saveAppState, getPlanFeatures } from '../config-store';
+import { writeAgentSoulMd, removeAgentWorkspace, registerAgentInGatewayConfig, unregisterAgentFromGatewayConfig } from '../soul';
 
 export function registerAgentHandlers(): void {
   ipcMain.handle('list-agents', async () => {
@@ -23,6 +24,8 @@ export function registerAgentHandlers(): void {
     state.agents.push(newAgent);
     state.activeAgentId = newAgent.id;
     saveAppState(state);
+    writeAgentSoulMd(newAgent.id, undefined);
+    registerAgentInGatewayConfig(newAgent.id);
     return newAgent;
   });
 
@@ -55,6 +58,8 @@ export function registerAgentHandlers(): void {
     if (state.activeAgentId === agentId) state.activeAgentId = 'main';
     if (state.conversations) delete state.conversations[agentId];
     saveAppState(state);
+    removeAgentWorkspace(agentId);
+    unregisterAgentFromGatewayConfig(agentId);
     return { success: true, agents: state.agents, state };
   });
 
@@ -64,5 +69,22 @@ export function registerAgentHandlers(): void {
     state.activeAgentId = id;
     saveAppState(state);
     return { success: true, state };
+  });
+
+  ipcMain.handle('get-agent-soul', async (_event, agentId: string) => {
+    const state = loadAppState();
+    const agent = state.agents.find(a => a.id === agentId);
+    if (!agent) return { success: false, error: 'Agent not found' };
+    return { success: true, soul: agent.soul || '' };
+  });
+
+  ipcMain.handle('set-agent-soul', async (_event, payload: { agentId: string; soul: string }) => {
+    const state = loadAppState();
+    const agent = state.agents.find(a => a.id === payload.agentId);
+    if (!agent) return { success: false, error: 'Agent not found' };
+    agent.soul = payload.soul || undefined;
+    saveAppState(state);
+    writeAgentSoulMd(payload.agentId, agent.soul);
+    return { success: true };
   });
 }
