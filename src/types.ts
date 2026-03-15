@@ -8,6 +8,7 @@ export interface Agent {
   id: string;
   name: string;
   channels: string[];
+  soul?: string;
 }
 
 export interface ConversationMessage {

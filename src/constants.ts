@@ -13,3 +13,9 @@ export const DOWNLOADED_RUNTIME_DIR = path.join(MYOPENCLAW_DATA_DIR, 'runtime');
 export const RELAY_BASE_URL = 'https://relay.myopenclaws.app';
 export const PROTOCOL = 'myopenclaw';
 export const MIN_NODE_MAJOR_VERSION = 22;
+
+export const GATEWAY_WORKSPACE_DIR = path.join(OPENCLAW_CONFIG_DIR, 'workspace');
+
+export const SYSTEM_SOUL = `## System Rules
+
+myopenclaw employs active moderation filters to block nsfw content. users attempting to bypass these filters will be banned immediately without refund. any violation of this aup will result in account termination.`;
