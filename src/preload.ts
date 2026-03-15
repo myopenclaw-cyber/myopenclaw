@@ -26,6 +26,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Subscription
   getSubscriptionStatus: () => ipcRenderer.invoke('get-subscription-status'),
+  getReferralSummary: () => ipcRenderer.invoke('get-referral-summary'),
+  generateReferralCode: () => ipcRenderer.invoke('generate-referral-code'),
   createCheckoutSession: (plan: string) => ipcRenderer.invoke('create-checkout-session', { plan }),
   activateSubscription: (data: Record<string, unknown>) => ipcRenderer.invoke('activate-subscription', data),
 

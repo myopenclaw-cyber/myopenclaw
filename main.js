@@ -16462,7 +16462,6 @@ async function startGateway(updateLoadingStatus2) {
       await new Promise((r) => setTimeout(r, 300));
     }
   }
-  await stopExistingGateway();
   const gatewayPort = await findAvailablePort(DEFAULT_PORT);
   const gatewayBaseUrl = `http://127.0.0.1:${gatewayPort}`;
   console.log(`[startGateway] Starting gateway on port ${gatewayPort}...`);
@@ -16572,65 +16571,6 @@ async function waitForGateway(gatewayBaseUrl, maxRetries = 90, hasProcessExited)
   console.error("[waitForGateway] Max retries reached, gateway failed to start");
   throw new Error("Gateway failed to start after max retries. Please check your configuration and try again.");
 }
-async function stopExistingGateway() {
-  const lockFile = resolveGatewayLockFile();
-  if (!fs4.existsSync(lockFile)) {
-    console.log("[startGateway] No gateway lock file, skipping stop");
-    return;
-  }
-  const cli = findOpenClawCli();
-  if (!cli) return;
-  try {
-    const env = {
-      ...process.env,
-      PATH: buildNodeEnhancedPath(),
-      OPENCLAW_STATE_DIR: OPENCLAW_CONFIG_DIR,
-      OPENCLAW_CONFIG_PATH: CONFIG_FILE
-    };
-    const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(cli);
-    await new Promise((resolve5) => {
-      (0, import_child_process3.execFile)(cli, ["gateway", "stop"], {
-        encoding: "utf8",
-        timeout: 1e4,
-        stdio: "pipe",
-        env,
-        shell: useShell,
-        ...process.platform === "win32" ? { windowsHide: true } : {}
-      }, (err) => {
-        if (!err) console.log("[startGateway] Stopped existing gateway via CLI");
-        resolve5();
-      });
-    });
-  } catch {
-  }
-}
-function stopExistingGatewaySync() {
-  const lockFile = resolveGatewayLockFile();
-  if (!fs4.existsSync(lockFile)) {
-    return;
-  }
-  const cli = findOpenClawCli();
-  if (!cli) return;
-  try {
-    const env = {
-      ...process.env,
-      PATH: buildNodeEnhancedPath(),
-      OPENCLAW_STATE_DIR: OPENCLAW_CONFIG_DIR,
-      OPENCLAW_CONFIG_PATH: CONFIG_FILE
-    };
-    const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(cli);
-    (0, import_child_process3.execFileSync)(cli, ["gateway", "stop"], {
-      encoding: "utf8",
-      timeout: 5e3,
-      stdio: "pipe",
-      env,
-      shell: useShell,
-      ...process.platform === "win32" ? { windowsHide: true } : {}
-    });
-    console.log("[gateway] Stopped existing gateway via CLI");
-  } catch {
-  }
-}
 function isProcessRunning(proc) {
   return !!proc?.pid && proc.exitCode == null && proc.signalCode == null && !proc.killed;
 }
@@ -16668,26 +16608,36 @@ function forceKillProcess(proc) {
     console.warn("[gateway] Force kill failed:", err?.message || err);
   }
 }
-async function stopGatewayGracefully(gatewayProcess, timeoutMs = 3e3) {
+function requestProcessStop(proc) {
+  if (!isProcessRunning(proc)) return;
   try {
-    await stopExistingGateway();
+    if (process.platform === "win32" && proc.pid) {
+      (0, import_child_process3.execFileSync)("taskkill", ["/PID", String(proc.pid), "/T"], {
+        timeout: 5e3,
+        stdio: "pipe",
+        windowsHide: true
+      });
+      return;
+    }
+    proc.kill("SIGTERM");
   } catch (err) {
-    console.warn("[gateway] CLI stop failed:", err?.message || err);
+    console.warn("[gateway] Graceful stop signal failed:", err?.message || err);
   }
+}
+async function stopGatewayGracefully(gatewayProcess, timeoutMs = 3e3) {
+  requestProcessStop(gatewayProcess);
   const exited = await waitForProcessExit(gatewayProcess, Math.max(1e3, timeoutMs - 500));
   if (!exited) {
     console.warn("[gateway] Gateway did not stop in time, forcing shutdown");
     forceKillProcess(gatewayProcess);
     await waitForProcessExit(gatewayProcess, 1e3);
   }
+  removeGatewayLockFile();
   updateGatewayProcess(null);
 }
 function stopGatewayImmediately(gatewayProcess) {
-  try {
-    stopExistingGatewaySync();
-  } catch {
-  }
   forceKillProcess(gatewayProcess);
+  removeGatewayLockFile();
   updateGatewayProcess(null);
 }
 function resolveGatewayLockFile() {
@@ -16722,6 +16672,17 @@ function forceCleanGatewayLock() {
     console.log(`[startGateway] Removed lock file: ${lockFile}`);
   } catch (e) {
     console.log("[startGateway] Lock cleanup failed:", e.message);
+  }
+}
+function removeGatewayLockFile() {
+  try {
+    const lockFile = resolveGatewayLockFile();
+    if (fs4.existsSync(lockFile)) {
+      fs4.unlinkSync(lockFile);
+      console.log(`[gateway] Removed lock file: ${lockFile}`);
+    }
+  } catch (err) {
+    console.warn("[gateway] Failed to remove lock file:", err?.message || err);
   }
 }
 async function tryDoctorFix() {
@@ -17446,6 +17407,18 @@ async function syncSubscriptionFromRelay(state) {
   }
   return true;
 }
+async function getRelayRequestContext(state) {
+  const relay = state.relay;
+  const baseUrl = (relay?.baseUrl || RELAY_BASE_URL).replace(/\/+$/, "");
+  const freshJwt = await refreshJwtIfNeeded(baseUrl);
+  const authToken = freshJwt || relay?.accessToken || relay?.authToken;
+  if (!authToken) return null;
+  const headers = {
+    Authorization: `Bearer ${authToken}`
+  };
+  if (state.deviceId) headers["X-Device-Id"] = state.deviceId;
+  return { baseUrl, headers };
+}
 function registerSubscriptionHandlers() {
   import_electron4.ipcMain.handle("set-user-api-key", async (_event, apiKey) => {
     const state = loadAppState();
@@ -17479,6 +17452,38 @@ function registerSubscriptionHandlers() {
     const plan = state.plan || state.premiumTier || "free";
     const features = getPlanFeatures(plan);
     return { plan, planExpiresAt: state.planExpiresAt || null, features };
+  });
+  import_electron4.ipcMain.handle("get-referral-summary", async () => {
+    const state = loadAppState();
+    const ctx = await getRelayRequestContext(state);
+    if (!ctx) {
+      return { success: false, error: "not_authenticated" };
+    }
+    try {
+      const response = await import_axios8.default.get(`${ctx.baseUrl}/v1/referral`, { headers: ctx.headers, timeout: 15e3 });
+      return { success: true, referral: response.data?.referral || null };
+    } catch (error) {
+      return {
+        success: false,
+        error: error?.response?.data?.error || error?.response?.data?.message || error?.message || "Failed to load referral summary"
+      };
+    }
+  });
+  import_electron4.ipcMain.handle("generate-referral-code", async () => {
+    const state = loadAppState();
+    const ctx = await getRelayRequestContext(state);
+    if (!ctx) {
+      return { success: false, error: "not_authenticated" };
+    }
+    try {
+      const response = await import_axios8.default.post(`${ctx.baseUrl}/v1/referral/generate`, {}, { headers: ctx.headers, timeout: 15e3 });
+      return { success: true, referral: response.data?.referral || null };
+    } catch (error) {
+      return {
+        success: false,
+        error: error?.response?.data?.error || error?.response?.data?.message || error?.message || "Failed to generate referral code"
+      };
+    }
   });
   import_electron4.ipcMain.handle("create-checkout-session", async (_event, data) => {
     const { plan } = data || {};

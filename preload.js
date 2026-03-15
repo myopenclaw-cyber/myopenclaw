@@ -23,6 +23,8 @@ import_electron.contextBridge.exposeInMainWorld("electronAPI", {
   setPremiumTier: (tier) => import_electron.ipcRenderer.invoke("set-premium-tier", tier),
   // Subscription
   getSubscriptionStatus: () => import_electron.ipcRenderer.invoke("get-subscription-status"),
+  getReferralSummary: () => import_electron.ipcRenderer.invoke("get-referral-summary"),
+  generateReferralCode: () => import_electron.ipcRenderer.invoke("generate-referral-code"),
   createCheckoutSession: (plan) => import_electron.ipcRenderer.invoke("create-checkout-session", { plan }),
   activateSubscription: (data) => import_electron.ipcRenderer.invoke("activate-subscription", data),
   // Agents

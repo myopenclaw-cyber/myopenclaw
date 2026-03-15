@@ -27,6 +27,20 @@ async function syncSubscriptionFromRelay(state: AppState): Promise<boolean> {
   return true;
 }
 
+async function getRelayRequestContext(state: AppState): Promise<{ baseUrl: string; headers: Record<string, string> } | null> {
+  const relay = state.relay;
+  const baseUrl = (relay?.baseUrl || RELAY_BASE_URL).replace(/\/+$/, '');
+  const freshJwt = await refreshJwtIfNeeded(baseUrl);
+  const authToken = freshJwt || relay?.accessToken || relay?.authToken;
+  if (!authToken) return null;
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${authToken}`,
+  };
+  if (state.deviceId) headers['X-Device-Id'] = state.deviceId;
+  return { baseUrl, headers };
+}
+
 export function registerSubscriptionHandlers(): void {
   ipcMain.handle('set-user-api-key', async (_event, apiKey: string) => {
     const state = loadAppState();
@@ -63,6 +77,40 @@ export function registerSubscriptionHandlers(): void {
     const plan = state.plan || state.premiumTier || 'free';
     const features = getPlanFeatures(plan);
     return { plan, planExpiresAt: state.planExpiresAt || null, features };
+  });
+
+  ipcMain.handle('get-referral-summary', async () => {
+    const state = loadAppState();
+    const ctx = await getRelayRequestContext(state);
+    if (!ctx) {
+      return { success: false, error: 'not_authenticated' };
+    }
+    try {
+      const response = await axios.get(`${ctx.baseUrl}/v1/referral`, { headers: ctx.headers, timeout: 15000 });
+      return { success: true, referral: response.data?.referral || null };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error?.response?.data?.error || error?.response?.data?.message || error?.message || 'Failed to load referral summary',
+      };
+    }
+  });
+
+  ipcMain.handle('generate-referral-code', async () => {
+    const state = loadAppState();
+    const ctx = await getRelayRequestContext(state);
+    if (!ctx) {
+      return { success: false, error: 'not_authenticated' };
+    }
+    try {
+      const response = await axios.post(`${ctx.baseUrl}/v1/referral/generate`, {}, { headers: ctx.headers, timeout: 15000 });
+      return { success: true, referral: response.data?.referral || null };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error?.response?.data?.error || error?.response?.data?.message || error?.message || 'Failed to generate referral code',
+      };
+    }
   });
 
   ipcMain.handle('create-checkout-session', async (_event, data: { plan?: string }) => {

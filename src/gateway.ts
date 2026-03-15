@@ -50,9 +50,6 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
     }
   }
 
-  // Stop any existing gateway holding a lock (e.g. leftover from crash or previous session)
-  await stopExistingGateway();
-
   const gatewayPort = await findAvailablePort(DEFAULT_PORT);
   const gatewayBaseUrl = `http://127.0.0.1:${gatewayPort}`;
 
@@ -189,69 +186,6 @@ export async function waitForGateway(
   throw new Error('Gateway failed to start after max retries. Please check your configuration and try again.');
 }
 
-async function stopExistingGateway(): Promise<void> {
-  // Skip spawning a full Node.js subprocess if no lock file exists
-  const lockFile = resolveGatewayLockFile();
-  if (!fs.existsSync(lockFile)) {
-    console.log('[startGateway] No gateway lock file, skipping stop');
-    return;
-  }
-
-  const cli = findOpenClawCli();
-  if (!cli) return;
-  try {
-    const env = {
-      ...process.env,
-      PATH: buildNodeEnhancedPath(),
-      OPENCLAW_STATE_DIR: OPENCLAW_CONFIG_DIR,
-      OPENCLAW_CONFIG_PATH: CONFIG_FILE,
-    };
-    const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(cli);
-    await new Promise<void>((resolve) => {
-      execFile(cli, ['gateway', 'stop'], {
-        encoding: 'utf8', timeout: 10000, stdio: 'pipe', env, shell: useShell,
-        ...(process.platform === 'win32' ? { windowsHide: true } : {}),
-      } as any, (err) => {
-        if (!err) console.log('[startGateway] Stopped existing gateway via CLI');
-        resolve();
-      });
-    });
-  } catch {
-    // No gateway running or stop failed — fine
-  }
-}
-
-function stopExistingGatewaySync(): void {
-  const lockFile = resolveGatewayLockFile();
-  if (!fs.existsSync(lockFile)) {
-    return;
-  }
-
-  const cli = findOpenClawCli();
-  if (!cli) return;
-
-  try {
-    const env = {
-      ...process.env,
-      PATH: buildNodeEnhancedPath(),
-      OPENCLAW_STATE_DIR: OPENCLAW_CONFIG_DIR,
-      OPENCLAW_CONFIG_PATH: CONFIG_FILE,
-    };
-    const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(cli);
-    execFileSync(cli, ['gateway', 'stop'], {
-      encoding: 'utf8',
-      timeout: 5000,
-      stdio: 'pipe',
-      env,
-      shell: useShell,
-      ...(process.platform === 'win32' ? { windowsHide: true } : {}),
-    } as any);
-    console.log('[gateway] Stopped existing gateway via CLI');
-  } catch {
-    // Best-effort cleanup only.
-  }
-}
-
 function isProcessRunning(proc?: ChildProcess | null): proc is ChildProcess {
   return !!proc?.pid && proc.exitCode == null && proc.signalCode == null && !proc.killed;
 }
@@ -294,12 +228,26 @@ function forceKillProcess(proc: ChildProcess | null | undefined): void {
   }
 }
 
-export async function stopGatewayGracefully(gatewayProcess?: ChildProcess | null, timeoutMs: number = 3000): Promise<void> {
+function requestProcessStop(proc: ChildProcess | null | undefined): void {
+  if (!isProcessRunning(proc)) return;
+
   try {
-    await stopExistingGateway();
+    if (process.platform === 'win32' && proc.pid) {
+      execFileSync('taskkill', ['/PID', String(proc.pid), '/T'], {
+        timeout: 5000,
+        stdio: 'pipe',
+        windowsHide: true,
+      });
+      return;
+    }
+    proc.kill('SIGTERM');
   } catch (err: any) {
-    console.warn('[gateway] CLI stop failed:', err?.message || err);
+    console.warn('[gateway] Graceful stop signal failed:', err?.message || err);
   }
+}
+
+export async function stopGatewayGracefully(gatewayProcess?: ChildProcess | null, timeoutMs: number = 3000): Promise<void> {
+  requestProcessStop(gatewayProcess);
 
   const exited = await waitForProcessExit(gatewayProcess, Math.max(1000, timeoutMs - 500));
   if (!exited) {
@@ -308,17 +256,13 @@ export async function stopGatewayGracefully(gatewayProcess?: ChildProcess | null
     await waitForProcessExit(gatewayProcess, 1000);
   }
 
+  removeGatewayLockFile();
   updateGatewayProcess(null);
 }
 
 export function stopGatewayImmediately(gatewayProcess?: ChildProcess | null): void {
-  try {
-    stopExistingGatewaySync();
-  } catch {
-    // Best-effort cleanup only.
-  }
-
   forceKillProcess(gatewayProcess);
+  removeGatewayLockFile();
   updateGatewayProcess(null);
 }
 
@@ -364,6 +308,18 @@ function forceCleanGatewayLock(): void {
     console.log(`[startGateway] Removed lock file: ${lockFile}`);
   } catch (e: any) {
     console.log('[startGateway] Lock cleanup failed:', e.message);
+  }
+}
+
+function removeGatewayLockFile(): void {
+  try {
+    const lockFile = resolveGatewayLockFile();
+    if (fs.existsSync(lockFile)) {
+      fs.unlinkSync(lockFile);
+      console.log(`[gateway] Removed lock file: ${lockFile}`);
+    }
+  } catch (err: any) {
+    console.warn('[gateway] Failed to remove lock file:', err?.message || err);
   }
 }
 
