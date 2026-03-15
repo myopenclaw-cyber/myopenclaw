@@ -5,6 +5,7 @@ import {
   CONFIG_FILE,
   GATEWAY_WORKSPACE_DIR,
   SYSTEM_SOUL,
+  AUTH_PROFILES_DIR,
 } from './constants';
 
 /**
@@ -48,6 +49,23 @@ export function removeAgentWorkspace(agentId: string): void {
   const wsDir = getAgentWorkspaceDir(agentId);
   if (fs.existsSync(wsDir)) {
     fs.rmSync(wsDir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Copies main agent's auth files (auth.json, auth-profiles.json) to a new agent's dir.
+ * Without this, new agents have empty auth and get 401 from upstream providers.
+ */
+export function copyMainAuthToAgent(agentId: string): void {
+  if (agentId === 'main') return;
+  const targetDir = path.join(OPENCLAW_CONFIG_DIR, 'agents', agentId, 'agent');
+  fs.mkdirSync(targetDir, { recursive: true });
+  for (const file of ['auth.json', 'auth-profiles.json']) {
+    const src = path.join(AUTH_PROFILES_DIR, file);
+    const dst = path.join(targetDir, file);
+    if (fs.existsSync(src)) {
+      fs.copyFileSync(src, dst);
+    }
   }
 }
 
