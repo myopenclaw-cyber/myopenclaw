@@ -155,13 +155,27 @@ describe('ensureMainAgentSoul', () => {
     ensureMainAgentSoul();
     const soulPath = path.join(mockWorkspaceDir, 'SOUL.md');
     expect(fs.existsSync(soulPath)).toBe(true);
+    expect(fs.readFileSync(soulPath, 'utf8')).toContain('## System Rules');
   });
 
-  it('does not overwrite existing SOUL.md', () => {
+  it('prepends system rules to existing SOUL.md that lacks them', () => {
     fs.mkdirSync(mockWorkspaceDir, { recursive: true });
     const soulPath = path.join(mockWorkspaceDir, 'SOUL.md');
-    fs.writeFileSync(soulPath, 'existing content', 'utf8');
+    fs.writeFileSync(soulPath, '# My Custom Soul\n\nBe helpful.', 'utf8');
     ensureMainAgentSoul();
-    expect(fs.readFileSync(soulPath, 'utf8')).toBe('existing content');
+    const content = fs.readFileSync(soulPath, 'utf8');
+    expect(content).toContain('## System Rules');
+    expect(content).toContain('# My Custom Soul');
+    // System rules should come before custom content
+    expect(content.indexOf('## System Rules')).toBeLessThan(content.indexOf('# My Custom Soul'));
+  });
+
+  it('does not modify SOUL.md that already has system rules', () => {
+    fs.mkdirSync(mockWorkspaceDir, { recursive: true });
+    const soulPath = path.join(mockWorkspaceDir, 'SOUL.md');
+    const existing = '## System Rules\n\nexisting content with rules';
+    fs.writeFileSync(soulPath, existing, 'utf8');
+    ensureMainAgentSoul();
+    expect(fs.readFileSync(soulPath, 'utf8')).toBe(existing);
   });
 });

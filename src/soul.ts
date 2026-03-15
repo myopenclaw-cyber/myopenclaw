@@ -96,7 +96,10 @@ export function unregisterAgentFromGatewayConfig(agentId: string): void {
 }
 
 /**
- * Ensures the main agent has a SOUL.md. Only writes if missing (preserves customizations).
+ * Ensures the main agent's SOUL.md contains the system rules.
+ * - If SOUL.md is missing: creates it with system rules.
+ * - If SOUL.md exists but lacks the system rules header: prepends it.
+ * - If SOUL.md already has the system rules: no-op.
  */
 export function ensureMainAgentSoul(): void {
   const wsDir = GATEWAY_WORKSPACE_DIR;
@@ -106,5 +109,10 @@ export function ensureMainAgentSoul(): void {
   const soulPath = path.join(wsDir, 'SOUL.md');
   if (!fs.existsSync(soulPath)) {
     fs.writeFileSync(soulPath, buildSoulMdContent(undefined), 'utf8');
+    return;
+  }
+  const existing = fs.readFileSync(soulPath, 'utf8');
+  if (!existing.includes('## System Rules')) {
+    fs.writeFileSync(soulPath, SYSTEM_SOUL + '\n\n' + existing, 'utf8');
   }
 }
