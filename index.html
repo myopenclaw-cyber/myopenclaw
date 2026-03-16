@@ -307,7 +307,7 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
 .channel-guide a { color: #6db3ff; text-decoration: none; border-bottom: 1px dotted #6db3ff88; }
 .channel-guide a:hover { color: #a8d4ff; border-bottom-color: #a8d4ff; }
 /* Cron jobs */
-.cron-job { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid rgba(107,70,255,0.15); background: rgba(255,255,255,0.5); border-radius: 10px; margin: 8px 0; }
+.cron-job { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid rgba(107,70,255,0.15); background: rgba(255,255,255,0.5); border-radius: 10px; margin: 8px 0; }
 .cron-job-info { flex: 1; min-width: 0; }
 .cron-job-name { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
 .cron-job-meta { font-size: 11px; opacity: .6; display: flex; flex-wrap: wrap; gap: 4px 10px; }
@@ -324,8 +324,15 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
 .cron-toggle-slider:before { content: ''; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: .2s; }
 .cron-toggle input:checked + .cron-toggle-slider { background: #45e07a; }
 .cron-toggle input:checked + .cron-toggle-slider:before { transform: translateX(14px); }
-.cron-runs { background: #080d1fcc; border-radius: 10px; padding: 10px; margin-top: 8px; font-size: 12px; }
-.cron-run-row { display: flex; gap: 10px; padding: 4px 0; border-bottom: 1px solid #ffffff10; }
+.cron-runs-wrap { width: 100%; }
+.cron-runs { background: rgba(107,70,255,0.04); border: 1px solid rgba(107,70,255,0.1); border-radius: 8px; padding: 8px 12px; margin-top: 6px; font-size: 12px; }
+.cron-run-row {
+  display: flex;
+  gap: 10px;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(107,70,255,0.06);
+  color: #3a3f5c;
+}
 .cron-run-row:last-child { border-bottom: none; }
 </style>
 </head>
@@ -673,6 +680,10 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
 
           <div style="background:rgba(255,255,255,0.36);border:1px solid rgba(107,70,255,0.12);border-radius:10px;padding:12px;margin-bottom:12px">
             <div class="row">
+              <label style="min-width:130px" class="small">Agent</label>
+              <select id="cronAgentSelect" onchange="refreshCronDeliveryChannels();cronDeliveryTargetChanged()"></select>
+            </div>
+            <div class="row">
               <label style="min-width:130px" class="small">Delivery Channel</label>
               <select id="cronDeliveryChannel" onchange="cronDeliveryTargetChanged()">
                 <option value="">No auto delivery</option>
@@ -728,10 +739,6 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
             </div>
             <div id="cronScheduleFields">
               <!-- Populated by cronScheduleKindChanged() -->
-            </div>
-            <div class="row">
-              <label style="min-width:130px" class="small">Agent</label>
-              <select id="cronAgentSelect" onchange="refreshCronDeliveryTargets()"></select>
             </div>
             <div class="row">
               <label style="min-width:130px" class="small">Prompt Message</label>
@@ -2766,6 +2773,8 @@ function setCronMode(mode) {
 
 async function generateCronFromNL() {
   var input = document.getElementById('cronNLInput').value.trim();
+  var cronAgentSel = document.getElementById('cronAgentSelect');
+  var selectedAgentId = cronAgentSel ? (cronAgentSel.value || 'main') : ((appState && appState.activeAgentId) || currentAgent || 'main');
   if (!input) { showToast('Please describe the cron task'); return; }
   var delivery = getCronDeliveryConfig();
   if (delivery === null) return;
@@ -2775,7 +2784,7 @@ async function generateCronFromNL() {
   try {
     var r = await window.electronAPI.cronGenerate({
       description: input,
-      agentId: (appState && appState.activeAgentId) || currentAgent || 'main',
+      agentId: selectedAgentId,
       delivery: delivery,
     });
     if (!r || !r.success) {
@@ -2813,7 +2822,7 @@ async function generateCronFromNL() {
       if (atEl) atEl.value = (cfg.schedule && cfg.schedule.at) || '';
     }
     document.getElementById('cronMessage').value = cfg.message || '';
-    populateCronAgentSelect(appState && appState.activeAgentId ? appState.activeAgentId : null);
+    populateCronAgentSelect(selectedAgentId);
     var created = await saveCronJob({
       successMessage: r && r.normalizedFromReply
         ? 'Job created from assistant reply.'
@@ -3055,12 +3064,12 @@ function renderCronJobList() {
     if (lastStatus) parts.push('<span class="cron-status-' + lastStatus + '">' + lastStatus + '</span>');
     meta.innerHTML = parts.join('');
     info.appendChild(meta);
+    item.appendChild(info);
 
     var runsContainer = document.createElement('div');
     runsContainer.id = 'cron-runs-' + job.id;
+    runsContainer.className = 'cron-runs-wrap';
     runsContainer.style.display = 'none';
-    info.appendChild(runsContainer);
-    item.appendChild(info);
 
     var actions = document.createElement('div');
     actions.className = 'cron-job-actions';
@@ -3097,7 +3106,7 @@ function renderCronJobList() {
           rc.innerHTML = '<div class="small cron-status-error">Failed: ' + (r4 && r4.error || 'unknown') + '</div>';
           return;
         }
-        var runs = r4.runs || [];
+        var runs = r4.entries || r4.runs || [];
         if (!runs.length) {
           rc.innerHTML = '<div class=""><span class="small" style="color:#000000">No runs yet</span></div>';
           return;
@@ -3105,11 +3114,12 @@ function renderCronJobList() {
         var runsBox = document.createElement('div');
         runsBox.className = 'cron-runs';
         runs.forEach(function(run) {
+          var when = run.runAtMs || run.startedAtMs || run.ts;
           var row = document.createElement('div');
           row.className = 'cron-run-row';
           row.innerHTML =
             '<span class="cron-status-' + (run.status || 'ok') + '">' + (run.status || '?') + '</span>' +
-            '<span>' + (run.startedAtMs ? new Date(run.startedAtMs).toLocaleString() : '\u2014') + '</span>' +
+            '<span>' + (when ? new Date(when).toLocaleString() : '\u2014') + '</span>' +
             '<span style="opacity:.6">' + (run.durationMs ? run.durationMs + ' ms' : '') + '</span>';
           runsBox.appendChild(row);
         });
@@ -3134,6 +3144,7 @@ function renderCronJobList() {
     actions.appendChild(delBtn);
 
     item.appendChild(actions);
+    item.appendChild(runsContainer);
     listEl.appendChild(item);
   });
 }
