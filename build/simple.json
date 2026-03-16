@@ -27,7 +27,7 @@
     "package.json"
   ],
   "win": {
-    "electronLanguages": ["en", "zh-CN", "zh-TW"],
+    "electronLanguages": ["en"],
     "icon": "build/assets/icon.ico",
     "target": [
       {
@@ -37,7 +37,7 @@
     ]
   },
   "mac": {
-    "electronLanguages": ["en", "zh-CN", "zh-TW"],
+    "electronLanguages": ["en"],
     "icon": "build/assets/icon.icns",
     "hardenedRuntime": true,
     "gatekeeperAssess": false,
