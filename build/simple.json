@@ -28,6 +28,7 @@
   ],
   "win": {
     "electronLanguages": ["en", "zh-CN", "zh-TW"],
+    "icon": "build/assets/icon.ico",
     "target": [
       {
         "target": "nsis",
@@ -37,6 +38,7 @@
   },
   "mac": {
     "electronLanguages": ["en", "zh-CN", "zh-TW"],
+    "icon": "build/assets/icon.icns",
     "hardenedRuntime": true,
     "gatekeeperAssess": false,
     "entitlements": "build/entitlements.mac.plist",
