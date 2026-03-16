@@ -189,6 +189,14 @@ export async function refreshJwtIfNeeded(relayBaseUrl?: string): Promise<string>
     const status = e?.response?.status;
     const detail = e?.response?.data ? JSON.stringify(e.response.data) : e.message;
     console.error(`[auth] JWT refresh failed: ${status || ''} ${detail}`);
+    // Token is expired and refresh failed — clear stale tokens so callers
+    // don't fall back to the expired accessToken.
+    if (state.relay) {
+      state.relay.accessToken = '';
+      state.relay.refreshToken = '';
+      saveAppState(state);
+      console.log('[auth] Cleared expired tokens — user needs to re-login');
+    }
     return '';
   }
 }

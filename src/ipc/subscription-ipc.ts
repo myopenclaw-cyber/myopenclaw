@@ -9,7 +9,8 @@ async function syncSubscriptionFromRelay(state: AppState): Promise<boolean> {
   const relay = state.relay;
   const baseUrl = (relay?.baseUrl || RELAY_BASE_URL).replace(/\/+$/, '');
   const freshJwt = await refreshJwtIfNeeded(baseUrl);
-  const authToken = freshJwt || relay?.accessToken || relay?.authToken;
+  const currentState = freshJwt ? state : loadAppState();
+  const authToken = freshJwt || currentState.relay?.accessToken || currentState.relay?.authToken;
   if (!authToken) return false;
 
   const headers: Record<string, string> = {
@@ -31,7 +32,10 @@ async function getRelayRequestContext(state: AppState): Promise<{ baseUrl: strin
   const relay = state.relay;
   const baseUrl = (relay?.baseUrl || RELAY_BASE_URL).replace(/\/+$/, '');
   const freshJwt = await refreshJwtIfNeeded(baseUrl);
-  const authToken = freshJwt || relay?.accessToken || relay?.authToken;
+  // Only use freshJwt from refresh, or re-read state (tokens may have been
+  // cleared by refreshJwtIfNeeded if refresh failed).
+  const currentState = freshJwt ? state : loadAppState();
+  const authToken = freshJwt || currentState.relay?.accessToken || currentState.relay?.authToken;
   if (!authToken) return null;
 
   const headers: Record<string, string> = {

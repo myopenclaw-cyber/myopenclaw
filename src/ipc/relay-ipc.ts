@@ -35,8 +35,9 @@ export function registerRelayHandlers(): void {
 
       // Auto-refresh JWT if expired
       const freshJwt = await refreshJwtIfNeeded(baseUrl);
-
-      const authToken = freshJwt || state.relay?.accessToken || state.relay?.authToken;
+      // Re-read state if refresh failed — tokens may have been cleared
+      const currentState = freshJwt ? state : loadAppState();
+      const authToken = freshJwt || currentState.relay?.accessToken || currentState.relay?.authToken;
       const deviceId = state.deviceId || '';
 
       // Guest users: test via /health (public endpoint) + /v1/usage (validates deviceId)
