@@ -11,3 +11,6 @@ resources/.openclaw-myopenclaw/canvas/
 resources/.openclaw-myopenclaw/
 resources/openclaw/
 logo-openclaw.jpg
+e2e-report/
+e2e-screenshots/
+test-results/
