@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import type { ConversationMessage } from './types';
+import { OPENCLAW_CONFIG_DIR } from './constants';
 
 export function extractTextFromMessageContent(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -30,7 +31,7 @@ export function normalizeConversationText(role: string, text: string): string {
 
 export function loadAgentConversationFromOpenClaw(agentId: string = 'main', limit: number = 80): ConversationMessage[] {
   try {
-    const sessionsDir = path.join(__dirname, 'resources', '.openclaw-myopenclaw', 'agents', agentId, 'sessions');
+    const sessionsDir = path.join(OPENCLAW_CONFIG_DIR, 'agents', agentId, 'sessions');
     if (!fs.existsSync(sessionsDir)) return [];
 
     let sessionFiles: string[] = [];

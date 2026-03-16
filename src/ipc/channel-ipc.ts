@@ -14,6 +14,27 @@ function maskToken(token: string): string {
 }
 
 const botNameCache = new Map<string, string>();
+const telegramTargetLabelCache = new Map<string, { label?: string; username?: string }>();
+
+function normalizeAllowFromList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => String(entry || '').trim())
+    .filter(Boolean);
+}
+
+function mergePairedTargets(...lists: string[][]): Array<{ id: string }> {
+  const seen = new Set<string>();
+  const merged: Array<{ id: string }> = [];
+  for (const list of lists) {
+    for (const id of list) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      merged.push({ id });
+    }
+  }
+  return merged;
+}
 
 async function fetchTelegramBotName(botToken: string): Promise<string> {
   const cacheKey = botToken.slice(-10);
@@ -27,6 +48,38 @@ async function fetchTelegramBotName(botToken: string): Promise<string> {
   } catch {
     botNameCache.set(cacheKey, '');
     return '';
+  }
+}
+
+async function fetchTelegramTargetLabel(botToken: string, targetId: string): Promise<{ label?: string; username?: string }> {
+  const normalizedId = String(targetId || '').trim();
+  if (!botToken || !normalizedId) return {};
+  const cacheKey = botToken.slice(-10) + ':' + normalizedId;
+  const cached = telegramTargetLabelCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  try {
+    const res = await axios.get(`https://api.telegram.org/bot${botToken}/getChat`, {
+      timeout: 5000,
+      params: { chat_id: normalizedId },
+    });
+    const result = res.data?.result || {};
+    const username = result.username ? String(result.username).trim() : '';
+    const firstName = result.first_name ? String(result.first_name).trim() : '';
+    const lastName = result.last_name ? String(result.last_name).trim() : '';
+    const title = result.title ? String(result.title).trim() : '';
+    const label = username
+      ? `@${username}`
+      : title || [firstName, lastName].filter(Boolean).join(' ').trim() || normalizedId;
+    const data = {
+      label,
+      username: username || undefined,
+    };
+    telegramTargetLabelCache.set(cacheKey, data);
+    return data;
+  } catch {
+    const fallback = { label: normalizedId };
+    telegramTargetLabelCache.set(cacheKey, fallback);
+    return fallback;
   }
 }
 
@@ -79,7 +132,7 @@ export function registerChannelHandlers(): void {
       const channels: Record<string, {
         enabled: boolean;
         accounts: Record<string, Record<string, unknown>>;
-        pairedUsers: Record<string, Array<{ id: string }>>;
+        pairedUsers: Record<string, Array<{ id: string; label?: string; username?: string }>>;
       }> = {};
 
       const cfgChannels = cfg.channels || {};
@@ -90,7 +143,7 @@ export function registerChannelHandlers(): void {
         if (!ch.accounts || !Object.keys(ch.accounts).length) continue;
 
         const accounts: Record<string, Record<string, unknown>> = {};
-        const pairedUsers: Record<string, Array<{ id: string }>> = {};
+        const pairedUsers: Record<string, Array<{ id: string; label?: string; username?: string }>> = {};
 
         for (const [accountId, accountCfg] of Object.entries(ch.accounts)) {
           const masked: Record<string, unknown> = { ...(accountCfg || {}) };
@@ -111,13 +164,28 @@ export function registerChannelHandlers(): void {
 
           accounts[accountId] = masked;
 
+          const configAllowFrom = normalizeAllowFromList(accountCfg?.allowFrom);
+          let fileAllowFrom: string[] = [];
           const allowFile = path.join(credDir, `${channelType}-${accountId}-allowFrom.json`);
           try {
             if (fs.existsSync(allowFile)) {
               const data = JSON.parse(fs.readFileSync(allowFile, 'utf8'));
-              pairedUsers[accountId] = (data.allowFrom || []).map((id: string) => ({ id }));
+              fileAllowFrom = normalizeAllowFromList(data.allowFrom);
             }
           } catch { /* ignore */ }
+          const mergedPairedUsers = mergePairedTargets(configAllowFrom, fileAllowFrom);
+          if (mergedPairedUsers.length) {
+            if (channelType === 'telegram' && typeof accountCfg?.botToken === 'string' && accountCfg.botToken) {
+              pairedUsers[accountId] = await Promise.all(
+                mergedPairedUsers.map(async (entry) => ({
+                  id: entry.id,
+                  ...(await fetchTelegramTargetLabel(accountCfg.botToken as string, entry.id)),
+                }))
+              );
+            } else {
+              pairedUsers[accountId] = mergedPairedUsers;
+            }
+          }
         }
 
         channels[channelType] = {
