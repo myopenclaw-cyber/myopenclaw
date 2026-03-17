@@ -307,16 +307,19 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
 .channel-guide a { color: #6db3ff; text-decoration: none; border-bottom: 1px dotted #6db3ff88; }
 .channel-guide a:hover { color: #a8d4ff; border-bottom-color: #a8d4ff; }
 /* Cron jobs */
-.cron-job { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid rgba(107,70,255,0.15); background: rgba(255,255,255,0.5); border-radius: 10px; margin: 8px 0; }
-.cron-job-info { flex: 1; min-width: 0; }
-.cron-job-name { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
-.cron-job-meta { font-size: 11px; opacity: .6; display: flex; flex-wrap: wrap; gap: 4px 10px; }
-.cron-job-meta .tag { background: rgba(107,70,255,0.08); border-radius: 4px; padding: 1px 6px; color: #6B46FF; }
+.cron-job { display: flex; flex-direction: column; gap: 8px; padding: 20px; border: 1px solid rgba(107,70,255,0.2); background: rgba(255,255,255,0.4); border-radius: 20px; margin: 8px 0; }
+.cron-job-row1 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cron-job-name { font-weight: 600; font-size: 16px; }
+.cron-job .tag { display: inline-block; align-self: flex-start; background: rgba(107,70,255,0.1); border-radius: 4px; padding: 8px; color: #6B46FF; font-size: 14px; font-weight: 500; border-radius: 99px;}
+.cron-job-times { font-size: 14px; color: rgba(0,0,0,0.45); display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.split-line { border: none; border-top: 1px solid rgba(107,70,255,0.1); margin: 2px 0; }
+.cron-job-info { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cron-job-meta { font-size: 12px; color: rgba(0,0,0,0.5); flex: 1; min-width: 0; }
 .cron-job-actions { display: flex; gap: 6px; flex-shrink: 0; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
-.cron-status-ok { color: #34d399; }
-.cron-status-error { color: #fb7185; }
+.cron-status-ok { color: #04C83E; }
+.cron-status-error { color: #F15C49; }
 .cron-job-actions button { padding: 5px 10px; font-size: 11px; border-radius: 6px; }
-.cron-job-actions .cron-del { color: #fb7185; opacity: .8; }
+.cron-job-actions .cron-del { color: #F15C49; opacity: .8; }
 .cron-job-actions .cron-del:hover { opacity: 1; }
 .cron-toggle { position: relative; display: inline-block; width: 34px; height: 20px; flex-shrink: 0; }
 .cron-toggle input { opacity: 0; width: 0; height: 0; }
@@ -325,12 +328,12 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
 .cron-toggle input:checked + .cron-toggle-slider { background: #45e07a; }
 .cron-toggle input:checked + .cron-toggle-slider:before { transform: translateX(14px); }
 .cron-runs-wrap { width: 100%; }
-.cron-runs { background: rgba(107,70,255,0.04); border: 1px solid rgba(107,70,255,0.1); border-radius: 8px; padding: 8px 12px; margin-top: 6px; font-size: 12px; }
+.cron-runs { background: rgba(0,0,0,0.04); border-radius: 10px; padding: 8px 12px; margin-top: 6px; font-size: 12px; }
 .cron-run-row {
   display: flex;
   gap: 10px;
-  padding: 5px 0;
-  border-bottom: 1px solid rgba(107,70,255,0.06);
+  padding: 10px 0;
+  /* border-bottom: 1px solid rgba(107,70,255,0.06); */
   color: #3a3f5c;
 }
 .cron-run-row:last-child { border-bottom: none; }
@@ -3039,32 +3042,49 @@ function renderCronJobList() {
     slider.className = 'cron-toggle-slider';
     toggle.appendChild(chk);
     toggle.appendChild(slider);
-    item.appendChild(toggle);
 
-    var info = document.createElement('div');
-    info.className = 'cron-job-info';
-
+    // Row 1: name + toggle
+    var row1 = document.createElement('div');
+    row1.className = 'cron-job-row1';
     var nameLine = document.createElement('div');
     nameLine.className = 'cron-job-name';
     nameLine.textContent = job.name || job.id;
-    info.appendChild(nameLine);
+    row1.appendChild(nameLine);
+    row1.appendChild(toggle);
+    item.appendChild(row1);
 
-    var meta = document.createElement('div');
-    meta.className = 'cron-job-meta';
     var state = job.state || {};
     var lastStatus = state.lastStatus;
-    var parts = [
-      '<span class="tag">' + cronScheduleLabel(job.schedule) + '</span>',
-      '<span>Next: ' + cronFmtTime(state.nextRunAtMs) + '</span>',
-    ];
-    if (state.lastRunAtMs) parts.push('<span>Prev: ' + cronFmtTime(state.lastRunAtMs) + '</span>');
+
+    // Row 2: schedule tag
+    var schedTag = document.createElement('div');
+    schedTag.className = 'tag';
+    schedTag.textContent = cronScheduleLabel(job.schedule);
+    item.appendChild(schedTag);
+
+    // Row 3: next / prev / status
+    var times = document.createElement('div');
+    times.className = 'cron-job-times';
+    var timeParts = ['<span>Next: ' + cronFmtTime(state.nextRunAtMs) + '</span>'];
+    if (state.lastRunAtMs) timeParts.push('<span>Prev: ' + cronFmtTime(state.lastRunAtMs) + '</span>');
+    if (lastStatus) timeParts.push('<span class="cron-status-' + lastStatus + '">' + lastStatus + '</span>');
+    times.innerHTML = timeParts.join('');
+    item.appendChild(times);
+
+    // Row 4: divider
+    var divider = document.createElement('div');
+    divider.className = 'split-line';
+    item.appendChild(divider);
+
+    // Row 5: deliver meta + actions (actions appended after actions div is built)
+    var meta = document.createElement('div');
+    meta.className = 'cron-job-meta';
     if (job.delivery && job.delivery.mode === 'announce' && job.delivery.channel && job.delivery.to) {
-      parts.push('<span>Deliver: ' + escHtml(String(job.delivery.channel) + ' \u2192 ' + String(job.delivery.to)) + '</span>');
+      meta.innerHTML = '<span>Deliver: ' + escHtml(String(job.delivery.channel) + ' \u2192 ' + String(job.delivery.to)) + '</span>';
     }
-    if (lastStatus) parts.push('<span class="cron-status-' + lastStatus + '">' + lastStatus + '</span>');
-    meta.innerHTML = parts.join('');
-    info.appendChild(meta);
-    item.appendChild(info);
+    var infoRow = document.createElement('div');
+    infoRow.className = 'cron-job-info';
+    infoRow.appendChild(meta);
 
     var runsContainer = document.createElement('div');
     runsContainer.id = 'cron-runs-' + job.id;
@@ -3119,8 +3139,8 @@ function renderCronJobList() {
           row.className = 'cron-run-row';
           row.innerHTML =
             '<span class="cron-status-' + (run.status || 'ok') + '">' + (run.status || '?') + '</span>' +
-            '<span>' + (when ? new Date(when).toLocaleString() : '\u2014') + '</span>' +
-            '<span style="opacity:.6">' + (run.durationMs ? run.durationMs + ' ms' : '') + '</span>';
+            '<span style="color: #000">' + (when ? new Date(when).toLocaleString() : '\u2014') + '</span>' +
+            '<span style="opacity:.4">' + (run.durationMs ? run.durationMs + ' ms' : '') + '</span>';
           runsBox.appendChild(row);
         });
         rc.innerHTML = '';
@@ -3143,7 +3163,8 @@ function renderCronJobList() {
     })(job);
     actions.appendChild(delBtn);
 
-    item.appendChild(actions);
+    infoRow.appendChild(actions);
+    item.appendChild(infoRow);
     item.appendChild(runsContainer);
     listEl.appendChild(item);
   });

@@ -15824,6 +15824,12 @@ async function refreshJwtIfNeeded(relayBaseUrl) {
     const status = e?.response?.status;
     const detail = e?.response?.data ? JSON.stringify(e.response.data) : e.message;
     console.error(`[auth] JWT refresh failed: ${status || ""} ${detail}`);
+    if (state.relay) {
+      state.relay.accessToken = "";
+      state.relay.refreshToken = "";
+      saveAppState(state);
+      console.log("[auth] Cleared expired tokens \u2014 user needs to re-login");
+    }
     return "";
   }
 }
@@ -17469,7 +17475,8 @@ async function syncSubscriptionFromRelay(state) {
   const relay = state.relay;
   const baseUrl = (relay?.baseUrl || RELAY_BASE_URL).replace(/\/+$/, "");
   const freshJwt = await refreshJwtIfNeeded(baseUrl);
-  const authToken = freshJwt || relay?.accessToken || relay?.authToken;
+  const currentState = freshJwt ? state : loadAppState();
+  const authToken = freshJwt || currentState.relay?.accessToken || currentState.relay?.authToken;
   if (!authToken) return false;
   const headers = {
     Authorization: `Bearer ${authToken}`
@@ -17488,7 +17495,8 @@ async function getRelayRequestContext(state) {
   const relay = state.relay;
   const baseUrl = (relay?.baseUrl || RELAY_BASE_URL).replace(/\/+$/, "");
   const freshJwt = await refreshJwtIfNeeded(baseUrl);
-  const authToken = freshJwt || relay?.accessToken || relay?.authToken;
+  const currentState = freshJwt ? state : loadAppState();
+  const authToken = freshJwt || currentState.relay?.accessToken || currentState.relay?.authToken;
   if (!authToken) return null;
   const headers = {
     Authorization: `Bearer ${authToken}`
@@ -17946,7 +17954,8 @@ function registerRelayHandlers() {
       const state = loadAppState();
       const baseUrl = state.relay?.baseUrl || RELAY_BASE_URL;
       const freshJwt = await refreshJwtIfNeeded(baseUrl);
-      const authToken = freshJwt || state.relay?.accessToken || state.relay?.authToken;
+      const currentState = freshJwt ? state : loadAppState();
+      const authToken = freshJwt || currentState.relay?.accessToken || currentState.relay?.authToken;
       const deviceId = state.deviceId || "";
       if (!authToken && deviceId) {
         await checkRelayHealth(baseUrl, "");
