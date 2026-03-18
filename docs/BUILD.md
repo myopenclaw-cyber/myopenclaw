@@ -65,13 +65,13 @@ Two tag patterns trigger automated builds:
 
 | Tag pattern | Example | Signing | Output |
 |-------------|---------|---------|--------|
-| `test-*` | `test-0.3.62` | No (unsigned, faster) | Artifacts (download from Actions) |
+| `beta-*` | `beta-0.3.62` | No (unsigned, faster) | Artifacts (download from Actions) |
 | `v*` | `v0.3.62` | Yes (signed + notarized) | GitHub Release |
 
-### Test Build (fast iteration)
+### Beta Build (fast iteration)
 
 ```bash
-git tag test-0.3.62
+git tag beta-0.3.62
 git push --tags
 ```
 
