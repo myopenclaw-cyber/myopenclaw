@@ -65,26 +65,41 @@ Two tag patterns trigger automated builds:
 
 | Tag pattern | Example | Signing | Output |
 |-------------|---------|---------|--------|
-| `beta-*` | `beta-0.3.62` | No (unsigned, faster) | Artifacts (download from Actions) |
-| `v*` | `v0.3.62` | Yes (signed + notarized) | GitHub Release |
+| `beta-*` | `beta-0.3.63.1` | No (unsigned, faster) | Artifacts (download from Actions) |
+| `v*` | `v0.3.63` | Yes (signed + notarized) | GitHub Release |
+
+### Versioning Convention
+
+```
+v0.3.63             ← release (3-digit semver)
+beta-0.3.63.1       ← 1st beta build based on 0.3.63
+beta-0.3.63.2       ← 2nd beta build
+beta-0.3.63.3       ← ...
+v0.3.64             ← next release
+beta-0.3.64.1       ← 1st beta build based on 0.3.64
+```
+
+CI auto-converts beta tags to valid semver for package.json: `beta-0.3.63.1` → `0.3.63-beta.1`.
 
 ### Beta Build (fast iteration)
 
 ```bash
-git tag beta-0.3.62
+git tag beta-0.3.63.1
 git push --tags
 ```
 
-Builds unsigned packages for both platforms. Download from the Actions run page. No `package.json` version sync — uses whatever is in the file.
+Builds unsigned packages for both platforms. Download from the Actions run page.
 
 ### Release Build
 
 ```bash
-git tag v0.3.62
+git tag v0.3.63
 git push --tags
 ```
 
-**No need to update `package.json` manually** — CI automatically syncs the version from the git tag. Builds signed + notarized packages and creates a GitHub Release.
+Builds signed + notarized packages and creates a GitHub Release.
+
+**No need to update `package.json` manually** for either build — CI automatically syncs the version from the tag.
 
 You can also manually trigger a build via `workflow_dispatch` on the GitHub Actions page (unsigned, same as test build).
 
