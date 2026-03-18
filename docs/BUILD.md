@@ -61,22 +61,32 @@ dist/20260318-143000/
 
 ## CI Build (GitHub Actions)
 
-Push a `v*` tag to trigger an automated build + release:
+Two tag patterns trigger automated builds:
+
+| Tag pattern | Example | Signing | Output |
+|-------------|---------|---------|--------|
+| `test-*` | `test-0.3.62` | No (unsigned, faster) | Artifacts (download from Actions) |
+| `v*` | `v0.3.62` | Yes (signed + notarized) | GitHub Release |
+
+### Test Build (fast iteration)
+
+```bash
+git tag test-0.3.62
+git push --tags
+```
+
+Builds unsigned packages for both platforms. Download from the Actions run page. No `package.json` version sync — uses whatever is in the file.
+
+### Release Build
 
 ```bash
 git tag v0.3.62
 git push --tags
 ```
 
-That's it. **No need to update `package.json` manually** — CI automatically syncs the version from the git tag before building.
+**No need to update `package.json` manually** — CI automatically syncs the version from the git tag. Builds signed + notarized packages and creates a GitHub Release.
 
-CI will then:
-1. Build Windows simple variant on `windows-latest`
-2. Build Mac simple variant (x64 + arm64) on `macos-latest`
-3. Code-sign and notarize the Mac build (requires `CSC_LINK` and `CSC_KEY_PASSWORD` secrets)
-4. Create a GitHub Release and upload the installers
-
-You can also manually trigger a build via `workflow_dispatch` on the GitHub Actions page, selecting any branch.
+You can also manually trigger a build via `workflow_dispatch` on the GitHub Actions page (unsigned, same as test build).
 
 > **Note:** For local release builds (`npm run build:release:mac/win`), you need to update `package.json` version manually first: `npm version 0.3.62 --no-git-tag-version`.
 

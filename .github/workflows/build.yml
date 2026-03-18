@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+      - 'test-*'
   workflow_dispatch:
     inputs:
       branch:
@@ -37,6 +38,9 @@ jobs:
 
       - name: Build TypeScript
         run: npm run build:ts
+
+      - name: Run tests
+        run: npm test
 
       - name: Build Windows Simple
         run: |
@@ -78,7 +82,11 @@ jobs:
       - name: Build TypeScript
         run: npm run build:ts
 
+      - name: Run tests
+        run: npm test
+
       - name: Import signing certificate
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -91,13 +99,22 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
           rm /tmp/signing.p12
 
-      - name: Build Mac Simple
+      - name: Build Mac Simple (signed)
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           BUILD_VARIANT: simple
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: |
           npx electron-builder --mac --x64 --arm64 --publish never -c build/simple.json --config.compression=maximum --config.directories.output=dist-mac
+
+      - name: Build Mac Simple (unsigned)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          BUILD_VARIANT: simple
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          npx electron-builder --mac --x64 --arm64 --publish never -c build/simple.json --config.compression=maximum --config.directories.output=dist-mac --config.mac.notarize=false
 
       - name: Upload Mac artifacts
         uses: actions/upload-artifact@v4
@@ -112,7 +129,7 @@ jobs:
   create-release:
     needs: [build-windows, build-mac]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     steps:
