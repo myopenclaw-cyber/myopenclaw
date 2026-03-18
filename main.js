@@ -15593,6 +15593,100 @@ function getUserProviderConfig() {
 var crypto2 = __toESM(require("crypto"));
 var import_child_process = require("child_process");
 var import_axios = __toESM(require("axios"));
+
+// src/network-diagnostics.ts
+var import_dns = require("dns");
+var DNS_ERROR_CODES = /* @__PURE__ */ new Set(["ENOTFOUND", "EAI_AGAIN", "EAI_FAIL", "ENODATA"]);
+var DNS_PROBE_TIMEOUT_MS = 2e3;
+function withTimeout(promise, timeoutMs) {
+  return new Promise((resolve5, reject) => {
+    const timer = setTimeout(() => reject(new Error(`DNS probe timed out after ${timeoutMs}ms`)), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve5(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+function summarizeProxyEnv(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return void 0;
+  try {
+    const parsed = new URL(raw);
+    return `${parsed.protocol}//${parsed.hostname}${parsed.port ? `:${parsed.port}` : ""}`;
+  } catch {
+    return "<set>";
+  }
+}
+function getRequestMeta(requestUrl) {
+  const raw = String(requestUrl || "").trim();
+  if (!raw) return {};
+  try {
+    const parsed = new URL(raw);
+    return {
+      hostname: parsed.hostname,
+      origin: parsed.origin,
+      pathname: parsed.pathname
+    };
+  } catch {
+    return {};
+  }
+}
+function isDnsResolutionError(error) {
+  const code = String(error?.code || error?.cause?.code || "").toUpperCase();
+  const message = String(error?.message || "");
+  return DNS_ERROR_CODES.has(code) || /ENOTFOUND|EAI_AGAIN|EAI_FAIL|getaddrinfo/i.test(message);
+}
+async function logDnsDiagnostics(context, error, requestUrl) {
+  if (!isDnsResolutionError(error)) return;
+  const meta = getRequestMeta(requestUrl || error?.config?.url);
+  const diagnostics = {
+    context,
+    code: error?.code || error?.cause?.code || null,
+    errno: error?.errno || error?.cause?.errno || null,
+    syscall: error?.syscall || error?.cause?.syscall || null,
+    message: error?.message || String(error),
+    hostname: meta.hostname || null,
+    requestOrigin: meta.origin || null,
+    requestPath: meta.pathname || null,
+    dnsServers: (0, import_dns.getServers)(),
+    proxy: {
+      http: summarizeProxyEnv(process.env.HTTP_PROXY || process.env.http_proxy),
+      https: summarizeProxyEnv(process.env.HTTPS_PROXY || process.env.https_proxy),
+      all: summarizeProxyEnv(process.env.ALL_PROXY || process.env.all_proxy),
+      noProxy: process.env.NO_PROXY || process.env.no_proxy || ""
+    }
+  };
+  if (meta.hostname) {
+    const startedAt = Date.now();
+    try {
+      const addresses = await withTimeout(
+        import_dns.promises.lookup(meta.hostname, { all: true, verbatim: true }),
+        DNS_PROBE_TIMEOUT_MS
+      );
+      diagnostics.probe = {
+        ok: true,
+        elapsedMs: Date.now() - startedAt,
+        addresses: addresses.map((entry) => `${entry.address}/${entry.family}`)
+      };
+    } catch (probeError) {
+      diagnostics.probe = {
+        ok: false,
+        elapsedMs: Date.now() - startedAt,
+        code: probeError?.code || null,
+        message: probeError?.message || String(probeError)
+      };
+    }
+  }
+  console.error("[dns] Resolution diagnostics:", JSON.stringify(diagnostics));
+}
+
+// src/device.ts
 function getMachineId() {
   try {
     if (process.platform === "darwin") {
@@ -15645,8 +15739,9 @@ function ensureDeviceId() {
   return state.deviceId;
 }
 async function registerDevice(deviceId, appVersion) {
+  const requestUrl = `${RELAY_BASE_URL}/v1/devices`;
   try {
-    const response = await import_axios.default.post(`${RELAY_BASE_URL}/v1/devices`, {
+    const response = await import_axios.default.post(requestUrl, {
       deviceId,
       platform: process.platform,
       appVersion
@@ -15660,6 +15755,7 @@ async function registerDevice(deviceId, appVersion) {
       console.log("[device-registration] Saved signed device token");
     }
   } catch (err) {
+    await logDnsDiagnostics("device-registration", err, requestUrl);
     console.log("[device-registration] Registration failed (non-fatal):", err.message);
   }
 }
@@ -15821,6 +15917,7 @@ async function refreshJwtIfNeeded(relayBaseUrl) {
     console.log("[auth] JWT refreshed successfully");
     return tokens.accessToken;
   } catch (e) {
+    await logDnsDiagnostics("relay-auth-refresh", e, base.replace(/\/+$/, "") + "/v1/auth/refresh");
     const status = e?.response?.status;
     const detail = e?.response?.data ? JSON.stringify(e.response.data) : e.message;
     console.error(`[auth] JWT refresh failed: ${status || ""} ${detail}`);
@@ -15863,13 +15960,15 @@ async function ensureGatewayProviderOrRelay() {
         if (fresh.length) {
           console.log("[auth] Background relay models refresh complete:", fresh.length, "models");
         }
-      }).catch(() => {
+      }).catch((error) => {
+        void logDnsDiagnostics("relay-models-refresh-background", error, `${relayUrl}/models`);
       });
     } else {
       try {
         const res = await import_axios2.default.get(`${relayUrl}/models`, { headers, timeout: 1e4 });
         relayModels = res.data?.data || [];
       } catch (e) {
+        await logDnsDiagnostics("relay-models-fetch", e, `${relayUrl}/models`);
         console.log("[auth] Failed to fetch relay models, using fallback:", e.message);
       }
     }
@@ -15940,12 +16039,14 @@ function handleDeepLink(url, getMainWindow2) {
         });
         const deviceId = state.deviceId;
         if (deviceId) {
-          import_axios3.default.post(`${RELAY_BASE_URL}/v1/devices/${encodeURIComponent(deviceId)}/link`, {}, {
+          const requestUrl = `${RELAY_BASE_URL}/v1/devices/${encodeURIComponent(deviceId)}/link`;
+          import_axios3.default.post(requestUrl, {}, {
             headers: { "Authorization": `Bearer ${accessToken}` },
             timeout: 2e4
           }).then(() => {
             console.log("[DeepLink] Device linked to user account");
           }).catch((err) => {
+            void logDnsDiagnostics("device-link", err, requestUrl);
             console.log("[DeepLink] Device link failed (non-fatal):", err.message);
           });
         }
@@ -16465,7 +16566,7 @@ function isPortAvailable(port) {
 }
 
 // src/perf-monitor.ts
-var SAMPLE_INTERVAL = 1e4;
+var SAMPLE_INTERVAL = 6e4;
 var WARN_CPU_PCT = 80;
 var WARN_MEM_MB = 512;
 var _timer = null;
@@ -16515,6 +16616,9 @@ function updateGatewayProcess(proc) {
 }
 
 // src/gateway.ts
+var GATEWAY_START_TIMEOUT_MS = 12e4;
+var GATEWAY_HEALTHCHECK_TIMEOUT_MS = 2e3;
+var GATEWAY_HEALTHCHECK_POLL_MS = 300;
 async function startGateway(updateLoadingStatus2) {
   try {
     if (process.platform === "win32") {
@@ -16622,7 +16726,7 @@ async function startGateway(updateLoadingStatus2) {
   if (gatewayExited) {
     throw new Error(`Gateway process exited immediately with code ${gatewayExitCode}. Check logs above for details.`);
   }
-  await waitForGateway(gatewayBaseUrl, 60, () => gatewayExited);
+  await waitForGateway(gatewayBaseUrl, GATEWAY_START_TIMEOUT_MS, () => gatewayExited);
   updateLoadingStatus2("Startup complete. Opening workspace...", 100);
   console.log(`[startGateway] Gateway started successfully on ${gatewayBaseUrl}`);
   tryDoctorFix().catch(() => {
@@ -16634,25 +16738,34 @@ async function startGateway(updateLoadingStatus2) {
     token: readGatewayTokenFromConfig()
   };
 }
-async function waitForGateway(gatewayBaseUrl, maxRetries = 90, hasProcessExited) {
-  console.log(`[waitForGateway] Checking ${gatewayBaseUrl}/health...`);
-  for (let i = 0; i < maxRetries; i++) {
+async function waitForGateway(gatewayBaseUrl, startupTimeoutMs = GATEWAY_START_TIMEOUT_MS, hasProcessExited) {
+  const deadline = Date.now() + startupTimeoutMs;
+  let attempts = 0;
+  console.log(`[waitForGateway] Checking ${gatewayBaseUrl}/health (timeout=${startupTimeoutMs}ms)...`);
+  while (Date.now() < deadline) {
     if (hasProcessExited?.()) {
       console.error("[waitForGateway] Gateway process exited, aborting health checks");
       throw new Error("Gateway process exited unexpectedly. Check logs above for details.");
     }
+    attempts += 1;
+    const remainingMs = Math.max(deadline - Date.now(), 1);
     try {
-      console.log(`[waitForGateway] Attempt ${i + 1}/${maxRetries}...`);
-      const response = await import_axios6.default.get(`${gatewayBaseUrl}/health`, { timeout: 2e3 });
+      console.log(`[waitForGateway] Attempt ${attempts} (remaining ${remainingMs}ms)...`);
+      const response = await import_axios6.default.get(`${gatewayBaseUrl}/health`, {
+        timeout: Math.min(GATEWAY_HEALTHCHECK_TIMEOUT_MS, remainingMs)
+      });
       console.log(`[waitForGateway] Success! Response:`, response.data);
       return true;
     } catch (error) {
-      console.log(`[waitForGateway] Attempt ${i + 1} failed:`, error.message);
-      await new Promise((resolve5) => setTimeout(resolve5, 300));
+      console.log(`[waitForGateway] Attempt ${attempts} failed:`, error.message);
+      const delayMs = Math.min(GATEWAY_HEALTHCHECK_POLL_MS, Math.max(deadline - Date.now(), 0));
+      if (delayMs > 0) {
+        await new Promise((resolve5) => setTimeout(resolve5, delayMs));
+      }
     }
   }
-  console.error("[waitForGateway] Max retries reached, gateway failed to start");
-  throw new Error("Gateway failed to start after max retries. Please check your configuration and try again.");
+  console.error(`[waitForGateway] Startup timeout reached after ${startupTimeoutMs}ms, gateway failed to start`);
+  throw new Error(`Gateway failed to start within ${Math.round(startupTimeoutMs / 1e3)}s. Please check your configuration and try again.`);
 }
 function isProcessRunning(proc) {
   return !!proc?.pid && proc.exitCode == null && proc.signalCode == null && !proc.killed;
@@ -16852,11 +16965,17 @@ async function checkRelayHealth(baseUrl, token) {
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-  const response = await import_axios7.default.get(`${baseUrl}/health`, {
-    headers,
-    timeout: 2e4
-  });
-  return response.data;
+  const requestUrl = `${baseUrl}/health`;
+  try {
+    const response = await import_axios7.default.get(requestUrl, {
+      headers,
+      timeout: 2e4
+    });
+    return response.data;
+  } catch (error) {
+    await logDnsDiagnostics("relay-health", error, requestUrl);
+    throw error;
+  }
 }
 async function sendViaRelay(relayBaseUrl, relayAuthToken, messages, deviceId, model) {
   const headers = {
@@ -16868,14 +16987,20 @@ async function sendViaRelay(relayBaseUrl, relayAuthToken, messages, deviceId, mo
   if (deviceId) {
     headers["X-Device-Id"] = deviceId;
   }
-  const response = await import_axios7.default.post(`${relayBaseUrl}/v1/chat/completions`, {
-    model: model || "openclaw:main",
-    messages
-  }, {
-    headers,
-    timeout: 6e4
-  });
-  return response?.data?.choices?.[0]?.message?.content || "No response from relay.";
+  const requestUrl = `${relayBaseUrl}/v1/chat/completions`;
+  try {
+    const response = await import_axios7.default.post(requestUrl, {
+      model: model || "openclaw:main",
+      messages
+    }, {
+      headers,
+      timeout: 6e4
+    });
+    return response?.data?.choices?.[0]?.message?.content || "No response from relay.";
+  } catch (error) {
+    await logDnsDiagnostics("relay-chat", error, requestUrl);
+    throw error;
+  }
 }
 
 // src/ws-manager.ts
@@ -18003,10 +18128,12 @@ function registerRelayHandlers() {
       const jwt = state.relay?.accessToken || state.relay?.authToken;
       if (jwt) headers["Authorization"] = `Bearer ${jwt}`;
       if (state.deviceId) headers["X-Device-Id"] = state.deviceId;
-      const res = await import_axios9.default.get(`${baseUrl}/v1/models`, { headers, timeout: 1e4 });
+      const requestUrl = `${baseUrl}/v1/models`;
+      const res = await import_axios9.default.get(requestUrl, { headers, timeout: 1e4 });
       const models = res.data?.data || [];
       return { success: true, models };
     } catch (e) {
+      await logDnsDiagnostics("relay-models-ipc", e, `${(loadAppState().relay?.baseUrl || RELAY_BASE_URL).replace(/\/+$/, "")}/v1/models`);
       const msg = e?.response?.data?.error?.message || e?.response?.data?.message || e.message;
       return { success: false, error: msg, models: [] };
     }
@@ -18047,9 +18174,11 @@ function registerDeviceHandlers() {
       const headers = {};
       if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
       if (deviceId) headers["X-Device-Id"] = deviceId;
-      const response = await import_axios10.default.get(`${baseUrl}/v1/usage`, { headers, timeout: 2e4 });
+      const requestUrl = `${baseUrl}/v1/usage`;
+      const response = await import_axios10.default.get(requestUrl, { headers, timeout: 2e4 });
       return response.data;
     } catch (err) {
+      await logDnsDiagnostics("device-quota-check", err, `${baseUrl}/v1/usage`);
       return { success: false, error: err.message };
     }
   });

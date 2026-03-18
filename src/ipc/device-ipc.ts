@@ -2,6 +2,7 @@ import { ipcMain } from 'electron';
 import axios from 'axios';
 import { RELAY_BASE_URL } from '../constants';
 import { loadAppState } from '../config-store';
+import { logDnsDiagnostics } from '../network-diagnostics';
 
 export function registerDeviceHandlers(): void {
   ipcMain.handle('get-device-id', async () => {
@@ -24,9 +25,11 @@ export function registerDeviceHandlers(): void {
       const headers: Record<string, string> = {};
       if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
       if (deviceId) headers['X-Device-Id'] = deviceId;
-      const response = await axios.get(`${baseUrl}/v1/usage`, { headers, timeout: 20000 });
+      const requestUrl = `${baseUrl}/v1/usage`;
+      const response = await axios.get(requestUrl, { headers, timeout: 20000 });
       return response.data;
     } catch (err: any) {
+      await logDnsDiagnostics('device-quota-check', err, `${baseUrl}/v1/usage`);
       return { success: false, error: err.message };
     }
   });

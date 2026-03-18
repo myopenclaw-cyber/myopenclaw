@@ -4,6 +4,7 @@ import { RELAY_BASE_URL } from '../constants';
 import { loadAppState, saveAppState, getDefaultAppState } from '../config-store';
 import { checkRelayHealth } from '../messaging';
 import { ensureGatewayProviderOrRelay, refreshJwtIfNeeded } from '../auth';
+import { logDnsDiagnostics } from '../network-diagnostics';
 
 export function registerRelayHandlers(): void {
   ipcMain.handle('save-relay-config', async (_event, config: { baseUrl?: string; authToken?: string }) => {
@@ -94,10 +95,12 @@ export function registerRelayHandlers(): void {
       if (jwt) headers['Authorization'] = `Bearer ${jwt}`;
       if (state.deviceId) headers['X-Device-Id'] = state.deviceId;
 
-      const res = await axios.get(`${baseUrl}/v1/models`, { headers, timeout: 10000 });
+      const requestUrl = `${baseUrl}/v1/models`;
+      const res = await axios.get(requestUrl, { headers, timeout: 10000 });
       const models = res.data?.data || [];
       return { success: true, models };
     } catch (e: any) {
+      await logDnsDiagnostics('relay-models-ipc', e, `${(loadAppState().relay?.baseUrl || RELAY_BASE_URL).replace(/\/+$/, '')}/v1/models`);
       const msg = e?.response?.data?.error?.message || e?.response?.data?.message || e.message;
       return { success: false, error: msg, models: [] };
     }

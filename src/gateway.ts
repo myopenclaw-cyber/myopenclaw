@@ -20,6 +20,10 @@ import { findOpenClawCli, findRuntimeDir, findNodeBinary, buildNodeEnhancedPath 
 import { updateGatewayProcess } from './perf-monitor';
 import type { GatewayHandle, LoadingStatusCallback } from './types';
 
+const GATEWAY_START_TIMEOUT_MS = 120_000;
+const GATEWAY_HEALTHCHECK_TIMEOUT_MS = 2_000;
+const GATEWAY_HEALTHCHECK_POLL_MS = 300;
+
 export async function startGateway(updateLoadingStatus: LoadingStatusCallback): Promise<GatewayHandle> {
   // Kill our own leftover gateway — match by .myopenclaw path in command line
   try {
@@ -145,7 +149,7 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
     throw new Error(`Gateway process exited immediately with code ${gatewayExitCode}. Check logs above for details.`);
   }
 
-  await waitForGateway(gatewayBaseUrl, 60, () => gatewayExited);
+  await waitForGateway(gatewayBaseUrl, GATEWAY_START_TIMEOUT_MS, () => gatewayExited);
 
   updateLoadingStatus('Startup complete. Opening workspace...', 100);
   console.log(`[startGateway] Gateway started successfully on ${gatewayBaseUrl}`);
@@ -163,27 +167,38 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
 
 export async function waitForGateway(
   gatewayBaseUrl: string,
-  maxRetries: number = 90,
+  startupTimeoutMs: number = GATEWAY_START_TIMEOUT_MS,
   hasProcessExited?: () => boolean,
 ): Promise<boolean> {
-  console.log(`[waitForGateway] Checking ${gatewayBaseUrl}/health...`);
-  for (let i = 0; i < maxRetries; i++) {
+  const deadline = Date.now() + startupTimeoutMs;
+  let attempts = 0;
+
+  console.log(`[waitForGateway] Checking ${gatewayBaseUrl}/health (timeout=${startupTimeoutMs}ms)...`);
+  while (Date.now() < deadline) {
     if (hasProcessExited?.()) {
       console.error('[waitForGateway] Gateway process exited, aborting health checks');
       throw new Error('Gateway process exited unexpectedly. Check logs above for details.');
     }
+
+    attempts += 1;
+    const remainingMs = Math.max(deadline - Date.now(), 1);
     try {
-      console.log(`[waitForGateway] Attempt ${i + 1}/${maxRetries}...`);
-      const response = await axios.get(`${gatewayBaseUrl}/health`, { timeout: 2000 });
+      console.log(`[waitForGateway] Attempt ${attempts} (remaining ${remainingMs}ms)...`);
+      const response = await axios.get(`${gatewayBaseUrl}/health`, {
+        timeout: Math.min(GATEWAY_HEALTHCHECK_TIMEOUT_MS, remainingMs),
+      });
       console.log(`[waitForGateway] Success! Response:`, response.data);
       return true;
     } catch (error: any) {
-      console.log(`[waitForGateway] Attempt ${i + 1} failed:`, error.message);
-      await new Promise(resolve => setTimeout(resolve, 300));
+      console.log(`[waitForGateway] Attempt ${attempts} failed:`, error.message);
+      const delayMs = Math.min(GATEWAY_HEALTHCHECK_POLL_MS, Math.max(deadline - Date.now(), 0));
+      if (delayMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
     }
   }
-  console.error('[waitForGateway] Max retries reached, gateway failed to start');
-  throw new Error('Gateway failed to start after max retries. Please check your configuration and try again.');
+  console.error(`[waitForGateway] Startup timeout reached after ${startupTimeoutMs}ms, gateway failed to start`);
+  throw new Error(`Gateway failed to start within ${Math.round(startupTimeoutMs / 1000)}s. Please check your configuration and try again.`);
 }
 
 function isProcessRunning(proc?: ChildProcess | null): proc is ChildProcess {

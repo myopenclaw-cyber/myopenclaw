@@ -3,6 +3,7 @@ import * as path from 'path';
 import axios from 'axios';
 import { AUTH_PROFILES_DIR, AUTH_PROFILES_FILE, CONFIG_FILE, OPENCLAW_CONFIG_DIR, RELAY_BASE_URL } from './constants';
 import { loadEmbeddedConfig, loadAppState, saveAppState, getUserProviderConfig } from './config-store';
+import { logDnsDiagnostics } from './network-diagnostics';
 
 export function syncAuthProfileForProvider(providerId: string, apiKey: string, api: string = ''): void {
   try {
@@ -186,6 +187,7 @@ export async function refreshJwtIfNeeded(relayBaseUrl?: string): Promise<string>
     console.log('[auth] JWT refreshed successfully');
     return tokens.accessToken;
   } catch (e: any) {
+    await logDnsDiagnostics('relay-auth-refresh', e, base.replace(/\/+$/, '') + '/v1/auth/refresh');
     const status = e?.response?.status;
     const detail = e?.response?.data ? JSON.stringify(e.response.data) : e.message;
     console.error(`[auth] JWT refresh failed: ${status || ''} ${detail}`);
@@ -256,13 +258,16 @@ export async function ensureGatewayProviderOrRelay(): Promise<void> {
         if (fresh.length) {
           console.log('[auth] Background relay models refresh complete:', fresh.length, 'models');
         }
-      }).catch(() => { /* background refresh failed, cached models still valid */ });
+      }).catch((error: any) => {
+        void logDnsDiagnostics('relay-models-refresh-background', error, `${relayUrl}/models`);
+      });
     } else {
       // No cache: must fetch synchronously on first launch
       try {
         const res = await axios.get(`${relayUrl}/models`, { headers, timeout: 10000 });
         relayModels = res.data?.data || [];
       } catch (e: any) {
+        await logDnsDiagnostics('relay-models-fetch', e, `${relayUrl}/models`);
         console.log('[auth] Failed to fetch relay models, using fallback:', e.message);
       }
     }

@@ -3,6 +3,7 @@ import type { BrowserWindow } from 'electron';
 import { RELAY_BASE_URL, PROTOCOL } from './constants';
 import { loadAppState, saveAppState } from './config-store';
 import { ensureGatewayProviderOrRelay } from './auth';
+import { logDnsDiagnostics } from './network-diagnostics';
 
 export function handleDeepLink(
   url: string,
@@ -33,12 +34,14 @@ export function handleDeepLink(
 
         const deviceId = state.deviceId;
         if (deviceId) {
-          axios.post(`${RELAY_BASE_URL}/v1/devices/${encodeURIComponent(deviceId)}/link`, {}, {
+          const requestUrl = `${RELAY_BASE_URL}/v1/devices/${encodeURIComponent(deviceId)}/link`;
+          axios.post(requestUrl, {}, {
             headers: { 'Authorization': `Bearer ${accessToken}` },
             timeout: 20000,
           }).then(() => {
             console.log('[DeepLink] Device linked to user account');
           }).catch((err) => {
+            void logDnsDiagnostics('device-link', err, requestUrl);
             console.log('[DeepLink] Device link failed (non-fatal):', err.message);
           });
         }

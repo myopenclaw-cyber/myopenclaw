@@ -3,6 +3,7 @@ import { execSync } from 'child_process';
 import axios from 'axios';
 import { RELAY_BASE_URL } from './constants';
 import { loadAppState, saveAppState } from './config-store';
+import { logDnsDiagnostics } from './network-diagnostics';
 
 function getMachineId(): string | null {
   try {
@@ -60,8 +61,9 @@ export function ensureDeviceId(): string {
 }
 
 export async function registerDevice(deviceId: string, appVersion: string): Promise<void> {
+  const requestUrl = `${RELAY_BASE_URL}/v1/devices`;
   try {
-    const response = await axios.post(`${RELAY_BASE_URL}/v1/devices`, {
+    const response = await axios.post(requestUrl, {
       deviceId,
       platform: process.platform,
       appVersion,
@@ -77,6 +79,7 @@ export async function registerDevice(deviceId: string, appVersion: string): Prom
       console.log('[device-registration] Saved signed device token');
     }
   } catch (err: any) {
+    await logDnsDiagnostics('device-registration', err, requestUrl);
     console.log('[device-registration] Registration failed (non-fatal):', err.message);
   }
 }

@@ -6,7 +6,7 @@ import type { ChildProcess } from 'child_process';
 // Logs periodically and warns when usage exceeds thresholds.
 // ---------------------------------------------------------------------------
 
-const SAMPLE_INTERVAL = 10_000;  // sample every 10s
+const SAMPLE_INTERVAL = 60_000;  // sample every 60s
 const WARN_CPU_PCT = 80;         // warn if main process > 80% of one core
 const WARN_MEM_MB = 512;         // warn if RSS > 512 MB
 
