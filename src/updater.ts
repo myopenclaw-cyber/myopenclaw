@@ -1,9 +1,11 @@
 import { app, BrowserWindow, dialog } from 'electron';
 import { autoUpdater } from 'electron-updater';
+import type { UpdateChannel } from './types';
 
 type UpdaterInitOptions = {
   beforeInstall: () => Promise<void>;
   getMainWindow: () => BrowserWindow | null;
+  updateChannel?: UpdateChannel;
 };
 
 type CheckForUpdatesOptions = {
@@ -105,6 +107,7 @@ export function initializeAutoUpdater(options: UpdaterInitOptions): void {
 
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.allowPrerelease = options.updateChannel === 'beta';
   autoUpdater.logger = console;
 
   autoUpdater.on('checking-for-update', () => {
@@ -203,6 +206,11 @@ export async function checkForAppUpdates(options: CheckForUpdatesOptions = {}): 
     });
 
   return activeCheckPromise;
+}
+
+export function setUpdateChannel(channel: UpdateChannel): void {
+  autoUpdater.allowPrerelease = channel === 'beta';
+  console.log(`[updater] Update channel set to: ${channel}`);
 }
 
 export function scheduleAutoUpdateCheck(delayMs: number = 10_000): void {

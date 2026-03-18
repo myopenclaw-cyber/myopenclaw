@@ -17,7 +17,8 @@ import { registerChannelHandlers } from './ipc/channel-ipc';
 import { registerSkillsHandlers } from './ipc/skills-ipc';
 import { registerCronHandlers } from './ipc/cron-ipc';
 import { registerPairingHandlers } from './ipc/pairing-ipc';
-import { checkForAppUpdates } from './updater';
+import { checkForAppUpdates, setUpdateChannel } from './updater';
+import type { UpdateChannel } from './types';
 import { ensureMainAgentSoul } from './soul';
 import type { GatewayHandle, LoadingStatusCallback } from './types';
 
@@ -122,14 +123,41 @@ function getTrayStatusLabel(): string {
 function refreshTrayMenu(): void {
   if (!tray) return;
 
+  const currentChannel = loadAppState().updateChannel || 'stable';
   tray.setToolTip(`MyOpenClaw\n${getTrayStatusLabel().replace('Status: ', '')}`);
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: getTrayStatusLabel(), enabled: false },
     { type: 'separator' },
     { label: 'Check for Updates...', click: () => { void checkForAppUpdates({ manual: true }); } },
+    {
+      label: 'Update Channel',
+      submenu: [
+        {
+          label: 'Stable',
+          type: 'radio',
+          checked: currentChannel === 'stable',
+          click: () => switchUpdateChannel('stable'),
+        },
+        {
+          label: 'Beta',
+          type: 'radio',
+          checked: currentChannel === 'beta',
+          click: () => switchUpdateChannel('beta'),
+        },
+      ],
+    },
     { label: 'Open MyOpenClaw', click: () => showMainWindow() },
     { label: 'Quit MyOpenClaw', click: () => app.quit() },
   ]));
+}
+
+function switchUpdateChannel(channel: UpdateChannel): void {
+  const state = loadAppState();
+  state.updateChannel = channel;
+  saveAppState(state);
+  setUpdateChannel(channel);
+  refreshTrayMenu();
+  void checkForAppUpdates({ manual: true });
 }
 
 function ensureTray(): Tray | null {

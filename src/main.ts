@@ -105,6 +105,7 @@ if (!gotTheLock) {
     initializeAutoUpdater({
       getMainWindow,
       beforeInstall: () => prepareAppQuit('update-install'),
+      updateChannel: state.updateChannel || 'stable',
     });
     scheduleAutoUpdateCheck();
 

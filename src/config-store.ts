@@ -82,6 +82,7 @@ export function getDefaultAppState(): AppState {
     relay: { baseUrl: '', authToken: '', accessToken: '', refreshToken: '', userEmail: '' },
     deviceId: '',
     deviceToken: '',
+    updateChannel: 'stable',
   };
 }
 

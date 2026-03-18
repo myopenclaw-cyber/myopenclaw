@@ -35,6 +35,8 @@ export interface RelayConfig {
 
 export type PremiumTier = 'free' | 'premium' | 'pro';
 
+export type UpdateChannel = 'stable' | 'beta';
+
 export interface AppState {
   premiumTier: PremiumTier;
   isPremium: boolean;
@@ -49,6 +51,7 @@ export interface AppState {
   relay: RelayConfig;
   deviceId: string;
   deviceToken: string;
+  updateChannel: UpdateChannel;
 }
 
 // ---------------------------------------------------------------------------
