@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as crypto from 'crypto';
 import { spawn, execSync, execFile, execFileSync, type ChildProcess } from 'child_process';
+import { reportError } from './log-reporter';
 import axios from 'axios';
 import {
   OPENCLAW_CONFIG_DIR,
@@ -134,9 +135,15 @@ export async function startGateway(updateLoadingStatus: LoadingStatusCallback): 
     gatewayExited = true;
     gatewayExitCode = code;
     console.log(`[Gateway] Process exited with code ${code}, signal ${signal}`);
-    if (code !== 0) console.error('[Gateway] Unexpected exit!');
+    if (code !== 0) {
+      console.error('[Gateway] Unexpected exit!');
+      reportError('gateway', `unexpected exit code=${code} signal=${signal}`);
+    }
   });
-  gatewayProcess.on('error', (err) => console.error('[Gateway] Process error:', err));
+  gatewayProcess.on('error', (err) => {
+    console.error('[Gateway] Process error:', err);
+    reportError('gateway', `process error: ${err.message}`);
+  });
   updateGatewayProcess(gatewayProcess);
 
   console.log('[startGateway] Waiting for gateway to start...');
@@ -198,6 +205,7 @@ export async function waitForGateway(
     }
   }
   console.error(`[waitForGateway] Startup timeout reached after ${startupTimeoutMs}ms, gateway failed to start`);
+  reportError('gateway', `startup timeout after ${startupTimeoutMs}ms`);
   throw new Error(`Gateway failed to start within ${Math.round(startupTimeoutMs / 1000)}s. Please check your configuration and try again.`);
 }
 

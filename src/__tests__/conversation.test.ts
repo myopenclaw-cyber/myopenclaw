@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractTextFromMessageContent, normalizeConversationText } from '../conversation';
+import { extractTextFromMessageContent, findLatestAssistantReplyAfterUserMessage, normalizeConversationText } from '../conversation';
 
 describe('extractTextFromMessageContent', () => {
   it('returns string content as-is', () => {
@@ -59,8 +59,50 @@ describe('normalizeConversationText', () => {
     expect(normalizeConversationText('user', input)).toBe('new message');
   });
 
+  it('strips conversation metadata and timestamp wrapper for user messages', () => {
+    const input = 'Conversation info (untrusted metadata):\n```json\n{"message_id":"abc"}\n```\n\n[Thu 2026-03-19 17:34 GMT+8] 用 浏览器';
+    expect(normalizeConversationText('user', input)).toBe('用 浏览器');
+  });
+
   it('returns empty string for empty/null input', () => {
     expect(normalizeConversationText('user', '')).toBe('');
     expect(normalizeConversationText('user', null as any)).toBe('');
+  });
+});
+
+describe('findLatestAssistantReplyAfterUserMessage', () => {
+  it('returns the latest assistant reply after the matching user message', () => {
+    const conversation = [
+      { role: 'user' as const, content: 'first question' },
+      { role: 'assistant' as const, content: 'first answer' },
+      { role: 'user' as const, content: 'second question' },
+      { role: 'assistant' as const, content: 'second answer' },
+    ];
+
+    expect(findLatestAssistantReplyAfterUserMessage(conversation, 'second question')).toBe('second answer');
+  });
+
+  it('ignores the fallback placeholder when recovering the assistant reply', () => {
+    const conversation = [
+      { role: 'user' as const, content: 'repeat me' },
+      { role: 'assistant' as const, content: 'older answer' },
+      { role: 'user' as const, content: 'repeat me' },
+      { role: 'assistant' as const, content: 'Response received.' },
+      { role: 'assistant' as const, content: 'newest answer' },
+    ];
+
+    expect(findLatestAssistantReplyAfterUserMessage(conversation, 'repeat me')).toBe('newest answer');
+  });
+
+  it('matches transcript user messages that include metadata wrappers', () => {
+    const conversation = [
+      {
+        role: 'user' as const,
+        content: 'Conversation info (untrusted metadata):\n```json\n{"message_id":"abc"}\n```\n\n[Thu 2026-03-19 17:34 GMT+8] relay',
+      },
+      { role: 'assistant' as const, content: 'relay reply' },
+    ];
+
+    expect(findLatestAssistantReplyAfterUserMessage(conversation, 'relay')).toBe('relay reply');
   });
 });

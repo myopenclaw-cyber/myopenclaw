@@ -2,6 +2,7 @@ import { WebSocket } from 'ws';
 import { randomUUID } from 'crypto';
 import type { BrowserWindow } from 'electron';
 import { buildConnectParams, handleConnectResponse } from './device-identity';
+import { reportError } from './log-reporter';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -30,6 +31,8 @@ interface ChatEvent {
 
 export interface ChatPayload {
   state: 'delta' | 'final' | 'aborted' | 'error';
+  runId?: string;
+  sessionKey?: string;
   message?: {
     content: ContentItem[];
   };
@@ -59,6 +62,9 @@ export class WsManager {
   private mainWindow: BrowserWindow | null = null;
   private streamCallbacks: Set<StreamCallback> = new Set();
   private activeStreamId: string | null = null;
+  private activeRunId: string | null = null;
+  private activeSessionKey: string | null = null;
+  private activeTerminalTimer: NodeJS.Timeout | null = null;
   /** Stable session IDs per agent so conversation context persists across messages. */
   private sessionIds: Map<string, string> = new Map();
 
@@ -98,6 +104,7 @@ export class WsManager {
 
       ws.once('error', (err) => {
         console.error('[WsManager] WebSocket connection error:', err.message);
+        reportError('ws', `connection error: ${err.message}`);
         reject(err);
       });
 
@@ -157,6 +164,7 @@ export class WsManager {
 
       ws.on('error', (err) => {
         console.error('[WsManager] WebSocket error:', err.message);
+        reportError('ws', `ws error: ${err.message}`);
       });
     });
   }
@@ -189,7 +197,11 @@ export class WsManager {
     }
 
     const id = randomUUID();
+    const sessionKey = `agent:${agentId}:myopenclaw:${this._getSessionId(agentId)}`;
     this.activeStreamId = id;
+    this.activeRunId = null;
+    this.activeSessionKey = sessionKey;
+    this._clearActiveTerminalTimer();
 
     // Assembled text and thinking content from all delta events
     let assembledText = '';
@@ -198,13 +210,7 @@ export class WsManager {
       if (payload.state === 'delta' || payload.state === 'final') {
         // Gateway sends full accumulated text in each delta, not incremental chunks.
         // Replace assembledText with the latest full text.
-        const items = payload.message?.content || [];
-        let fullText = '';
-        for (const item of items) {
-          if (item.type === 'text' && item.text) {
-            fullText += item.text;
-          }
-        }
+        const fullText = this._extractText(payload.message?.content);
         if (fullText) {
           assembledText = fullText;
         }
@@ -217,7 +223,7 @@ export class WsManager {
       id,
       method: 'chat.send',
       params: {
-        sessionKey: `agent:${agentId}:myopenclaw:${this._getSessionId(agentId)}`,
+        sessionKey,
         message,
         deliver: false,
         idempotencyKey: id,
@@ -226,9 +232,23 @@ export class WsManager {
     };
 
     return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        const cb = this.pending.get(id);
+        if (!cb) return;
+        this.pending.delete(id);
+        cb(new Error('Chat response timed out'));
+      }, 70000);
+
       // Register completion callback keyed by the request ID
       this.pending.set(id, (err) => {
         this.streamCallbacks.delete(onPayload);
+        clearTimeout(timeout);
+        if (this.activeStreamId === id) {
+          this.activeStreamId = null;
+          this.activeRunId = null;
+          this.activeSessionKey = null;
+          this._clearActiveTerminalTimer();
+        }
         if (err) {
           reject(err);
         } else {
@@ -239,6 +259,7 @@ export class WsManager {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
         this.pending.delete(id);
         this.streamCallbacks.delete(onPayload);
+        clearTimeout(timeout);
         reject(new Error('WebSocket not connected'));
         return;
       }
@@ -247,10 +268,54 @@ export class WsManager {
         if (sendErr) {
           this.pending.delete(id);
           this.streamCallbacks.delete(onPayload);
+          clearTimeout(timeout);
           reject(sendErr);
         }
       });
     });
+  }
+
+  /** Extract text from a content array (or string). */
+  private _extractText(content: unknown): string {
+    if (typeof content === 'string') return content;
+    if (!Array.isArray(content)) return '';
+    let text = '';
+    for (const item of content) {
+      if (typeof item === 'string') { text += item; continue; }
+      if (item && typeof item === 'object') {
+        if (item.type === 'text' && item.text) text += item.text;
+      }
+    }
+    return text;
+  }
+
+  private _clearActiveTerminalTimer(): void {
+    if (this.activeTerminalTimer) {
+      clearTimeout(this.activeTerminalTimer);
+      this.activeTerminalTimer = null;
+    }
+  }
+
+  private _matchesActivePayload(payload: ChatPayload): boolean {
+    if (!this.activeStreamId) return false;
+
+    if (payload.sessionKey && this.activeSessionKey && payload.sessionKey !== this.activeSessionKey) {
+      return false;
+    }
+
+    if (payload.runId && this.activeRunId && payload.runId !== this.activeRunId) {
+      return false;
+    }
+
+    if (payload.runId && !this.activeRunId) {
+      this.activeRunId = payload.runId;
+    }
+
+    if (payload.sessionKey && !this.activeSessionKey) {
+      this.activeSessionKey = payload.sessionKey;
+    }
+
+    return true;
   }
 
   private _handleMessage(raw: string): void {
@@ -262,6 +327,8 @@ export class WsManager {
       return;
     }
 
+    console.log('[WsManager] ← msg type=%s event=%s id=%s', msg.type, msg.event ?? '-', msg.id ?? '-');
+
     if (msg.type === 'res') {
       const resp = msg as unknown as RpcResponse;
       // RPC error response — reject the pending promise
@@ -271,31 +338,95 @@ export class WsManager {
           this.pending.delete(resp.id);
           cb(new Error(resp.error.message));
         }
+        return;
       }
-      // ok response: we wait for final/aborted/error chat event to resolve
+
+      // ok response — check if payload already contains chat content (some
+      // gateway versions embed the final answer in the RPC response rather than
+      // sending separate chat events).
+      if (resp.ok && resp.payload) {
+        const p = resp.payload as Record<string, unknown>;
+        if (resp.id === this.activeStreamId && typeof p.runId === 'string') {
+          this.activeRunId = p.runId;
+        }
+        const content = (p.message as Record<string, unknown>)?.content ?? p.content ?? p.text;
+        const text = this._extractText(content);
+        if (text) {
+          this._clearActiveTerminalTimer();
+          console.log('[WsManager] ok-res contains text (%d chars), forwarding as final', text.length);
+          const syntheticPayload: ChatPayload = {
+            state: 'final',
+            runId: typeof p.runId === 'string' ? p.runId : undefined,
+            sessionKey: typeof p.sessionKey === 'string' ? p.sessionKey : this.activeSessionKey ?? undefined,
+            message: { content: [{ type: 'text', text }] },
+          };
+          this.streamCallbacks.forEach((cb) => cb(syntheticPayload));
+          this._forwardChatEvent(syntheticPayload);
+          if (this.activeStreamId) {
+            const cb = this.pending.get(this.activeStreamId);
+            if (cb) {
+              this.pending.delete(this.activeStreamId);
+              cb(null);
+            }
+            this.activeStreamId = null;
+          }
+          return;
+        }
+      }
+      // Otherwise wait for final/aborted/error chat event to resolve
       return;
     }
 
     if (msg.type === 'event' && msg.event === 'chat') {
       const payload = (msg as unknown as ChatEvent).payload;
-
-      // Notify local stream callbacks (for assembling text)
-      this.streamCallbacks.forEach((cb) => cb(payload));
+      console.log('[WsManager] chat event state=%s contentItems=%d',
+        payload.state,
+        Array.isArray(payload.message?.content) ? payload.message!.content.length : 0,
+      );
 
       // Forward to renderer for UI updates
       this._forwardChatEvent(payload);
 
+      if (!this._matchesActivePayload(payload)) {
+        return;
+      }
+
+      const text = this._extractText(payload.message?.content);
+      if (text || payload.state === 'delta' || payload.state === 'error') {
+        this._clearActiveTerminalTimer();
+      }
+
+      // Notify local stream callbacks (for assembling text)
+      this.streamCallbacks.forEach((cb) => cb(payload));
+
       // Resolve/reject the pending promise on terminal states
       if (payload.state === 'final' || payload.state === 'aborted' || payload.state === 'error') {
         if (this.activeStreamId) {
-          const cb = this.pending.get(this.activeStreamId);
-          if (cb) {
-            this.pending.delete(this.activeStreamId);
-            const err = payload.state === 'error' ? new Error(payload.errorMessage || payload.error || 'Stream error') : null;
-            if (err) console.error('[WsManager] Chat stream error:', err.message);
-            cb(err);
+          const finalize = () => {
+            if (!this.activeStreamId) return;
+            const cb = this.pending.get(this.activeStreamId);
+            if (cb) {
+              this.pending.delete(this.activeStreamId);
+              const err = payload.state === 'error' ? new Error(payload.errorMessage || payload.error || 'Stream error') : null;
+              if (err) {
+                console.error('[WsManager] Chat stream error:', err.message);
+                reportError('ws', `stream error: ${err.message}`);
+              }
+              cb(err);
+            }
+            this.activeStreamId = null;
+            this.activeRunId = null;
+            this.activeSessionKey = null;
+            this._clearActiveTerminalTimer();
+          };
+
+          if (payload.state === 'final' && !text) {
+            this._clearActiveTerminalTimer();
+            this.activeTerminalTimer = setTimeout(finalize, 400);
+            return;
           }
-          this.activeStreamId = null;
+
+          finalize();
         }
       }
     }

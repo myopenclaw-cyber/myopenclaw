@@ -20,6 +20,7 @@ import { registerPairingHandlers } from './ipc/pairing-ipc';
 import { checkForAppUpdates, setUpdateChannel } from './updater';
 import type { UpdateChannel } from './types';
 import { ensureMainAgentSoul } from './soul';
+import { startLogReporter, stopLogReporter } from './log-reporter';
 import type { GatewayHandle, LoadingStatusCallback } from './types';
 
 // ---------------------------------------------------------------------------
@@ -63,7 +64,10 @@ export async function prepareAppQuit(reason: string = 'user-request'): Promise<v
 
   quitCleanupPromise = (async () => {
     try {
-      await stopGatewayGracefully(gatewayHandle?.process ?? null);
+      await Promise.all([
+        stopGatewayGracefully(gatewayHandle?.process ?? null),
+        stopLogReporter(),
+      ]);
     } catch (err: any) {
       console.warn('[app] Graceful gateway shutdown failed, forcing stop:', err?.message || err);
       killGateway();
@@ -288,6 +292,8 @@ export function registerAllIpcHandlers(): void {
   registerSkillsHandlers(getGW);
   registerCronHandlers(getGW);
   registerPairingHandlers();
+
+  startLogReporter();
 }
 
 // ---------------------------------------------------------------------------

@@ -1929,10 +1929,12 @@ async function sendMsg() {
   if (sendBtn) sendBtn.disabled = false;
 
   if (r.success) {
+    // Prefer streaming text over fallback "Response received." from backend
+    const isFallback = r.response === 'Response received.';
+    const bestResponse = isFallback ? (streamingText || r.response) : (r.response || streamingText || '');
     if (streamReceived && streamingBubble) {
-      const finalText = r.response || streamingText || '';
-      if (finalText) {
-        updateStreamingBubble(streamingBubble, finalText, thinkingText, toolSteps);
+      if (bestResponse) {
+        updateStreamingBubble(streamingBubble, bestResponse, thinkingText, toolSteps);
         streamingBubble.id = '';
       } else {
         streamingBubble.remove();
@@ -1940,9 +1942,8 @@ async function sendMsg() {
       }
     } else {
       if (streamingBubble) { streamingBubble.remove(); streamingBubble = null; }
-      const finalText = r.response || streamingText || '';
-      if (finalText) {
-        chat(finalText, 'a');
+      if (bestResponse) {
+        chat(bestResponse, 'a');
       }
     }
     await refreshState();

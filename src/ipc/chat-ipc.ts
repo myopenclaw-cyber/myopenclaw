@@ -11,7 +11,21 @@ import { sendViaRelay } from '../messaging';
 import { RELAY_BASE_URL } from '../constants';
 import { wsManager } from '../ws-manager';
 import { refreshJwtIfNeeded, ensureGatewayProviderOrRelay } from '../auth';
+import { findLatestAssistantReplyAfterUserMessage, loadAgentConversationFromOpenClaw } from '../conversation';
+import { reportError } from '../log-reporter';
 import type { GatewayHandle } from '../types';
+
+async function recoverGatewayReplyFromTranscript(agentId: string, userMessage: string): Promise<string> {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const conversation = loadAgentConversationFromOpenClaw(agentId, 120);
+    const recovered = findLatestAssistantReplyAfterUserMessage(conversation, userMessage);
+    if (recovered) {
+      return recovered;
+    }
+    await new Promise((resolve) => setTimeout(resolve, Math.min(1000, 200 * (attempt + 1))));
+  }
+  return '';
+}
 
 export function registerChatHandlers(
   getGatewayHandle: () => GatewayHandle | null,
@@ -69,10 +83,13 @@ export function registerChatHandlers(
   });
 
   ipcMain.handle('send-message', async (_event, payload) => {
+    let message = '';
+    let agentId = 'main';
+    let model = '';
     try {
-      const message = typeof payload === 'string' ? payload : payload?.message;
-      const agentId = payload?.agentId || 'main';
-      const model = payload?.model || '';
+      message = typeof payload === 'string' ? payload : payload?.message;
+      agentId = payload?.agentId || 'main';
+      model = payload?.model || '';
 
       const state = loadAppState();
       const gate = checkPremiumGate(state);
@@ -112,7 +129,22 @@ export function registerChatHandlers(
       if (gatewayBaseUrl) {
         const win = getMainWindow();
         if (win) wsManager.setWindow(win);
-        content = await wsManager.sendChatMessageStreaming(gatewayBaseUrl, gatewayToken, agentId, message);
+        try {
+          content = await wsManager.sendChatMessageStreaming(gatewayBaseUrl, gatewayToken, agentId, message);
+        } catch (streamError) {
+          const recovered = await recoverGatewayReplyFromTranscript(agentId, message);
+          if (recovered) {
+            content = recovered;
+          } else {
+            throw streamError;
+          }
+        }
+        if (!content || content === 'Response received.') {
+          const recovered = await recoverGatewayReplyFromTranscript(agentId, message);
+          if (recovered) {
+            content = recovered;
+          }
+        }
       } else if (hasRelay) {
         content = await sendViaRelay(relay.baseUrl, relayAuthToken, messages, deviceId, model);
       } else if (deviceId && (relay.baseUrl || RELAY_BASE_URL)) {
@@ -140,6 +172,7 @@ export function registerChatHandlers(
         responseData: error?.response?.data,
         stack: error.stack?.split('\n').slice(0, 3).join(' | '),
       }));
+      reportError('chat', msg, { status, model: payload?.model, agentId: payload?.agentId, stack: error.stack?.split('\n').slice(0, 3) });
       return { success: false, error: `${status ? status + ' ' : ''}${msg}`, status };
     }
   });

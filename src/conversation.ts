@@ -19,6 +19,8 @@ export function normalizeConversationText(role: string, text: string): string {
   let t = String(text || '').trim();
   if (!t) return t;
   if (role === 'user') {
+    t = t.replace(/^Conversation info \(untrusted metadata\):\s*```json[\s\S]*?```\s*/i, '').trim();
+    t = t.replace(/^\[[A-Za-z]{3}\s+\d{4}-\d{2}-\d{2}[^\]\n]*\]\s*/i, '').trim();
     const marker = '[Current message - respond to this]';
     const idx = t.lastIndexOf(marker);
     if (idx >= 0) t = t.slice(idx + marker.length).trim();
@@ -27,6 +29,33 @@ export function normalizeConversationText(role: string, text: string): string {
   t = t.replace(/^\s*\[Chat messages since your last reply - for context\][\s\S]*?\[Current message - respond to this\]\s*/i, '');
   t = t.replace(/^\s*User\s*:\s*/i, '').trim();
   return t;
+}
+
+export function findLatestAssistantReplyAfterUserMessage(
+  conversation: ConversationMessage[],
+  userText: string,
+): string {
+  const expectedUserText = normalizeConversationText('user', userText);
+  if (!expectedUserText) return '';
+
+  for (let i = conversation.length - 1; i >= 0; i -= 1) {
+    const message = conversation[i];
+    if (message.role !== 'user') continue;
+    if (normalizeConversationText('user', message.content) !== expectedUserText) continue;
+
+    for (let j = conversation.length - 1; j > i; j -= 1) {
+      const reply = conversation[j];
+      if (reply.role !== 'assistant') continue;
+      const text = normalizeConversationText('assistant', reply.content);
+      if (text && text !== 'Response received.') {
+        return text;
+      }
+    }
+
+    break;
+  }
+
+  return '';
 }
 
 export function loadAgentConversationFromOpenClaw(agentId: string = 'main', limit: number = 80): ConversationMessage[] {

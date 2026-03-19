@@ -59,7 +59,7 @@ var require_polyfills = __commonJS({
     var constants = require("constants");
     var origCwd = process.cwd;
     var cwd = null;
-    var platform = process.env.GRACEFUL_FS_PLATFORM || process.platform;
+    var platform2 = process.env.GRACEFUL_FS_PLATFORM || process.platform;
     process.cwd = function() {
       if (!cwd)
         cwd = origCwd.call(process);
@@ -118,7 +118,7 @@ var require_polyfills = __commonJS({
         fs15.lchownSync = function() {
         };
       }
-      if (platform === "win32") {
+      if (platform2 === "win32") {
         fs15.rename = typeof fs15.rename !== "function" ? fs15.rename : (function(fs$rename) {
           function rename(from, to, cb) {
             var start = Date.now();
@@ -145,29 +145,29 @@ var require_polyfills = __commonJS({
         })(fs15.rename);
       }
       fs15.read = typeof fs15.read !== "function" ? fs15.read : (function(fs$read) {
-        function read(fd, buffer, offset, length, position, callback_) {
+        function read(fd, buffer2, offset, length, position, callback_) {
           var callback;
           if (callback_ && typeof callback_ === "function") {
             var eagCounter = 0;
             callback = function(er, _, __) {
               if (er && er.code === "EAGAIN" && eagCounter < 10) {
                 eagCounter++;
-                return fs$read.call(fs15, fd, buffer, offset, length, position, callback);
+                return fs$read.call(fs15, fd, buffer2, offset, length, position, callback);
               }
               callback_.apply(this, arguments);
             };
           }
-          return fs$read.call(fs15, fd, buffer, offset, length, position, callback);
+          return fs$read.call(fs15, fd, buffer2, offset, length, position, callback);
         }
         if (Object.setPrototypeOf) Object.setPrototypeOf(read, fs$read);
         return read;
       })(fs15.read);
       fs15.readSync = typeof fs15.readSync !== "function" ? fs15.readSync : /* @__PURE__ */ (function(fs$readSync) {
-        return function(fd, buffer, offset, length, position) {
+        return function(fd, buffer2, offset, length, position) {
           var eagCounter = 0;
           while (true) {
             try {
-              return fs$readSync.call(fs15, fd, buffer, offset, length, position);
+              return fs$readSync.call(fs15, fd, buffer2, offset, length, position);
             } catch (er) {
               if (er.code === "EAGAIN" && eagCounter < 10) {
                 eagCounter++;
@@ -886,25 +886,25 @@ var require_fs = __commonJS({
         return fs15.exists(filename, resolve5);
       });
     };
-    exports2.read = function(fd, buffer, offset, length, position, callback) {
+    exports2.read = function(fd, buffer2, offset, length, position, callback) {
       if (typeof callback === "function") {
-        return fs15.read(fd, buffer, offset, length, position, callback);
+        return fs15.read(fd, buffer2, offset, length, position, callback);
       }
       return new Promise((resolve5, reject) => {
-        fs15.read(fd, buffer, offset, length, position, (err, bytesRead, buffer2) => {
+        fs15.read(fd, buffer2, offset, length, position, (err, bytesRead, buffer3) => {
           if (err) return reject(err);
-          resolve5({ bytesRead, buffer: buffer2 });
+          resolve5({ bytesRead, buffer: buffer3 });
         });
       });
     };
-    exports2.write = function(fd, buffer, ...args) {
+    exports2.write = function(fd, buffer2, ...args) {
       if (typeof args[args.length - 1] === "function") {
-        return fs15.write(fd, buffer, ...args);
+        return fs15.write(fd, buffer2, ...args);
       }
       return new Promise((resolve5, reject) => {
-        fs15.write(fd, buffer, ...args, (err, bytesWritten, buffer2) => {
+        fs15.write(fd, buffer2, ...args, (err, bytesWritten, buffer3) => {
           if (err) return reject(err);
-          resolve5({ bytesWritten, buffer: buffer2 });
+          resolve5({ bytesWritten, buffer: buffer3 });
         });
       });
     };
@@ -3095,7 +3095,7 @@ var require_has_flag = __commonJS({
 var require_supports_color = __commonJS({
   "node_modules/supports-color/index.js"(exports2, module2) {
     "use strict";
-    var os6 = require("os");
+    var os7 = require("os");
     var tty = require("tty");
     var hasFlag = require_has_flag();
     var { env } = process;
@@ -3143,7 +3143,7 @@ var require_supports_color = __commonJS({
         return min;
       }
       if (process.platform === "win32") {
-        const osRelease = os6.release().split(".");
+        const osRelease = os7.release().split(".");
         if (Number(osRelease[0]) >= 10 && Number(osRelease[2]) >= 10586) {
           return Number(osRelease[2]) >= 14931 ? 3 : 2;
         }
@@ -4184,15 +4184,15 @@ var require_uuid = __commonJS({
       }
       // read stringified uuid into a Buffer
       static parse(input) {
-        const buffer = Buffer.allocUnsafe(16);
+        const buffer2 = Buffer.allocUnsafe(16);
         let j = 0;
         for (let i = 0; i < 16; i++) {
-          buffer[i] = hex2byte[input[j++] + input[j++]];
+          buffer2[i] = hex2byte[input[j++] + input[j++]];
           if (i === 3 || i === 5 || i === 7 || i === 9) {
             j += 1;
           }
         }
-        return buffer;
+        return buffer2;
       }
     };
     exports2.UUID = UUID;
@@ -4226,27 +4226,27 @@ var require_uuid = __commonJS({
       }
       hash.update(namespace);
       hash.update(name);
-      const buffer = hash.digest();
+      const buffer2 = hash.digest();
       let result;
       switch (encoding) {
         case UuidEncoding.BINARY:
-          buffer[6] = buffer[6] & 15 | version;
-          buffer[8] = buffer[8] & 63 | 128;
-          result = buffer;
+          buffer2[6] = buffer2[6] & 15 | version;
+          buffer2[8] = buffer2[8] & 63 | 128;
+          result = buffer2;
           break;
         case UuidEncoding.OBJECT:
-          buffer[6] = buffer[6] & 15 | version;
-          buffer[8] = buffer[8] & 63 | 128;
-          result = new UUID(buffer);
+          buffer2[6] = buffer2[6] & 15 | version;
+          buffer2[8] = buffer2[8] & 63 | 128;
+          result = new UUID(buffer2);
           break;
         default:
-          result = byte2hex[buffer[0]] + byte2hex[buffer[1]] + byte2hex[buffer[2]] + byte2hex[buffer[3]] + "-" + byte2hex[buffer[4]] + byte2hex[buffer[5]] + "-" + byte2hex[buffer[6] & 15 | version] + byte2hex[buffer[7]] + "-" + byte2hex[buffer[8] & 63 | 128] + byte2hex[buffer[9]] + "-" + byte2hex[buffer[10]] + byte2hex[buffer[11]] + byte2hex[buffer[12]] + byte2hex[buffer[13]] + byte2hex[buffer[14]] + byte2hex[buffer[15]];
+          result = byte2hex[buffer2[0]] + byte2hex[buffer2[1]] + byte2hex[buffer2[2]] + byte2hex[buffer2[3]] + "-" + byte2hex[buffer2[4]] + byte2hex[buffer2[5]] + "-" + byte2hex[buffer2[6] & 15 | version] + byte2hex[buffer2[7]] + "-" + byte2hex[buffer2[8] & 63 | 128] + byte2hex[buffer2[9]] + "-" + byte2hex[buffer2[10]] + byte2hex[buffer2[11]] + byte2hex[buffer2[12]] + byte2hex[buffer2[13]] + byte2hex[buffer2[14]] + byte2hex[buffer2[15]];
           break;
       }
       return result;
     }
-    function stringify(buffer) {
-      return byte2hex[buffer[0]] + byte2hex[buffer[1]] + byte2hex[buffer[2]] + byte2hex[buffer[3]] + "-" + byte2hex[buffer[4]] + byte2hex[buffer[5]] + "-" + byte2hex[buffer[6]] + byte2hex[buffer[7]] + "-" + byte2hex[buffer[8]] + byte2hex[buffer[9]] + "-" + byte2hex[buffer[10]] + byte2hex[buffer[11]] + byte2hex[buffer[12]] + byte2hex[buffer[13]] + byte2hex[buffer[14]] + byte2hex[buffer[15]];
+    function stringify(buffer2) {
+      return byte2hex[buffer2[0]] + byte2hex[buffer2[1]] + byte2hex[buffer2[2]] + byte2hex[buffer2[3]] + "-" + byte2hex[buffer2[4]] + byte2hex[buffer2[5]] + "-" + byte2hex[buffer2[6]] + byte2hex[buffer2[7]] + "-" + byte2hex[buffer2[8]] + byte2hex[buffer2[9]] + "-" + byte2hex[buffer2[10]] + byte2hex[buffer2[11]] + byte2hex[buffer2[12]] + byte2hex[buffer2[13]] + byte2hex[buffer2[14]] + byte2hex[buffer2[15]];
     }
     exports2.nil = new UUID("00000000-0000-0000-0000-000000000000");
   }
@@ -5646,19 +5646,19 @@ var require_sax = __commonJS({
             case S.ATTRIB_VALUE_ENTITY_Q:
             case S.ATTRIB_VALUE_ENTITY_U:
               var returnState;
-              var buffer;
+              var buffer2;
               switch (parser.state) {
                 case S.TEXT_ENTITY:
                   returnState = S.TEXT;
-                  buffer = "textNode";
+                  buffer2 = "textNode";
                   break;
                 case S.ATTRIB_VALUE_ENTITY_Q:
                   returnState = S.ATTRIB_VALUE_QUOTED;
-                  buffer = "attribValue";
+                  buffer2 = "attribValue";
                   break;
                 case S.ATTRIB_VALUE_ENTITY_U:
                   returnState = S.ATTRIB_VALUE_UNQUOTED;
-                  buffer = "attribValue";
+                  buffer2 = "attribValue";
                   break;
               }
               if (c === ";") {
@@ -5681,7 +5681,7 @@ var require_sax = __commonJS({
                   parser.write(parsedEntity);
                   parser.entityDepth -= 1;
                 } else {
-                  parser[buffer] += parsedEntity;
+                  parser[buffer2] += parsedEntity;
                   parser.entity = "";
                   parser.state = returnState;
                 }
@@ -5689,7 +5689,7 @@ var require_sax = __commonJS({
                 parser.entity += c;
               } else {
                 strictFail(parser, "Invalid character in entity name");
-                parser[buffer] += "&" + parser.entity + c;
+                parser[buffer2] += "&" + parser.entity + c;
                 parser.entity = "";
                 parser.state = returnState;
               }
@@ -6058,7 +6058,7 @@ var require_snippet = __commonJS({
   "node_modules/js-yaml/lib/snippet.js"(exports2, module2) {
     "use strict";
     var common = require_common2();
-    function getLine(buffer, lineStart, lineEnd, position, maxLineLength) {
+    function getLine(buffer2, lineStart, lineEnd, position, maxLineLength) {
       var head = "";
       var tail = "";
       var maxHalfLength = Math.floor(maxLineLength / 2) - 1;
@@ -6071,7 +6071,7 @@ var require_snippet = __commonJS({
         lineEnd = position + maxHalfLength - tail.length;
       }
       return {
-        str: head + buffer.slice(lineStart, lineEnd).replace(/\t/g, "\u2192") + tail,
+        str: head + buffer2.slice(lineStart, lineEnd).replace(/\t/g, "\u2192") + tail,
         pos: position - lineStart + head.length
         // relative position
       };
@@ -11623,8 +11623,8 @@ var require_ElectronAppAdapter = __commonJS({
     var path16 = require("path");
     var AppAdapter_1 = require_AppAdapter();
     var ElectronAppAdapter = class {
-      constructor(app5 = require("electron").app) {
-        this.app = app5;
+      constructor(app6 = require("electron").app) {
+        this.app = app6;
       }
       whenReady() {
         return this.app.whenReady();
@@ -11844,8 +11844,8 @@ var require_Provider = __commonJS({
       }
       getChannelFilePrefix() {
         if (this.runtimeOptions.platform === "linux") {
-          const arch = process.env["TEST_UPDATER_ARCH"] || process.arch;
-          const archSuffix = arch === "x64" ? "" : `-${arch}`;
+          const arch2 = process.env["TEST_UPDATER_ARCH"] || process.arch;
+          const archSuffix = arch2 === "x64" ? "" : `-${arch2}`;
           return "-linux" + archSuffix;
         } else {
           return this.runtimeOptions.platform === "darwin" ? "-mac" : "";
@@ -12521,8 +12521,8 @@ var require_KeygenProvider = __commonJS({
         return (0, Provider_1.resolveFiles)(updateInfo, this.baseUrl);
       }
       toString() {
-        const { account, product, platform } = this.configuration;
-        return `Keygen (account: ${account}, product: ${product}, platform: ${platform}, channel: ${this.channel})`;
+        const { account, product, platform: platform2 } = this.configuration;
+        return `Keygen (account: ${account}, product: ${product}, platform: ${platform2}, channel: ${this.channel})`;
       }
     };
     exports2.KeygenProvider = KeygenProvider;
@@ -13439,18 +13439,18 @@ var require_DifferentialDownloader = __commonJS({
         });
       }
       async readRemoteBytes(start, endInclusive) {
-        const buffer = Buffer.allocUnsafe(endInclusive + 1 - start);
+        const buffer2 = Buffer.allocUnsafe(endInclusive + 1 - start);
         const requestOptions = this.createRequestOptions();
         requestOptions.headers.range = `bytes=${start}-${endInclusive}`;
         let position = 0;
         await this.request(requestOptions, (chunk) => {
-          chunk.copy(buffer, position);
+          chunk.copy(buffer2, position);
           position += chunk.length;
         });
-        if (position !== buffer.length) {
-          throw new Error(`Received data length ${position} is not equal to expected ${buffer.length}`);
+        if (position !== buffer2.length) {
+          throw new Error(`Received data length ${position} is not equal to expected ${buffer2.length}`);
         }
-        return buffer;
+        return buffer2;
       }
       request(requestOptions, dataHandler) {
         return new Promise((resolve5, reject) => {
@@ -13648,7 +13648,7 @@ var require_AppUpdater = __commonJS({
           this._isUserWithinRollout = value;
         }
       }
-      constructor(options, app5) {
+      constructor(options, app6) {
         super();
         this.autoDownload = true;
         this.autoInstallOnAppQuit = true;
@@ -13678,11 +13678,11 @@ var require_AppUpdater = __commonJS({
         this.on("error", (error) => {
           this._logger.error(`Error: ${error.stack || error.message}`);
         });
-        if (app5 == null) {
+        if (app6 == null) {
           this.app = new ElectronAppAdapter_1.ElectronAppAdapter();
           this.httpExecutor = new electronHttpExecutor_1.ElectronHttpExecutor((authInfo, callback) => this.emit("login", authInfo, callback));
         } else {
-          this.app = app5;
+          this.app = app6;
           this.httpExecutor = null;
         }
         const currentVersionString = this.app.version;
@@ -14181,8 +14181,8 @@ var require_BaseUpdater = __commonJS({
     var child_process_1 = require("child_process");
     var AppUpdater_1 = require_AppUpdater();
     var BaseUpdater = class extends AppUpdater_1.AppUpdater {
-      constructor(options, app5) {
-        super(options, app5);
+      constructor(options, app6) {
+        super(options, app6);
         this.quitAndInstallCalled = false;
         this.quitHandlerAdded = false;
       }
@@ -14363,8 +14363,8 @@ var require_AppImageUpdater = __commonJS({
     var Provider_1 = require_Provider();
     var types_1 = require_types();
     var AppImageUpdater = class extends BaseUpdater_1.BaseUpdater {
-      constructor(options, app5) {
-        super(options, app5);
+      constructor(options, app6) {
+        super(options, app6);
       }
       isUpdaterActive() {
         if (process.env["APPIMAGE"] == null && !this.forceDevUpdateConfig) {
@@ -14465,8 +14465,8 @@ var require_LinuxUpdater = __commonJS({
     exports2.LinuxUpdater = void 0;
     var BaseUpdater_1 = require_BaseUpdater();
     var LinuxUpdater = class extends BaseUpdater_1.BaseUpdater {
-      constructor(options, app5) {
-        super(options, app5);
+      constructor(options, app6) {
+        super(options, app6);
       }
       /**
        * Returns true if the current process is running as root.
@@ -14564,8 +14564,8 @@ var require_DebUpdater = __commonJS({
     var types_1 = require_types();
     var LinuxUpdater_1 = require_LinuxUpdater();
     var DebUpdater = class _DebUpdater extends LinuxUpdater_1.LinuxUpdater {
-      constructor(options, app5) {
-        super(options, app5);
+      constructor(options, app6) {
+        super(options, app6);
       }
       /*** @private */
       doDownloadUpdate(downloadUpdateOptions) {
@@ -14648,8 +14648,8 @@ var require_PacmanUpdater = __commonJS({
     var Provider_1 = require_Provider();
     var LinuxUpdater_1 = require_LinuxUpdater();
     var PacmanUpdater = class _PacmanUpdater extends LinuxUpdater_1.LinuxUpdater {
-      constructor(options, app5) {
-        super(options, app5);
+      constructor(options, app6) {
+        super(options, app6);
       }
       /*** @private */
       doDownloadUpdate(downloadUpdateOptions) {
@@ -14715,8 +14715,8 @@ var require_RpmUpdater = __commonJS({
     var Provider_1 = require_Provider();
     var LinuxUpdater_1 = require_LinuxUpdater();
     var RpmUpdater = class _RpmUpdater extends LinuxUpdater_1.LinuxUpdater {
-      constructor(options, app5) {
-        super(options, app5);
+      constructor(options, app6) {
+        super(options, app6);
       }
       /*** @private */
       doDownloadUpdate(downloadUpdateOptions) {
@@ -14790,8 +14790,8 @@ var require_MacUpdater = __commonJS({
     var child_process_1 = require("child_process");
     var crypto_1 = require("crypto");
     var MacUpdater = class extends AppUpdater_1.AppUpdater {
-      constructor(options, app5) {
-        super(options, app5);
+      constructor(options, app6) {
+        super(options, app6);
         this.nativeUpdater = require("electron").autoUpdater;
         this.squirrelDownloadedUpdate = false;
         this.nativeUpdater.on("error", (it) => {
@@ -15023,7 +15023,7 @@ var require_windowsExecutableCodeSignatureVerifier = __commonJS({
     exports2.verifySignature = verifySignature;
     var builder_util_runtime_1 = require_out();
     var child_process_1 = require("child_process");
-    var os6 = require("os");
+    var os7 = require("os");
     var path16 = require("path");
     function preparePowerShellExec(command, timeout) {
       const executable = `set "PSModulePath=" & chcp 65001 >NUL & powershell.exe`;
@@ -15124,7 +15124,7 @@ var require_windowsExecutableCodeSignatureVerifier = __commonJS({
       }
     }
     function isOldWin6() {
-      const winVersion = os6.release();
+      const winVersion = os7.release();
       return winVersion.startsWith("6.") && !winVersion.startsWith("6.3");
     }
   }
@@ -15146,8 +15146,8 @@ var require_NsisUpdater = __commonJS({
     var windowsExecutableCodeSignatureVerifier_1 = require_windowsExecutableCodeSignatureVerifier();
     var url_1 = require("url");
     var NsisUpdater = class extends BaseUpdater_1.BaseUpdater {
-      constructor(options, app5) {
-        super(options, app5);
+      constructor(options, app6) {
+        super(options, app6);
         this._verifyUpdateCodeSignature = (publisherNames, unescapedTempUpdateFile) => (0, windowsExecutableCodeSignatureVerifier_1.verifySignature)(publisherNames, unescapedTempUpdateFile, this._logger);
       }
       /**
@@ -15403,8 +15403,8 @@ var require_main2 = __commonJS({
 
 // src/main.ts
 var path15 = __toESM(require("path"));
-var os5 = __toESM(require("os"));
-var import_electron15 = require("electron");
+var os6 = __toESM(require("os"));
+var import_electron16 = require("electron");
 
 // src/constants.ts
 var path = __toESM(require("path"));
@@ -15483,7 +15483,8 @@ function getDefaultAppState() {
     conversations: {},
     relay: { baseUrl: "", authToken: "", accessToken: "", refreshToken: "", userEmail: "" },
     deviceId: "",
-    deviceToken: ""
+    deviceToken: "",
+    updateChannel: "stable"
   };
 }
 function normalizePlan(plan) {
@@ -16075,7 +16076,7 @@ function handleDeepLink(url, getMainWindow2) {
 // src/window.ts
 var path14 = __toESM(require("path"));
 var fs14 = __toESM(require("fs"));
-var import_electron14 = require("electron");
+var import_electron15 = require("electron");
 
 // src/runtime.ts
 var path4 = __toESM(require("path"));
@@ -16539,14 +16540,73 @@ function runOpenClawOnboard(cmd, prependArgs = [], cwd) {
 // src/gateway.ts
 var path5 = __toESM(require("path"));
 var fs4 = __toESM(require("fs"));
-var os3 = __toESM(require("os"));
+var os4 = __toESM(require("os"));
 var crypto3 = __toESM(require("crypto"));
 var import_child_process3 = require("child_process");
-var import_axios6 = __toESM(require("axios"));
+
+// src/log-reporter.ts
+var import_electron = require("electron");
+var import_axios5 = __toESM(require("axios"));
+var os3 = __toESM(require("os"));
+var FLUSH_INTERVAL_MS = 3e4;
+var MAX_BUFFER = 100;
+var buffer = [];
+var flushTimer = null;
+function getRelayUrl() {
+  const state = loadAppState();
+  return state.relay?.baseUrl || RELAY_BASE_URL;
+}
+function getDeviceId() {
+  const state = loadAppState();
+  return state.deviceId || "unknown";
+}
+async function flush() {
+  if (buffer.length === 0) return;
+  const batch = buffer.splice(0, 50);
+  const baseUrl = getRelayUrl();
+  const deviceId = getDeviceId();
+  const state = loadAppState();
+  const userEmail = state.relay?.userEmail || "";
+  const logs = batch.map((e) => ({
+    level: e.level,
+    category: e.category,
+    message: e.message,
+    meta: e.meta ?? null,
+    userEmail: userEmail || null,
+    appVersion: import_electron.app.getVersion(),
+    platform: `${os3.platform()}-${os3.arch()}`
+  }));
+  try {
+    await import_axios5.default.post(`${baseUrl}/v1/logs`, { logs }, {
+      headers: { "X-Device-Id": deviceId },
+      timeout: 5e3
+    });
+  } catch {
+  }
+}
+function reportError(category, message, meta) {
+  buffer.push({ level: "error", category, message, meta, ts: (/* @__PURE__ */ new Date()).toISOString() });
+  if (buffer.length > MAX_BUFFER) buffer.splice(0, buffer.length - MAX_BUFFER);
+  void flush();
+}
+function startLogReporter() {
+  if (flushTimer) return;
+  flushTimer = setInterval(() => void flush(), FLUSH_INTERVAL_MS);
+}
+async function stopLogReporter() {
+  if (flushTimer) {
+    clearInterval(flushTimer);
+    flushTimer = null;
+  }
+  await flush();
+}
+
+// src/gateway.ts
+var import_axios7 = __toESM(require("axios"));
 
 // src/network.ts
 var net = __toESM(require("net"));
-var import_axios5 = __toESM(require("axios"));
+var import_axios6 = __toESM(require("axios"));
 async function findAvailablePort(startPort = DEFAULT_PORT) {
   for (let port = startPort; port < startPort + 100; port++) {
     if (await isPortAvailable(port)) return port;
@@ -16716,9 +16776,15 @@ async function startGateway(updateLoadingStatus2) {
     gatewayExited = true;
     gatewayExitCode = code;
     console.log(`[Gateway] Process exited with code ${code}, signal ${signal}`);
-    if (code !== 0) console.error("[Gateway] Unexpected exit!");
+    if (code !== 0) {
+      console.error("[Gateway] Unexpected exit!");
+      reportError("gateway", `unexpected exit code=${code} signal=${signal}`);
+    }
   });
-  gatewayProcess.on("error", (err) => console.error("[Gateway] Process error:", err));
+  gatewayProcess.on("error", (err) => {
+    console.error("[Gateway] Process error:", err);
+    reportError("gateway", `process error: ${err.message}`);
+  });
   updateGatewayProcess(gatewayProcess);
   console.log("[startGateway] Waiting for gateway to start...");
   updateLoadingStatus2("Checking gateway health...", 94);
@@ -16751,7 +16817,7 @@ async function waitForGateway(gatewayBaseUrl, startupTimeoutMs = GATEWAY_START_T
     const remainingMs = Math.max(deadline - Date.now(), 1);
     try {
       console.log(`[waitForGateway] Attempt ${attempts} (remaining ${remainingMs}ms)...`);
-      const response = await import_axios6.default.get(`${gatewayBaseUrl}/health`, {
+      const response = await import_axios7.default.get(`${gatewayBaseUrl}/health`, {
         timeout: Math.min(GATEWAY_HEALTHCHECK_TIMEOUT_MS, remainingMs)
       });
       console.log(`[waitForGateway] Success! Response:`, response.data);
@@ -16765,6 +16831,7 @@ async function waitForGateway(gatewayBaseUrl, startupTimeoutMs = GATEWAY_START_T
     }
   }
   console.error(`[waitForGateway] Startup timeout reached after ${startupTimeoutMs}ms, gateway failed to start`);
+  reportError("gateway", `startup timeout after ${startupTimeoutMs}ms`);
   throw new Error(`Gateway failed to start within ${Math.round(startupTimeoutMs / 1e3)}s. Please check your configuration and try again.`);
 }
 function isProcessRunning(proc) {
@@ -16839,7 +16906,7 @@ function stopGatewayImmediately(gatewayProcess) {
 function resolveGatewayLockFile() {
   const hash = crypto3.createHash("sha256").update(path5.resolve(CONFIG_FILE)).digest("hex").slice(0, 8);
   const uid = process.getuid?.();
-  const lockDir = path5.join(os3.tmpdir(), uid != null ? `openclaw-${uid}` : "openclaw");
+  const lockDir = path5.join(os4.tmpdir(), uid != null ? `openclaw-${uid}` : "openclaw");
   return path5.join(lockDir, `gateway.${hash}.lock`);
 }
 function forceCleanGatewayLock() {
@@ -16915,9 +16982,9 @@ async function tryDoctorFix() {
 }
 
 // src/ipc/gateway-ipc.ts
-var import_electron = require("electron");
+var import_electron2 = require("electron");
 function registerGatewayHandlers(getGatewayHandle) {
-  import_electron.ipcMain.handle("get-gateway-info", async () => {
+  import_electron2.ipcMain.handle("get-gateway-info", async () => {
     const gw = getGatewayHandle();
     return {
       port: gw?.port ?? null,
@@ -16925,7 +16992,7 @@ function registerGatewayHandlers(getGatewayHandle) {
       token: readGatewayTokenFromConfig()
     };
   });
-  import_electron.ipcMain.handle("open-gateway-dashboard", async () => {
+  import_electron2.ipcMain.handle("open-gateway-dashboard", async () => {
     try {
       const gw = getGatewayHandle();
       if (!gw?.baseUrl && !gw?.port) {
@@ -16935,31 +17002,31 @@ function registerGatewayHandlers(getGatewayHandle) {
         gw?.baseUrl || `http://127.0.0.1:${gw?.port || DEFAULT_PORT}`,
         gw?.baseUrl
       );
-      await import_electron.shell.openExternal(url);
+      await import_electron2.shell.openExternal(url);
       return { success: true, url };
     } catch (error) {
       return { success: false, error: error.message };
     }
   });
-  import_electron.ipcMain.handle("open-external", async (_event, url) => {
+  import_electron2.ipcMain.handle("open-external", async (_event, url) => {
     try {
-      await import_electron.shell.openExternal(url);
+      await import_electron2.shell.openExternal(url);
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
     }
   });
-  import_electron.ipcMain.handle("get-startup-error", async () => {
+  import_electron2.ipcMain.handle("get-startup-error", async () => {
     return { error: global.__MYOPENCLAW_STARTUP_ERROR__ || "" };
   });
 }
 
 // src/ipc/chat-ipc.ts
-var import_electron2 = require("electron");
+var import_electron3 = require("electron");
 var import_fs = require("fs");
 
 // src/messaging.ts
-var import_axios7 = __toESM(require("axios"));
+var import_axios8 = __toESM(require("axios"));
 async function checkRelayHealth(baseUrl, token) {
   const headers = {};
   if (token) {
@@ -16967,7 +17034,7 @@ async function checkRelayHealth(baseUrl, token) {
   }
   const requestUrl = `${baseUrl}/health`;
   try {
-    const response = await import_axios7.default.get(requestUrl, {
+    const response = await import_axios8.default.get(requestUrl, {
       headers,
       timeout: 2e4
     });
@@ -16989,7 +17056,7 @@ async function sendViaRelay(relayBaseUrl, relayAuthToken, messages, deviceId, mo
   }
   const requestUrl = `${relayBaseUrl}/v1/chat/completions`;
   try {
-    const response = await import_axios7.default.post(requestUrl, {
+    const response = await import_axios8.default.post(requestUrl, {
       model: model || "openclaw:main",
       messages
     }, {
@@ -17125,6 +17192,9 @@ var WsManager = class {
     this.mainWindow = null;
     this.streamCallbacks = /* @__PURE__ */ new Set();
     this.activeStreamId = null;
+    this.activeRunId = null;
+    this.activeSessionKey = null;
+    this.activeTerminalTimer = null;
     /** Stable session IDs per agent so conversation context persists across messages. */
     this.sessionIds = /* @__PURE__ */ new Map();
   }
@@ -17154,6 +17224,7 @@ var WsManager = class {
       });
       ws.once("error", (err) => {
         console.error("[WsManager] WebSocket connection error:", err.message);
+        reportError("ws", `connection error: ${err.message}`);
         reject(err);
       });
       ws.on("message", (data) => {
@@ -17201,6 +17272,7 @@ var WsManager = class {
       });
       ws.on("error", (err) => {
         console.error("[WsManager] WebSocket error:", err.message);
+        reportError("ws", `ws error: ${err.message}`);
       });
     });
   }
@@ -17223,17 +17295,15 @@ var WsManager = class {
       await this.connect(baseUrl, token);
     }
     const id = (0, import_crypto.randomUUID)();
+    const sessionKey = `agent:${agentId}:myopenclaw:${this._getSessionId(agentId)}`;
     this.activeStreamId = id;
+    this.activeRunId = null;
+    this.activeSessionKey = sessionKey;
+    this._clearActiveTerminalTimer();
     let assembledText = "";
     const onPayload = (payload) => {
       if (payload.state === "delta" || payload.state === "final") {
-        const items = payload.message?.content || [];
-        let fullText = "";
-        for (const item of items) {
-          if (item.type === "text" && item.text) {
-            fullText += item.text;
-          }
-        }
+        const fullText = this._extractText(payload.message?.content);
         if (fullText) {
           assembledText = fullText;
         }
@@ -17245,7 +17315,7 @@ var WsManager = class {
       id,
       method: "chat.send",
       params: {
-        sessionKey: `agent:${agentId}:myopenclaw:${this._getSessionId(agentId)}`,
+        sessionKey,
         message,
         deliver: false,
         idempotencyKey: id,
@@ -17253,8 +17323,21 @@ var WsManager = class {
       }
     };
     return new Promise((resolve5, reject) => {
+      const timeout = setTimeout(() => {
+        const cb = this.pending.get(id);
+        if (!cb) return;
+        this.pending.delete(id);
+        cb(new Error("Chat response timed out"));
+      }, 7e4);
       this.pending.set(id, (err) => {
         this.streamCallbacks.delete(onPayload);
+        clearTimeout(timeout);
+        if (this.activeStreamId === id) {
+          this.activeStreamId = null;
+          this.activeRunId = null;
+          this.activeSessionKey = null;
+          this._clearActiveTerminalTimer();
+        }
         if (err) {
           reject(err);
         } else {
@@ -17264,6 +17347,7 @@ var WsManager = class {
       if (!this.ws || this.ws.readyState !== import_ws.WebSocket.OPEN) {
         this.pending.delete(id);
         this.streamCallbacks.delete(onPayload);
+        clearTimeout(timeout);
         reject(new Error("WebSocket not connected"));
         return;
       }
@@ -17271,10 +17355,49 @@ var WsManager = class {
         if (sendErr) {
           this.pending.delete(id);
           this.streamCallbacks.delete(onPayload);
+          clearTimeout(timeout);
           reject(sendErr);
         }
       });
     });
+  }
+  /** Extract text from a content array (or string). */
+  _extractText(content) {
+    if (typeof content === "string") return content;
+    if (!Array.isArray(content)) return "";
+    let text = "";
+    for (const item of content) {
+      if (typeof item === "string") {
+        text += item;
+        continue;
+      }
+      if (item && typeof item === "object") {
+        if (item.type === "text" && item.text) text += item.text;
+      }
+    }
+    return text;
+  }
+  _clearActiveTerminalTimer() {
+    if (this.activeTerminalTimer) {
+      clearTimeout(this.activeTerminalTimer);
+      this.activeTerminalTimer = null;
+    }
+  }
+  _matchesActivePayload(payload) {
+    if (!this.activeStreamId) return false;
+    if (payload.sessionKey && this.activeSessionKey && payload.sessionKey !== this.activeSessionKey) {
+      return false;
+    }
+    if (payload.runId && this.activeRunId && payload.runId !== this.activeRunId) {
+      return false;
+    }
+    if (payload.runId && !this.activeRunId) {
+      this.activeRunId = payload.runId;
+    }
+    if (payload.sessionKey && !this.activeSessionKey) {
+      this.activeSessionKey = payload.sessionKey;
+    }
+    return true;
   }
   _handleMessage(raw) {
     let msg;
@@ -17284,6 +17407,7 @@ var WsManager = class {
       console.warn("[WsManager] Non-JSON message:", raw.slice(0, 100));
       return;
     }
+    console.log("[WsManager] \u2190 msg type=%s event=%s id=%s", msg.type, msg.event ?? "-", msg.id ?? "-");
     if (msg.type === "res") {
       const resp = msg;
       if (!resp.ok && resp.error) {
@@ -17292,23 +17416,80 @@ var WsManager = class {
           this.pending.delete(resp.id);
           cb(new Error(resp.error.message));
         }
+        return;
+      }
+      if (resp.ok && resp.payload) {
+        const p = resp.payload;
+        if (resp.id === this.activeStreamId && typeof p.runId === "string") {
+          this.activeRunId = p.runId;
+        }
+        const content = p.message?.content ?? p.content ?? p.text;
+        const text = this._extractText(content);
+        if (text) {
+          this._clearActiveTerminalTimer();
+          console.log("[WsManager] ok-res contains text (%d chars), forwarding as final", text.length);
+          const syntheticPayload = {
+            state: "final",
+            runId: typeof p.runId === "string" ? p.runId : void 0,
+            sessionKey: typeof p.sessionKey === "string" ? p.sessionKey : this.activeSessionKey ?? void 0,
+            message: { content: [{ type: "text", text }] }
+          };
+          this.streamCallbacks.forEach((cb) => cb(syntheticPayload));
+          this._forwardChatEvent(syntheticPayload);
+          if (this.activeStreamId) {
+            const cb = this.pending.get(this.activeStreamId);
+            if (cb) {
+              this.pending.delete(this.activeStreamId);
+              cb(null);
+            }
+            this.activeStreamId = null;
+          }
+          return;
+        }
       }
       return;
     }
     if (msg.type === "event" && msg.event === "chat") {
       const payload = msg.payload;
-      this.streamCallbacks.forEach((cb) => cb(payload));
+      console.log(
+        "[WsManager] chat event state=%s contentItems=%d",
+        payload.state,
+        Array.isArray(payload.message?.content) ? payload.message.content.length : 0
+      );
       this._forwardChatEvent(payload);
+      if (!this._matchesActivePayload(payload)) {
+        return;
+      }
+      const text = this._extractText(payload.message?.content);
+      if (text || payload.state === "delta" || payload.state === "error") {
+        this._clearActiveTerminalTimer();
+      }
+      this.streamCallbacks.forEach((cb) => cb(payload));
       if (payload.state === "final" || payload.state === "aborted" || payload.state === "error") {
         if (this.activeStreamId) {
-          const cb = this.pending.get(this.activeStreamId);
-          if (cb) {
-            this.pending.delete(this.activeStreamId);
-            const err = payload.state === "error" ? new Error(payload.errorMessage || payload.error || "Stream error") : null;
-            if (err) console.error("[WsManager] Chat stream error:", err.message);
-            cb(err);
+          const finalize = () => {
+            if (!this.activeStreamId) return;
+            const cb = this.pending.get(this.activeStreamId);
+            if (cb) {
+              this.pending.delete(this.activeStreamId);
+              const err = payload.state === "error" ? new Error(payload.errorMessage || payload.error || "Stream error") : null;
+              if (err) {
+                console.error("[WsManager] Chat stream error:", err.message);
+                reportError("ws", `stream error: ${err.message}`);
+              }
+              cb(err);
+            }
+            this.activeStreamId = null;
+            this.activeRunId = null;
+            this.activeSessionKey = null;
+            this._clearActiveTerminalTimer();
+          };
+          if (payload.state === "final" && !text) {
+            this._clearActiveTerminalTimer();
+            this.activeTerminalTimer = setTimeout(finalize, 400);
+            return;
           }
-          this.activeStreamId = null;
+          finalize();
         }
       }
     }
@@ -17328,123 +17509,6 @@ var WsManager = class {
 };
 var wsManager = new WsManager();
 
-// src/ipc/chat-ipc.ts
-function registerChatHandlers(getGatewayHandle, getMainWindow2) {
-  import_electron2.ipcMain.handle("copy-rich", (_event, payload) => {
-    const { text, imagePaths } = payload;
-    if (!imagePaths.length) {
-      import_electron2.clipboard.writeText(text);
-      return true;
-    }
-    let html = "";
-    const lines = text.split("\n");
-    for (const line of lines) {
-      const imgMatch = line.match(/\/([\w./\-]+\.(?:png|jpg|jpeg|gif|webp|svg))/i);
-      if (imgMatch) {
-        const fullPath = "/" + imgMatch[1];
-        const matched = imagePaths.find((p) => p === fullPath || fullPath.endsWith(p.split("/").pop()));
-        if (matched) {
-          try {
-            const buf = (0, import_fs.readFileSync)(matched);
-            const ext = matched.split(".").pop()?.toLowerCase() || "png";
-            const mime = ext === "jpg" ? "jpeg" : ext;
-            const b64 = buf.toString("base64");
-            html += `<p>${line.replace(/`/g, "")}</p><img src="data:image/${mime};base64,${b64}" style="max-width:600px"><br>`;
-            continue;
-          } catch {
-          }
-        }
-      }
-      html += `<p>${line}</p>`;
-    }
-    try {
-      const img = import_electron2.nativeImage.createFromPath(imagePaths[0]);
-      import_electron2.clipboard.write({
-        text,
-        html,
-        image: img
-      });
-    } catch {
-      import_electron2.clipboard.write({ text, html });
-    }
-    return true;
-  });
-  import_electron2.ipcMain.handle("pick-file", async () => {
-    const opts = { properties: ["openFile", "multiSelections"] };
-    const win = getMainWindow2();
-    const result = win ? await import_electron2.dialog.showOpenDialog(win, opts) : await import_electron2.dialog.showOpenDialog(opts);
-    if (result.canceled) return [];
-    return result.filePaths;
-  });
-  import_electron2.ipcMain.handle("send-message", async (_event, payload) => {
-    try {
-      const message = typeof payload === "string" ? payload : payload?.message;
-      const agentId = payload?.agentId || "main";
-      const model = payload?.model || "";
-      const state = loadAppState();
-      const gate = checkPremiumGate(state);
-      if (!gate.allow) {
-        return {
-          success: false,
-          premiumRequired: gate.premiumRequired ?? false,
-          loginRequired: gate.loginRequired ?? false,
-          reason: gate.reason,
-          error: gate.message,
-          state
-        };
-      }
-      state.conversations = state.conversations || {};
-      const conv = state.conversations[agentId] || [];
-      const messages = [...conv, { role: "user", content: message }].slice(-20);
-      const relay = state.relay;
-      const relayAuthToken = relay.accessToken || relay.authToken;
-      const hasRelay = !!(relay.baseUrl && relayAuthToken);
-      const deviceId = state.deviceId || "";
-      const gw = getGatewayHandle();
-      const gatewayBaseUrl = gw?.baseUrl || null;
-      const gatewayToken = gw?.token || "";
-      const freshJwt = await refreshJwtIfNeeded();
-      if (freshJwt && freshJwt !== relayAuthToken) {
-        await ensureGatewayProviderOrRelay();
-      }
-      let content;
-      if (gatewayBaseUrl) {
-        const win = getMainWindow2();
-        if (win) wsManager.setWindow(win);
-        content = await wsManager.sendChatMessageStreaming(gatewayBaseUrl, gatewayToken, agentId, message);
-      } else if (hasRelay) {
-        content = await sendViaRelay(relay.baseUrl, relayAuthToken, messages, deviceId, model);
-      } else if (deviceId && (relay.baseUrl || RELAY_BASE_URL)) {
-        content = await sendViaRelay(relay.baseUrl || RELAY_BASE_URL, "", messages, deviceId, model);
-      } else {
-        throw new Error("No AI provider configured. Please login to use Cloud Relay.");
-      }
-      state.conversations[agentId] = [...messages, { role: "assistant", content }].slice(-20);
-      consumeQuota(state, gate.tier);
-      saveAppState(state);
-      return { success: true, response: content, state };
-    } catch (error) {
-      const apiDetail = error?.response?.data?.error?.message || error?.response?.data?.message || error?.response?.data?.error;
-      const status = error?.response?.status;
-      let msg = apiDetail || error.message || "Unknown error";
-      if (status === 500 && /internal error/i.test(msg)) {
-        msg = "Gateway provider error. Please verify API Keys (Base URL / API Key / Model) in API Keys page.";
-      }
-      console.error("[chat] send-message failed:", JSON.stringify({
-        status,
-        msg,
-        url: error?.config?.url,
-        responseData: error?.response?.data,
-        stack: error.stack?.split("\n").slice(0, 3).join(" | ")
-      }));
-      return { success: false, error: `${status ? status + " " : ""}${msg}`, status };
-    }
-  });
-}
-
-// src/ipc/app-state-ipc.ts
-var import_electron3 = require("electron");
-
 // src/conversation.ts
 var path7 = __toESM(require("path"));
 var fs6 = __toESM(require("fs"));
@@ -17463,6 +17527,8 @@ function normalizeConversationText(role, text) {
   let t = String(text || "").trim();
   if (!t) return t;
   if (role === "user") {
+    t = t.replace(/^Conversation info \(untrusted metadata\):\s*```json[\s\S]*?```\s*/i, "").trim();
+    t = t.replace(/^\[[A-Za-z]{3}\s+\d{4}-\d{2}-\d{2}[^\]\n]*\]\s*/i, "").trim();
     const marker = "[Current message - respond to this]";
     const idx = t.lastIndexOf(marker);
     if (idx >= 0) t = t.slice(idx + marker.length).trim();
@@ -17471,6 +17537,25 @@ function normalizeConversationText(role, text) {
   t = t.replace(/^\s*\[Chat messages since your last reply - for context\][\s\S]*?\[Current message - respond to this\]\s*/i, "");
   t = t.replace(/^\s*User\s*:\s*/i, "").trim();
   return t;
+}
+function findLatestAssistantReplyAfterUserMessage(conversation, userText) {
+  const expectedUserText = normalizeConversationText("user", userText);
+  if (!expectedUserText) return "";
+  for (let i = conversation.length - 1; i >= 0; i -= 1) {
+    const message = conversation[i];
+    if (message.role !== "user") continue;
+    if (normalizeConversationText("user", message.content) !== expectedUserText) continue;
+    for (let j = conversation.length - 1; j > i; j -= 1) {
+      const reply = conversation[j];
+      if (reply.role !== "assistant") continue;
+      const text = normalizeConversationText("assistant", reply.content);
+      if (text && text !== "Response received.") {
+        return text;
+      }
+    }
+    break;
+  }
+  return "";
 }
 function loadAgentConversationFromOpenClaw(agentId = "main", limit = 80) {
   try {
@@ -17517,6 +17602,153 @@ function loadAgentConversationFromOpenClaw(agentId = "main", limit = 80) {
     return [];
   }
 }
+
+// src/ipc/chat-ipc.ts
+async function recoverGatewayReplyFromTranscript(agentId, userMessage) {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const conversation = loadAgentConversationFromOpenClaw(agentId, 120);
+    const recovered = findLatestAssistantReplyAfterUserMessage(conversation, userMessage);
+    if (recovered) {
+      return recovered;
+    }
+    await new Promise((resolve5) => setTimeout(resolve5, Math.min(1e3, 200 * (attempt + 1))));
+  }
+  return "";
+}
+function registerChatHandlers(getGatewayHandle, getMainWindow2) {
+  import_electron3.ipcMain.handle("copy-rich", (_event, payload) => {
+    const { text, imagePaths } = payload;
+    if (!imagePaths.length) {
+      import_electron3.clipboard.writeText(text);
+      return true;
+    }
+    let html = "";
+    const lines = text.split("\n");
+    for (const line of lines) {
+      const imgMatch = line.match(/\/([\w./\-]+\.(?:png|jpg|jpeg|gif|webp|svg))/i);
+      if (imgMatch) {
+        const fullPath = "/" + imgMatch[1];
+        const matched = imagePaths.find((p) => p === fullPath || fullPath.endsWith(p.split("/").pop()));
+        if (matched) {
+          try {
+            const buf = (0, import_fs.readFileSync)(matched);
+            const ext = matched.split(".").pop()?.toLowerCase() || "png";
+            const mime = ext === "jpg" ? "jpeg" : ext;
+            const b64 = buf.toString("base64");
+            html += `<p>${line.replace(/`/g, "")}</p><img src="data:image/${mime};base64,${b64}" style="max-width:600px"><br>`;
+            continue;
+          } catch {
+          }
+        }
+      }
+      html += `<p>${line}</p>`;
+    }
+    try {
+      const img = import_electron3.nativeImage.createFromPath(imagePaths[0]);
+      import_electron3.clipboard.write({
+        text,
+        html,
+        image: img
+      });
+    } catch {
+      import_electron3.clipboard.write({ text, html });
+    }
+    return true;
+  });
+  import_electron3.ipcMain.handle("pick-file", async () => {
+    const opts = { properties: ["openFile", "multiSelections"] };
+    const win = getMainWindow2();
+    const result = win ? await import_electron3.dialog.showOpenDialog(win, opts) : await import_electron3.dialog.showOpenDialog(opts);
+    if (result.canceled) return [];
+    return result.filePaths;
+  });
+  import_electron3.ipcMain.handle("send-message", async (_event, payload) => {
+    let message = "";
+    let agentId = "main";
+    let model = "";
+    try {
+      message = typeof payload === "string" ? payload : payload?.message;
+      agentId = payload?.agentId || "main";
+      model = payload?.model || "";
+      const state = loadAppState();
+      const gate = checkPremiumGate(state);
+      if (!gate.allow) {
+        return {
+          success: false,
+          premiumRequired: gate.premiumRequired ?? false,
+          loginRequired: gate.loginRequired ?? false,
+          reason: gate.reason,
+          error: gate.message,
+          state
+        };
+      }
+      state.conversations = state.conversations || {};
+      const conv = state.conversations[agentId] || [];
+      const messages = [...conv, { role: "user", content: message }].slice(-20);
+      const relay = state.relay;
+      const relayAuthToken = relay.accessToken || relay.authToken;
+      const hasRelay = !!(relay.baseUrl && relayAuthToken);
+      const deviceId = state.deviceId || "";
+      const gw = getGatewayHandle();
+      const gatewayBaseUrl = gw?.baseUrl || null;
+      const gatewayToken = gw?.token || "";
+      const freshJwt = await refreshJwtIfNeeded();
+      if (freshJwt && freshJwt !== relayAuthToken) {
+        await ensureGatewayProviderOrRelay();
+      }
+      let content;
+      if (gatewayBaseUrl) {
+        const win = getMainWindow2();
+        if (win) wsManager.setWindow(win);
+        try {
+          content = await wsManager.sendChatMessageStreaming(gatewayBaseUrl, gatewayToken, agentId, message);
+        } catch (streamError) {
+          const recovered = await recoverGatewayReplyFromTranscript(agentId, message);
+          if (recovered) {
+            content = recovered;
+          } else {
+            throw streamError;
+          }
+        }
+        if (!content || content === "Response received.") {
+          const recovered = await recoverGatewayReplyFromTranscript(agentId, message);
+          if (recovered) {
+            content = recovered;
+          }
+        }
+      } else if (hasRelay) {
+        content = await sendViaRelay(relay.baseUrl, relayAuthToken, messages, deviceId, model);
+      } else if (deviceId && (relay.baseUrl || RELAY_BASE_URL)) {
+        content = await sendViaRelay(relay.baseUrl || RELAY_BASE_URL, "", messages, deviceId, model);
+      } else {
+        throw new Error("No AI provider configured. Please login to use Cloud Relay.");
+      }
+      state.conversations[agentId] = [...messages, { role: "assistant", content }].slice(-20);
+      consumeQuota(state, gate.tier);
+      saveAppState(state);
+      return { success: true, response: content, state };
+    } catch (error) {
+      const apiDetail = error?.response?.data?.error?.message || error?.response?.data?.message || error?.response?.data?.error;
+      const status = error?.response?.status;
+      let msg = apiDetail || error.message || "Unknown error";
+      if (status === 500 && /internal error/i.test(msg)) {
+        msg = "Gateway provider error. Please verify API Keys (Base URL / API Key / Model) in API Keys page.";
+      }
+      console.error("[chat] send-message failed:", JSON.stringify({
+        status,
+        msg,
+        url: error?.config?.url,
+        responseData: error?.response?.data,
+        stack: error.stack?.split("\n").slice(0, 3).join(" | ")
+      }));
+      reportError("chat", msg, { status, model: payload?.model, agentId: payload?.agentId, stack: error.stack?.split("\n").slice(0, 3) });
+      return { success: false, error: `${status ? status + " " : ""}${msg}`, status };
+    }
+  });
+}
+
+// src/ipc/app-state-ipc.ts
+var import_electron4 = require("electron");
 
 // src/logger.ts
 var fs7 = __toESM(require("fs"));
@@ -17574,28 +17806,28 @@ function getLogFilePath() {
 
 // src/ipc/app-state-ipc.ts
 function registerAppStateHandlers() {
-  import_electron3.ipcMain.handle("get-app-state", async () => {
+  import_electron4.ipcMain.handle("get-app-state", async () => {
     const state = loadAppState();
     const gate = checkPremiumGate(state);
     return { ...state, gate };
   });
-  import_electron3.ipcMain.handle("get-agent-conversation", async (_event, agentId = "main") => {
+  import_electron4.ipcMain.handle("get-agent-conversation", async (_event, agentId = "main") => {
     const conversation = loadAgentConversationFromOpenClaw(agentId, 120);
     return { success: true, conversation };
   });
-  import_electron3.ipcMain.handle("get-app-version", () => {
-    return import_electron3.app.getVersion();
+  import_electron4.ipcMain.handle("get-app-version", () => {
+    return import_electron4.app.getVersion();
   });
-  import_electron3.ipcMain.handle("open-log-file", async () => {
+  import_electron4.ipcMain.handle("open-log-file", async () => {
     const logPath = getLogFilePath();
-    await import_electron3.shell.openPath(logPath);
+    await import_electron4.shell.openPath(logPath);
     return { success: true, path: logPath };
   });
 }
 
 // src/ipc/subscription-ipc.ts
-var import_electron4 = require("electron");
-var import_axios8 = __toESM(require("axios"));
+var import_electron5 = require("electron");
+var import_axios9 = __toESM(require("axios"));
 async function syncSubscriptionFromRelay(state) {
   const relay = state.relay;
   const baseUrl = (relay?.baseUrl || RELAY_BASE_URL).replace(/\/+$/, "");
@@ -17607,7 +17839,7 @@ async function syncSubscriptionFromRelay(state) {
     Authorization: `Bearer ${authToken}`
   };
   if (state.deviceId) headers["X-Device-Id"] = state.deviceId;
-  const response = await import_axios8.default.get(`${baseUrl}/v1/usage`, { headers, timeout: 15e3 });
+  const response = await import_axios9.default.get(`${baseUrl}/v1/usage`, { headers, timeout: 15e3 });
   const remotePlan = normalizePlan(response.data?.usage?.plan);
   const currentPlan = normalizePlan(state.plan || state.premiumTier);
   if (remotePlan !== currentPlan) {
@@ -17630,20 +17862,20 @@ async function getRelayRequestContext(state) {
   return { baseUrl, headers };
 }
 function registerSubscriptionHandlers() {
-  import_electron4.ipcMain.handle("set-user-api-key", async (_event, apiKey) => {
+  import_electron5.ipcMain.handle("set-user-api-key", async (_event, apiKey) => {
     const state = loadAppState();
     state.userApiKey = (apiKey || "").trim();
     state.userApiKeyQuotaUsed = 0;
     saveAppState(state);
     return { success: true, state };
   });
-  import_electron4.ipcMain.handle("set-premium-status", async (_event, isPremium) => {
+  import_electron5.ipcMain.handle("set-premium-status", async (_event, isPremium) => {
     const state = loadAppState();
     applyPlanToState(state, isPremium ? "premium" : "free");
     saveAppState(state);
     return { success: true, state };
   });
-  import_electron4.ipcMain.handle("set-premium-tier", async (_event, tier) => {
+  import_electron5.ipcMain.handle("set-premium-tier", async (_event, tier) => {
     const state = loadAppState();
     if (!["free", "premium", "pro"].includes(tier)) {
       return { success: false, error: "Invalid tier" };
@@ -17652,7 +17884,7 @@ function registerSubscriptionHandlers() {
     saveAppState(state);
     return { success: true, state };
   });
-  import_electron4.ipcMain.handle("get-subscription-status", async () => {
+  import_electron5.ipcMain.handle("get-subscription-status", async () => {
     const state = loadAppState();
     try {
       await syncSubscriptionFromRelay(state);
@@ -17663,14 +17895,14 @@ function registerSubscriptionHandlers() {
     const features = getPlanFeatures(plan);
     return { plan, planExpiresAt: state.planExpiresAt || null, features };
   });
-  import_electron4.ipcMain.handle("get-referral-summary", async () => {
+  import_electron5.ipcMain.handle("get-referral-summary", async () => {
     const state = loadAppState();
     const ctx = await getRelayRequestContext(state);
     if (!ctx) {
       return { success: false, error: "not_authenticated" };
     }
     try {
-      const response = await import_axios8.default.get(`${ctx.baseUrl}/v1/referral`, { headers: ctx.headers, timeout: 15e3 });
+      const response = await import_axios9.default.get(`${ctx.baseUrl}/v1/referral`, { headers: ctx.headers, timeout: 15e3 });
       return { success: true, referral: response.data?.referral || null };
     } catch (error) {
       return {
@@ -17679,14 +17911,14 @@ function registerSubscriptionHandlers() {
       };
     }
   });
-  import_electron4.ipcMain.handle("generate-referral-code", async () => {
+  import_electron5.ipcMain.handle("generate-referral-code", async () => {
     const state = loadAppState();
     const ctx = await getRelayRequestContext(state);
     if (!ctx) {
       return { success: false, error: "not_authenticated" };
     }
     try {
-      const response = await import_axios8.default.post(`${ctx.baseUrl}/v1/referral/generate`, {}, { headers: ctx.headers, timeout: 15e3 });
+      const response = await import_axios9.default.post(`${ctx.baseUrl}/v1/referral/generate`, {}, { headers: ctx.headers, timeout: 15e3 });
       return { success: true, referral: response.data?.referral || null };
     } catch (error) {
       return {
@@ -17695,7 +17927,7 @@ function registerSubscriptionHandlers() {
       };
     }
   });
-  import_electron4.ipcMain.handle("create-checkout-session", async (_event, data) => {
+  import_electron5.ipcMain.handle("create-checkout-session", async (_event, data) => {
     const { plan } = data || {};
     if (!plan || !["free", "premium", "pro"].includes(plan)) {
       return { success: false, error: "Invalid plan" };
@@ -17705,7 +17937,7 @@ function registerSubscriptionHandlers() {
     saveAppState(state);
     return { success: true, mock: true };
   });
-  import_electron4.ipcMain.handle("activate-subscription", async (_event, data) => {
+  import_electron5.ipcMain.handle("activate-subscription", async (_event, data) => {
     const { plan, expiresAt } = data || {};
     if (!plan || !["free", "premium", "pro"].includes(plan)) {
       return { success: false, error: "Invalid plan" };
@@ -17719,7 +17951,7 @@ function registerSubscriptionHandlers() {
 
 // src/ipc/agent-ipc.ts
 var crypto5 = __toESM(require("crypto"));
-var import_electron5 = require("electron");
+var import_electron6 = require("electron");
 
 // src/soul.ts
 var fs8 = __toESM(require("fs"));
@@ -17814,11 +18046,11 @@ function ensureMainAgentSoul() {
 
 // src/ipc/agent-ipc.ts
 function registerAgentHandlers() {
-  import_electron5.ipcMain.handle("list-agents", async () => {
+  import_electron6.ipcMain.handle("list-agents", async () => {
     const state = loadAppState();
     return state.agents;
   });
-  import_electron5.ipcMain.handle("add-agent", async (_event, data) => {
+  import_electron6.ipcMain.handle("add-agent", async (_event, data) => {
     const state = loadAppState();
     const plan = state.plan || state.premiumTier || "free";
     const features = getPlanFeatures(plan);
@@ -17837,7 +18069,7 @@ function registerAgentHandlers() {
     syncAgentModelRegistries();
     return newAgent;
   });
-  import_electron5.ipcMain.handle("rename-agent", async (_event, payload) => {
+  import_electron6.ipcMain.handle("rename-agent", async (_event, payload) => {
     const state = loadAppState();
     const agentId = payload.agentId || payload.id;
     if (agentId === "main") return { success: false, error: "Cannot rename main agent" };
@@ -17847,7 +18079,7 @@ function registerAgentHandlers() {
     saveAppState(state);
     return { success: true, agents: state.agents };
   });
-  import_electron5.ipcMain.handle("set-agent-channels", async (_event, payload) => {
+  import_electron6.ipcMain.handle("set-agent-channels", async (_event, payload) => {
     const state = loadAppState();
     const agent = state.agents.find((a) => a.id === payload.id);
     if (!agent) return { success: false, error: "Agent not found" };
@@ -17855,7 +18087,7 @@ function registerAgentHandlers() {
     saveAppState(state);
     return { success: true, agents: state.agents };
   });
-  import_electron5.ipcMain.handle("delete-agent", async (_event, agentId) => {
+  import_electron6.ipcMain.handle("delete-agent", async (_event, agentId) => {
     const state = loadAppState();
     if (agentId === "main") return { success: false, error: "Main agent cannot be deleted" };
     const index = state.agents.findIndex((a) => a.id === agentId);
@@ -17868,20 +18100,20 @@ function registerAgentHandlers() {
     unregisterAgentFromGatewayConfig(agentId);
     return { success: true, agents: state.agents, state };
   });
-  import_electron5.ipcMain.handle("set-active-agent", async (_event, id) => {
+  import_electron6.ipcMain.handle("set-active-agent", async (_event, id) => {
     const state = loadAppState();
     if (!state.agents.find((a) => a.id === id)) return { success: false, error: "Agent not found" };
     state.activeAgentId = id;
     saveAppState(state);
     return { success: true, state };
   });
-  import_electron5.ipcMain.handle("get-agent-soul", async (_event, agentId) => {
+  import_electron6.ipcMain.handle("get-agent-soul", async (_event, agentId) => {
     const state = loadAppState();
     const agent = state.agents.find((a) => a.id === agentId);
     if (!agent) return { success: false, error: "Agent not found" };
     return { success: true, soul: agent.soul || "" };
   });
-  import_electron5.ipcMain.handle("set-agent-soul", async (_event, payload) => {
+  import_electron6.ipcMain.handle("set-agent-soul", async (_event, payload) => {
     const state = loadAppState();
     const agent = state.agents.find((a) => a.id === payload.agentId);
     if (!agent) return { success: false, error: "Agent not found" };
@@ -17894,9 +18126,9 @@ function registerAgentHandlers() {
 
 // src/ipc/provider-ipc.ts
 var fs9 = __toESM(require("fs"));
-var import_electron6 = require("electron");
+var import_electron7 = require("electron");
 function registerProviderHandlers(getGatewayHandle, onStartGateway) {
-  import_electron6.ipcMain.handle("save-provider-config", async (_event, payload) => {
+  import_electron7.ipcMain.handle("save-provider-config", async (_event, payload) => {
     try {
       const { providerId = "default", baseUrl = "", apiKey = "", api = "", modelId = "default" } = payload || {};
       const cleanProviderId = String(providerId || "").trim();
@@ -17956,7 +18188,7 @@ function registerProviderHandlers(getGatewayHandle, onStartGateway) {
       return { success: false, error: e.message };
     }
   });
-  import_electron6.ipcMain.handle("get-provider-config", async () => {
+  import_electron7.ipcMain.handle("get-provider-config", async () => {
     try {
       const cfg = loadEmbeddedConfig();
       const providers = cfg?.models?.providers || {};
@@ -17984,7 +18216,7 @@ function registerProviderHandlers(getGatewayHandle, onStartGateway) {
       return { success: false, error: e.message };
     }
   });
-  import_electron6.ipcMain.handle("delete-provider-config", async (_event, providerId) => {
+  import_electron7.ipcMain.handle("delete-provider-config", async (_event, providerId) => {
     try {
       const cfg = loadEmbeddedConfig();
       cfg.models = cfg.models || {};
@@ -18003,7 +18235,7 @@ function registerProviderHandlers(getGatewayHandle, onStartGateway) {
       return { success: false, error: e.message };
     }
   });
-  import_electron6.ipcMain.handle("reset-model-config", async () => {
+  import_electron7.ipcMain.handle("reset-model-config", async () => {
     try {
       const cfg = loadEmbeddedConfig();
       cfg.models = { mode: "merge", providers: {} };
@@ -18019,7 +18251,7 @@ function registerProviderHandlers(getGatewayHandle, onStartGateway) {
       return { success: false, error: e.message };
     }
   });
-  import_electron6.ipcMain.handle("save-config", async (_event, config) => {
+  import_electron7.ipcMain.handle("save-config", async (_event, config) => {
     try {
       if (!fs9.existsSync(OPENCLAW_CONFIG_DIR)) {
         fs9.mkdirSync(OPENCLAW_CONFIG_DIR, { recursive: true });
@@ -18051,10 +18283,10 @@ function registerProviderHandlers(getGatewayHandle, onStartGateway) {
 }
 
 // src/ipc/relay-ipc.ts
-var import_electron7 = require("electron");
-var import_axios9 = __toESM(require("axios"));
+var import_electron8 = require("electron");
+var import_axios10 = __toESM(require("axios"));
 function registerRelayHandlers() {
-  import_electron7.ipcMain.handle("save-relay-config", async (_event, config) => {
+  import_electron8.ipcMain.handle("save-relay-config", async (_event, config) => {
     try {
       const { baseUrl = "", authToken = "" } = config || {};
       const state = loadAppState();
@@ -18065,7 +18297,7 @@ function registerRelayHandlers() {
       return { success: false, error: e.message };
     }
   });
-  import_electron7.ipcMain.handle("get-relay-config", async () => {
+  import_electron8.ipcMain.handle("get-relay-config", async () => {
     try {
       const state = loadAppState();
       return { success: true, relay: state.relay };
@@ -18074,7 +18306,7 @@ function registerRelayHandlers() {
       return { success: false, error: e.message, relay: defaultRelay };
     }
   });
-  import_electron7.ipcMain.handle("test-relay-connection", async () => {
+  import_electron8.ipcMain.handle("test-relay-connection", async () => {
     try {
       const state = loadAppState();
       const baseUrl = state.relay?.baseUrl || RELAY_BASE_URL;
@@ -18096,19 +18328,19 @@ function registerRelayHandlers() {
       return { success: false, error: detail };
     }
   });
-  import_electron7.ipcMain.handle("open-login", async () => {
+  import_electron8.ipcMain.handle("open-login", async () => {
     try {
       const state = loadAppState();
       const deviceId = state.deviceId || "";
       const homepageUrl = "https://myopenclaws.app";
       const loginUrl = `${homepageUrl}/login?deviceId=${deviceId}&redirect=myopenclaw`;
-      await import_electron7.shell.openExternal(loginUrl);
+      await import_electron8.shell.openExternal(loginUrl);
       return { success: true };
     } catch (err) {
       return { success: false, error: err.message };
     }
   });
-  import_electron7.ipcMain.handle("save-relay-auth", async (_event, { accessToken, refreshToken }) => {
+  import_electron8.ipcMain.handle("save-relay-auth", async (_event, { accessToken, refreshToken }) => {
     try {
       const state = loadAppState();
       state.relay.accessToken = accessToken || "";
@@ -18120,7 +18352,7 @@ function registerRelayHandlers() {
       return { success: false, error: e.message };
     }
   });
-  import_electron7.ipcMain.handle("get-models", async () => {
+  import_electron8.ipcMain.handle("get-models", async () => {
     try {
       const state = loadAppState();
       const baseUrl = (state.relay?.baseUrl || RELAY_BASE_URL).replace(/\/+$/, "");
@@ -18129,7 +18361,7 @@ function registerRelayHandlers() {
       if (jwt) headers["Authorization"] = `Bearer ${jwt}`;
       if (state.deviceId) headers["X-Device-Id"] = state.deviceId;
       const requestUrl = `${baseUrl}/v1/models`;
-      const res = await import_axios9.default.get(requestUrl, { headers, timeout: 1e4 });
+      const res = await import_axios10.default.get(requestUrl, { headers, timeout: 1e4 });
       const models = res.data?.data || [];
       return { success: true, models };
     } catch (e) {
@@ -18138,7 +18370,7 @@ function registerRelayHandlers() {
       return { success: false, error: msg, models: [] };
     }
   });
-  import_electron7.ipcMain.handle("logout", async () => {
+  import_electron8.ipcMain.handle("logout", async () => {
     try {
       const state = loadAppState();
       state.relay.accessToken = "";
@@ -18154,14 +18386,14 @@ function registerRelayHandlers() {
 }
 
 // src/ipc/device-ipc.ts
-var import_electron8 = require("electron");
-var import_axios10 = __toESM(require("axios"));
+var import_electron9 = require("electron");
+var import_axios11 = __toESM(require("axios"));
 function registerDeviceHandlers() {
-  import_electron8.ipcMain.handle("get-device-id", async () => {
+  import_electron9.ipcMain.handle("get-device-id", async () => {
     const state = loadAppState();
     return { success: true, deviceId: state.deviceId || "" };
   });
-  import_electron8.ipcMain.handle("check-quota", async () => {
+  import_electron9.ipcMain.handle("check-quota", async () => {
     const state = loadAppState();
     const relay = state.relay;
     const deviceId = state.deviceId;
@@ -18175,7 +18407,7 @@ function registerDeviceHandlers() {
       if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
       if (deviceId) headers["X-Device-Id"] = deviceId;
       const requestUrl = `${baseUrl}/v1/usage`;
-      const response = await import_axios10.default.get(requestUrl, { headers, timeout: 2e4 });
+      const response = await import_axios11.default.get(requestUrl, { headers, timeout: 2e4 });
       return response.data;
     } catch (err) {
       await logDnsDiagnostics("device-quota-check", err, `${baseUrl}/v1/usage`);
@@ -18187,8 +18419,8 @@ function registerDeviceHandlers() {
 // src/ipc/channel-ipc.ts
 var fs10 = __toESM(require("fs"));
 var path10 = __toESM(require("path"));
-var import_electron9 = require("electron");
-var import_axios11 = __toESM(require("axios"));
+var import_electron10 = require("electron");
+var import_axios12 = __toESM(require("axios"));
 function maskToken(token) {
   if (!token || token.length <= 12) return "****";
   const prefix = token.slice(0, 10);
@@ -18218,7 +18450,7 @@ async function fetchTelegramBotName(botToken) {
   const cached = botNameCache.get(cacheKey);
   if (cached !== void 0) return cached;
   try {
-    const res = await import_axios11.default.get(`https://api.telegram.org/bot${botToken}/getMe`, { timeout: 5e3 });
+    const res = await import_axios12.default.get(`https://api.telegram.org/bot${botToken}/getMe`, { timeout: 5e3 });
     const name = res.data?.result?.username || "";
     botNameCache.set(cacheKey, name);
     return name;
@@ -18234,7 +18466,7 @@ async function fetchTelegramTargetLabel(botToken, targetId) {
   const cached = telegramTargetLabelCache.get(cacheKey);
   if (cached !== void 0) return cached;
   try {
-    const res = await import_axios11.default.get(`https://api.telegram.org/bot${botToken}/getChat`, {
+    const res = await import_axios12.default.get(`https://api.telegram.org/bot${botToken}/getChat`, {
       timeout: 5e3,
       params: { chat_id: normalizedId }
     });
@@ -18267,7 +18499,7 @@ function syncChannelsToGatewayConfig(channels) {
   }
 }
 function registerChannelHandlers() {
-  import_electron9.ipcMain.handle("save-agent-channel-config", async (_event, payload) => {
+  import_electron10.ipcMain.handle("save-agent-channel-config", async (_event, payload) => {
     try {
       const { agentId, channelType, configJson } = payload || {};
       const parsed = configJson ? JSON.parse(configJson) : {};
@@ -18285,7 +18517,7 @@ function registerChannelHandlers() {
       return { success: false, error: e.message };
     }
   });
-  import_electron9.ipcMain.handle("get-channel-status", async () => {
+  import_electron10.ipcMain.handle("get-channel-status", async () => {
     try {
       const cfg = loadEmbeddedConfig();
       const channels = {};
@@ -18349,10 +18581,10 @@ function registerChannelHandlers() {
 // src/ipc/skills-ipc.ts
 var crypto6 = __toESM(require("crypto"));
 var fs11 = __toESM(require("fs"));
-var os4 = __toESM(require("os"));
+var os5 = __toESM(require("os"));
 var path11 = __toESM(require("path"));
 var import_child_process4 = require("child_process");
-var import_electron10 = require("electron");
+var import_electron11 = require("electron");
 function findBundledClawHubCliScript() {
   try {
     const packageJsonPath = require.resolve("clawhub/package.json");
@@ -18374,7 +18606,7 @@ function findClawHubCli() {
     if (result) candidates.push(result.split(/\r?\n/)[0]);
   } catch {
   }
-  const home = os4.homedir();
+  const home = os5.homedir();
   const nvmDir = path11.join(home, ".nvm", "versions", "node");
   try {
     if (fs11.existsSync(nvmDir)) {
@@ -18420,7 +18652,7 @@ function findNpmCli() {
     if (result) candidates.push(result.split(/\r?\n/)[0]);
   } catch {
   }
-  const home = os4.homedir();
+  const home = os5.homedir();
   const nvmDir = path11.join(home, ".nvm", "versions", "node");
   try {
     if (fs11.existsSync(nvmDir)) {
@@ -18615,7 +18847,7 @@ function formatMarketplaceError(error) {
   return message;
 }
 function registerSkillsHandlers(getGatewayHandle) {
-  import_electron10.ipcMain.handle("skills-list", async () => {
+  import_electron11.ipcMain.handle("skills-list", async () => {
     try {
       const gw = getGatewayHandle();
       if (!gw?.baseUrl) return { success: false, error: "Gateway not running", skills: [] };
@@ -18638,7 +18870,7 @@ function registerSkillsHandlers(getGatewayHandle) {
       return { success: false, error: e.message, skills: [] };
     }
   });
-  import_electron10.ipcMain.handle("skills-toggle", async (_event, payload) => {
+  import_electron11.ipcMain.handle("skills-toggle", async (_event, payload) => {
     try {
       const gw = getGatewayHandle();
       if (!gw?.baseUrl) return { success: false, error: "Gateway not running" };
@@ -18650,7 +18882,7 @@ function registerSkillsHandlers(getGatewayHandle) {
       return { success: false, error: e.message };
     }
   });
-  import_electron10.ipcMain.handle("skills-install", async (_event, payload) => {
+  import_electron11.ipcMain.handle("skills-install", async (_event, payload) => {
     try {
       const gw = getGatewayHandle();
       if (!gw?.baseUrl) return { success: false, error: "Gateway not running" };
@@ -18662,7 +18894,7 @@ function registerSkillsHandlers(getGatewayHandle) {
       return { success: false, error: e.message };
     }
   });
-  import_electron10.ipcMain.handle("skills-install-deps", async (_event, payload) => {
+  import_electron11.ipcMain.handle("skills-install-deps", async (_event, payload) => {
     const { bins } = payload || {};
     if (!Array.isArray(bins) || bins.length === 0) {
       return { success: true, installed: [] };
@@ -18689,7 +18921,7 @@ function registerSkillsHandlers(getGatewayHandle) {
     return { success: allOk, results };
   });
   const CLAWHUB_API = "https://clawhub.ai/api/v1";
-  import_electron10.ipcMain.handle("marketplace-list", async (_event, payload) => {
+  import_electron11.ipcMain.handle("marketplace-list", async (_event, payload) => {
     try {
       const { sort, cursor, limit } = payload || {};
       const params = new URLSearchParams();
@@ -18704,7 +18936,7 @@ function registerSkillsHandlers(getGatewayHandle) {
       return { success: false, error: formatMarketplaceError(e) };
     }
   });
-  import_electron10.ipcMain.handle("marketplace-search", async (_event, payload) => {
+  import_electron11.ipcMain.handle("marketplace-search", async (_event, payload) => {
     try {
       const { query, limit } = payload || {};
       if (!query) return { success: false, error: "query is required" };
@@ -18717,7 +18949,7 @@ function registerSkillsHandlers(getGatewayHandle) {
       return { success: false, error: formatMarketplaceError(e) };
     }
   });
-  import_electron10.ipcMain.handle("marketplace-detail", async (_event, payload) => {
+  import_electron11.ipcMain.handle("marketplace-detail", async (_event, payload) => {
     try {
       const { slug } = payload || {};
       if (!slug) return { success: false, error: "slug is required" };
@@ -18729,7 +18961,7 @@ function registerSkillsHandlers(getGatewayHandle) {
       return { success: false, error: formatMarketplaceError(e) };
     }
   });
-  import_electron10.ipcMain.handle("marketplace-install", async (_event, payload) => {
+  import_electron11.ipcMain.handle("marketplace-install", async (_event, payload) => {
     try {
       const { slug } = payload || {};
       if (!slug || !/^[a-zA-Z0-9_-]+$/.test(slug)) return { success: false, error: "Invalid slug" };
@@ -18757,7 +18989,7 @@ function registerSkillsHandlers(getGatewayHandle) {
       return { success: false, error: formatMarketplaceError(e) };
     }
   });
-  import_electron10.ipcMain.handle("marketplace-uninstall", async (_event, payload) => {
+  import_electron11.ipcMain.handle("marketplace-uninstall", async (_event, payload) => {
     try {
       const { slug } = payload || {};
       if (!slug || !/^[a-zA-Z0-9_-]+$/.test(slug)) return { success: false, error: "Invalid slug" };
@@ -18798,7 +19030,7 @@ function registerSkillsHandlers(getGatewayHandle) {
       return { success: false, error: formatMarketplaceError(e) };
     }
   });
-  import_electron10.ipcMain.handle("skills-configure", async (_event, payload) => {
+  import_electron11.ipcMain.handle("skills-configure", async (_event, payload) => {
     try {
       const gw = getGatewayHandle();
       if (!gw?.baseUrl) return { success: false, error: "Gateway not running" };
@@ -18819,8 +19051,8 @@ function registerSkillsHandlers(getGatewayHandle) {
 var crypto7 = __toESM(require("crypto"));
 var fs12 = __toESM(require("fs"));
 var path12 = __toESM(require("path"));
-var import_axios12 = __toESM(require("axios"));
-var import_electron11 = require("electron");
+var import_axios13 = __toESM(require("axios"));
+var import_electron12 = require("electron");
 function wsRpc(port, token, method, params = {}) {
   return new Promise((resolve5, reject) => {
     const id = crypto7.randomUUID();
@@ -19052,7 +19284,7 @@ async function requestCronConfig(port, token, messages, options = {}) {
     temperature: 0
   };
   if (options.toolChoice) body.tool_choice = options.toolChoice;
-  const response = await import_axios12.default.post(`http://127.0.0.1:${port}/v1/chat/completions`, body, {
+  const response = await import_axios13.default.post(`http://127.0.0.1:${port}/v1/chat/completions`, body, {
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
@@ -19088,7 +19320,7 @@ function registerCronHandlers(getGatewayHandle) {
     if (!gw) throw new Error("Gateway is not running");
     return { port: gw.port, token: gw.token };
   }
-  import_electron11.ipcMain.handle("cron-list", async () => {
+  import_electron12.ipcMain.handle("cron-list", async () => {
     try {
       const { port, token } = requireGateway();
       const payload = await wsRpc(port, token, "cron.list", {});
@@ -19097,7 +19329,7 @@ function registerCronHandlers(getGatewayHandle) {
       return { success: false, error: err.message };
     }
   });
-  import_electron11.ipcMain.handle("cron-add", async (_event, params) => {
+  import_electron12.ipcMain.handle("cron-add", async (_event, params) => {
     try {
       const { port, token } = requireGateway();
       const hintText = String(params?.payload?.message || "");
@@ -19108,7 +19340,7 @@ function registerCronHandlers(getGatewayHandle) {
       return { success: false, error: err.message };
     }
   });
-  import_electron11.ipcMain.handle("cron-update", async (_event, params) => {
+  import_electron12.ipcMain.handle("cron-update", async (_event, params) => {
     try {
       const { port, token } = requireGateway();
       const patch = params?.patch || {};
@@ -19126,7 +19358,7 @@ function registerCronHandlers(getGatewayHandle) {
       return { success: false, error: err.message };
     }
   });
-  import_electron11.ipcMain.handle("cron-remove", async (_event, params) => {
+  import_electron12.ipcMain.handle("cron-remove", async (_event, params) => {
     try {
       const { port, token } = requireGateway();
       const payload = await wsRpc(port, token, "cron.remove", params);
@@ -19135,7 +19367,7 @@ function registerCronHandlers(getGatewayHandle) {
       return { success: false, error: err.message };
     }
   });
-  import_electron11.ipcMain.handle("cron-run", async (_event, params) => {
+  import_electron12.ipcMain.handle("cron-run", async (_event, params) => {
     try {
       const { port, token } = requireGateway();
       const payload = await wsRpc(port, token, "cron.run", params);
@@ -19144,7 +19376,7 @@ function registerCronHandlers(getGatewayHandle) {
       return { success: false, error: err.message };
     }
   });
-  import_electron11.ipcMain.handle("cron-runs", async (_event, params) => {
+  import_electron12.ipcMain.handle("cron-runs", async (_event, params) => {
     try {
       const { port, token } = requireGateway();
       const payload = await wsRpc(port, token, "cron.runs", params);
@@ -19153,7 +19385,7 @@ function registerCronHandlers(getGatewayHandle) {
       return { success: false, error: err.message };
     }
   });
-  import_electron11.ipcMain.handle("cron-generate", async (_event, params) => {
+  import_electron12.ipcMain.handle("cron-generate", async (_event, params) => {
     try {
       const { port, token } = requireGateway();
       const beforeJobs = await listCronJobs(port, token);
@@ -19270,7 +19502,7 @@ function registerCronHandlers(getGatewayHandle) {
 // src/ipc/pairing-ipc.ts
 var fs13 = __toESM(require("fs"));
 var path13 = __toESM(require("path"));
-var import_electron12 = require("electron");
+var import_electron13 = require("electron");
 var CREDENTIALS_DIR = path13.join(OPENCLAW_CONFIG_DIR, "credentials");
 function getPairingFilePath(channel) {
   return path13.join(CREDENTIALS_DIR, `${channel}-pairing.json`);
@@ -19311,7 +19543,7 @@ function writeAllowFromFile(channel, accountId, data) {
   fs13.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
 }
 function registerPairingHandlers() {
-  import_electron12.ipcMain.handle("pairing-list", async (_event, payload) => {
+  import_electron13.ipcMain.handle("pairing-list", async (_event, payload) => {
     try {
       const { channel } = payload || {};
       if (!channel) return { success: false, error: "Missing channel" };
@@ -19321,7 +19553,7 @@ function registerPairingHandlers() {
       return { success: false, error: e.message };
     }
   });
-  import_electron12.ipcMain.handle("pairing-list-all", async () => {
+  import_electron13.ipcMain.handle("pairing-list-all", async () => {
     try {
       if (!fs13.existsSync(CREDENTIALS_DIR)) {
         return { success: true, channels: {} };
@@ -19342,7 +19574,7 @@ function registerPairingHandlers() {
       return { success: false, error: e.message };
     }
   });
-  import_electron12.ipcMain.handle("pairing-approve", async (_event, payload) => {
+  import_electron13.ipcMain.handle("pairing-approve", async (_event, payload) => {
     try {
       const { channel, code } = payload || {};
       if (!channel || !code) return { success: false, error: "Missing channel or code" };
@@ -19368,7 +19600,7 @@ function registerPairingHandlers() {
       return { success: false, error: e.message };
     }
   });
-  import_electron12.ipcMain.handle("pairing-dismiss", async (_event, payload) => {
+  import_electron13.ipcMain.handle("pairing-dismiss", async (_event, payload) => {
     try {
       const { channel, code } = payload || {};
       if (!channel || !code) return { success: false, error: "Missing channel or code" };
@@ -19390,7 +19622,7 @@ function registerPairingHandlers() {
 }
 
 // src/updater.ts
-var import_electron13 = require("electron");
+var import_electron14 = require("electron");
 var import_electron_updater = __toESM(require_main2());
 var initialized = false;
 var activeCheckPromise = null;
@@ -19408,7 +19640,7 @@ function getDialogWindow() {
 async function showInfo(title, message) {
   const window2 = getDialogWindow();
   if (window2) {
-    await import_electron13.dialog.showMessageBox(window2, {
+    await import_electron14.dialog.showMessageBox(window2, {
       type: "info",
       title,
       message,
@@ -19416,7 +19648,7 @@ async function showInfo(title, message) {
     });
     return;
   }
-  await import_electron13.dialog.showMessageBox({
+  await import_electron14.dialog.showMessageBox({
     type: "info",
     title,
     message,
@@ -19426,7 +19658,7 @@ async function showInfo(title, message) {
 async function showError(title, message) {
   const window2 = getDialogWindow();
   if (window2) {
-    await import_electron13.dialog.showMessageBox(window2, {
+    await import_electron14.dialog.showMessageBox(window2, {
       type: "error",
       title,
       message,
@@ -19434,7 +19666,7 @@ async function showError(title, message) {
     });
     return;
   }
-  await import_electron13.dialog.showMessageBox({
+  await import_electron14.dialog.showMessageBox({
     type: "error",
     title,
     message,
@@ -19452,7 +19684,7 @@ async function promptToInstall(version) {
     cancelId: 1
   };
   const window2 = getDialogWindow();
-  const result = window2 ? await import_electron13.dialog.showMessageBox(window2, options) : await import_electron13.dialog.showMessageBox(options);
+  const result = window2 ? await import_electron14.dialog.showMessageBox(window2, options) : await import_electron14.dialog.showMessageBox(options);
   if (result.response !== 0) return;
   if (!beforeInstallHook) {
     throw new Error("Auto updater install hook is not initialized");
@@ -19471,6 +19703,7 @@ function initializeAutoUpdater(options) {
   getMainWindowHook = options.getMainWindow;
   import_electron_updater.autoUpdater.autoDownload = true;
   import_electron_updater.autoUpdater.autoInstallOnAppQuit = false;
+  import_electron_updater.autoUpdater.allowPrerelease = options.updateChannel === "beta";
   import_electron_updater.autoUpdater.logger = console;
   import_electron_updater.autoUpdater.on("checking-for-update", () => {
     console.log("[updater] Checking for updates...");
@@ -19490,7 +19723,7 @@ function initializeAutoUpdater(options) {
     if (manualCheckInProgress) {
       void showInfo(
         "You're Up to Date",
-        `You're already running the latest version (${import_electron13.app.getVersion()}).`
+        `You're already running the latest version (${import_electron14.app.getVersion()}).`
       );
     }
   });
@@ -19525,7 +19758,7 @@ async function checkForAppUpdates(options = {}) {
     }
     return;
   }
-  if (!import_electron13.app.isPackaged) {
+  if (!import_electron14.app.isPackaged) {
     if (manual) {
       await showInfo("Updates Unavailable", "Update checks are only available in packaged builds.");
     }
@@ -19546,8 +19779,12 @@ async function checkForAppUpdates(options = {}) {
   });
   return activeCheckPromise;
 }
+function setUpdateChannel(channel) {
+  import_electron_updater.autoUpdater.allowPrerelease = channel === "beta";
+  console.log(`[updater] Update channel set to: ${channel}`);
+}
 function scheduleAutoUpdateCheck(delayMs = 1e4) {
-  if (!initialized || !import_electron13.app.isPackaged || process.env.MYOPENCLAW_E2E === "1") return;
+  if (!initialized || !import_electron14.app.isPackaged || process.env.MYOPENCLAW_E2E === "1") return;
   const timer = setTimeout(() => {
     void checkForAppUpdates();
   }, delayMs);
@@ -19578,7 +19815,10 @@ async function prepareAppQuit(reason = "user-request") {
   destroyTray();
   quitCleanupPromise = (async () => {
     try {
-      await stopGatewayGracefully(gatewayHandle?.process ?? null);
+      await Promise.all([
+        stopGatewayGracefully(gatewayHandle?.process ?? null),
+        stopLogReporter()
+      ]);
     } catch (err) {
       console.warn("[app] Graceful gateway shutdown failed, forcing stop:", err?.message || err);
       killGateway();
@@ -19592,14 +19832,14 @@ async function prepareAppQuit(reason = "user-request") {
   await quitCleanupPromise;
 }
 function resolveAssetPath(...segments) {
-  return path14.join(import_electron14.app.getAppPath(), ...segments);
+  return path14.join(import_electron15.app.getAppPath(), ...segments);
 }
 function buildTrayIcon() {
   const iconPath = resolveAssetPath("build", "assets", "logo-openclaw.png");
   let icon;
   try {
     const buf = fs14.readFileSync(iconPath);
-    icon = import_electron14.nativeImage.createFromBuffer(buf);
+    icon = import_electron15.nativeImage.createFromBuffer(buf);
   } catch {
     console.warn("[tray] Failed to load tray icon:", iconPath);
     return null;
@@ -19632,24 +19872,50 @@ function getTrayStatusLabel() {
 }
 function refreshTrayMenu() {
   if (!tray) return;
+  const currentChannel = loadAppState().updateChannel || "stable";
   tray.setToolTip(`MyOpenClaw
 ${getTrayStatusLabel().replace("Status: ", "")}`);
-  tray.setContextMenu(import_electron14.Menu.buildFromTemplate([
+  tray.setContextMenu(import_electron15.Menu.buildFromTemplate([
     { label: getTrayStatusLabel(), enabled: false },
     { type: "separator" },
     { label: "Check for Updates...", click: () => {
       void checkForAppUpdates({ manual: true });
     } },
+    {
+      label: "Update Channel",
+      submenu: [
+        {
+          label: "Stable",
+          type: "radio",
+          checked: currentChannel === "stable",
+          click: () => switchUpdateChannel("stable")
+        },
+        {
+          label: "Beta",
+          type: "radio",
+          checked: currentChannel === "beta",
+          click: () => switchUpdateChannel("beta")
+        }
+      ]
+    },
     { label: "Open MyOpenClaw", click: () => showMainWindow() },
-    { label: "Quit MyOpenClaw", click: () => import_electron14.app.quit() }
+    { label: "Quit MyOpenClaw", click: () => import_electron15.app.quit() }
   ]));
+}
+function switchUpdateChannel(channel) {
+  const state = loadAppState();
+  state.updateChannel = channel;
+  saveAppState(state);
+  setUpdateChannel(channel);
+  refreshTrayMenu();
+  void checkForAppUpdates({ manual: true });
 }
 function ensureTray() {
   if (process.platform !== "win32" && process.platform !== "darwin") return null;
   if (tray) return tray;
   const icon = buildTrayIcon();
   if (!icon) return null;
-  tray = new import_electron14.Tray(icon);
+  tray = new import_electron15.Tray(icon);
   refreshTrayMenu();
   if (process.platform === "win32") {
     tray.on("click", () => showMainWindow());
@@ -19741,16 +20007,17 @@ function registerAllIpcHandlers() {
   registerSkillsHandlers(getGW);
   registerCronHandlers(getGW);
   registerPairingHandlers();
+  startLogReporter();
 }
 function createWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     showMainWindow();
     return;
   }
-  import_electron14.Menu.setApplicationMenu(null);
+  import_electron15.Menu.setApplicationMenu(null);
   ensureTray();
   const useFastReopen = process.platform === "darwin" && hasLiveGatewayProcess();
-  mainWindow = new import_electron14.BrowserWindow({
+  mainWindow = new import_electron15.BrowserWindow({
     width: 1200,
     height: 800,
     show: !useFastReopen,
@@ -19773,7 +20040,7 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     const gw = gatewayHandle;
     const target = /^https?:\/\/127\.0\.0\.1:\d+\/?$/i.test(String(url || "")) ? buildDashboardUrl(url, gw?.baseUrl) : url;
-    import_electron14.shell.openExternal(target);
+    import_electron15.shell.openExternal(target);
     return { action: "deny" };
   });
   mainWindow.webContents.on("before-input-event", (_e, input) => {
@@ -19885,14 +20152,14 @@ function createWindow() {
 initFileLogger();
 var isVM = (() => {
   try {
-    const cpuModel = os5.cpus()?.[0]?.model || "";
+    const cpuModel = os6.cpus()?.[0]?.model || "";
     return /virtual|Apple Virtual|QEMU|KVM|VirtualBox|VMware/i.test(cpuModel);
   } catch {
     return false;
   }
 })();
 if (isVM) {
-  import_electron15.app.commandLine.appendSwitch("disable-gpu");
+  import_electron16.app.commandLine.appendSwitch("disable-gpu");
   console.log("[gpu] Disabled GPU acceleration (VM detected)");
 }
 process.stdout?.on("error", () => {
@@ -19901,16 +20168,16 @@ process.stderr?.on("error", () => {
 });
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
-    import_electron15.app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path15.resolve(process.argv[1])]);
+    import_electron16.app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path15.resolve(process.argv[1])]);
   }
 } else {
-  import_electron15.app.setAsDefaultProtocolClient(PROTOCOL);
+  import_electron16.app.setAsDefaultProtocolClient(PROTOCOL);
 }
-import_electron15.app.on("open-url", (event, url) => {
+import_electron16.app.on("open-url", (event, url) => {
   event.preventDefault();
   handleDeepLink(url, getMainWindow);
 });
-var gotTheLock = import_electron15.app.requestSingleInstanceLock();
+var gotTheLock = import_electron16.app.requestSingleInstanceLock();
 var exitRequested = false;
 function requestAppExit(reason) {
   if (exitRequested) return;
@@ -19919,22 +20186,22 @@ function requestAppExit(reason) {
   void prepareAppQuit(reason).catch((err) => {
     console.error("[app] Quit cleanup failed:", err?.message || err);
   }).finally(() => {
-    import_electron15.app.exit(0);
+    import_electron16.app.exit(0);
   });
 }
 if (!gotTheLock) {
-  import_electron15.app.quit();
+  import_electron16.app.quit();
 } else {
-  import_electron15.app.on("second-instance", (_event, argv) => {
+  import_electron16.app.on("second-instance", (_event, argv) => {
     const deepLinkUrl = argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
     if (deepLinkUrl) handleDeepLink(deepLinkUrl, getMainWindow);
     showMainWindow();
   });
   registerAllIpcHandlers();
-  import_electron15.app.whenReady().then(() => {
+  import_electron16.app.whenReady().then(() => {
     console.log("[app] ready");
     const deviceId = ensureDeviceId();
-    registerDevice(deviceId, import_electron15.app.getVersion());
+    registerDevice(deviceId, import_electron16.app.getVersion());
     const state = loadAppState();
     if (!state.relay.baseUrl) {
       state.relay.baseUrl = RELAY_BASE_URL;
@@ -19945,23 +20212,24 @@ if (!gotTheLock) {
     createWindow();
     initializeAutoUpdater({
       getMainWindow,
-      beforeInstall: () => prepareAppQuit("update-install")
+      beforeInstall: () => prepareAppQuit("update-install"),
+      updateChannel: state.updateChannel || "stable"
     });
     scheduleAutoUpdateCheck();
     const launchUrl = process.argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
     if (launchUrl) handleDeepLink(launchUrl, getMainWindow);
   });
-  import_electron15.app.on("window-all-closed", () => {
+  import_electron16.app.on("window-all-closed", () => {
     if (process.platform === "linux") {
       requestAppExit("window-all-closed");
     }
   });
-  import_electron15.app.on("before-quit", (event) => {
+  import_electron16.app.on("before-quit", (event) => {
     if (exitRequested || isQuitInProgress()) return;
     event.preventDefault();
     requestAppExit("before-quit");
   });
-  import_electron15.app.on("activate", () => {
+  import_electron16.app.on("activate", () => {
     showMainWindow();
   });
 }
