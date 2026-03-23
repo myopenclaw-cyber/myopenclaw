@@ -4,6 +4,7 @@ import * as os from 'os';
 export const MYOPENCLAW_DATA_DIR = path.join(os.homedir(), '.myopenclaw');
 export const OPENCLAW_CONFIG_DIR = path.join(MYOPENCLAW_DATA_DIR, 'openclaw');
 export const CONFIG_FILE = path.join(OPENCLAW_CONFIG_DIR, 'openclaw.json');
+export const MANAGED_TOOLS_DIR = path.join(MYOPENCLAW_DATA_DIR, 'tools');
 export const DEFAULT_PORT = 18800;
 export const EMBEDDED_CONFIG_FILE = path.join(MYOPENCLAW_DATA_DIR, 'embedded-config.json');
 export const APP_STATE_FILE = path.join(MYOPENCLAW_DATA_DIR, 'app-state.json');

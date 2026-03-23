@@ -5,10 +5,10 @@ import * as path from 'path';
 import { execFile, execFileSync } from 'child_process';
 import { ipcMain } from 'electron';
 import { readGatewayTokenFromConfig } from '../config-store';
-import { CONFIG_FILE, OPENCLAW_CONFIG_DIR, DOWNLOADED_RUNTIME_DIR, GATEWAY_WORKSPACE_DIR } from '../constants';
+import { CONFIG_FILE, MANAGED_TOOLS_DIR, OPENCLAW_CONFIG_DIR, DOWNLOADED_RUNTIME_DIR, GATEWAY_WORKSPACE_DIR } from '../constants';
 import type { GatewayHandle } from '../types';
 import { buildConnectParams, handleConnectResponse } from '../device-identity';
-import { buildNodeEnhancedPath } from '../runtime';
+import { buildNodeEnhancedPath, downloadFile } from '../runtime';
 
 function findBundledClawHubCliScript(): string | null {
   try {
@@ -36,7 +36,15 @@ function findClawHubCli(): string | null {
 
   try {
     const cmd = process.platform === 'win32' ? 'where' : 'which';
-    const result = execFileSync(cmd, ['clawhub'], { encoding: 'utf8', timeout: 3000, windowsHide: true }).trim();
+    const result = execFileSync(cmd, ['clawhub'], {
+      encoding: 'utf8',
+      timeout: 3000,
+      windowsHide: true,
+      env: {
+        ...process.env,
+        PATH: buildNodeEnhancedPath(),
+      },
+    }).trim();
     if (result) candidates.push(result.split(/\r?\n/)[0]);
   } catch { /* not in PATH */ }
 
@@ -89,12 +97,42 @@ function findClawHubCli(): string | null {
   return null;
 }
 
+function hasCommandOnHost(command: string): boolean {
+  try {
+    if (process.platform === 'win32') {
+      if (command === 'go' && fs.existsSync(getManagedGoCliPath())) return true;
+      if (command === 'uv' && fs.existsSync(getManagedUvCliPath())) return true;
+    }
+    const cmd = process.platform === 'win32' ? 'where' : 'which';
+    const result = execFileSync(cmd, [command], {
+      encoding: 'utf8',
+      timeout: 3000,
+      windowsHide: true,
+      env: {
+        ...process.env,
+        PATH: buildNodeEnhancedPath(),
+      },
+    }).trim();
+    return Boolean(result);
+  } catch {
+    return false;
+  }
+}
+
 function findNpmCli(): string | null {
   const candidates: string[] = [];
 
   try {
     const cmd = process.platform === 'win32' ? 'where' : 'which';
-    const result = execFileSync(cmd, ['npm'], { encoding: 'utf8', timeout: 3000, windowsHide: true }).trim();
+    const result = execFileSync(cmd, ['npm'], {
+      encoding: 'utf8',
+      timeout: 3000,
+      windowsHide: true,
+      env: {
+        ...process.env,
+        PATH: buildNodeEnhancedPath(),
+      },
+    }).trim();
     if (result) candidates.push(result.split(/\r?\n/)[0]);
   } catch { /* not in PATH */ }
 
@@ -117,6 +155,8 @@ function findNpmCli(): string | null {
     const pf = process.env.ProgramFiles || 'C:\\Program Files';
     candidates.push(path.join(pf, 'nodejs', 'npm.cmd'));
     candidates.push(path.join(pf, 'nodejs', 'npm'));
+    candidates.push(path.join(__dirname, 'resources', 'node', 'npm.cmd'));
+    candidates.push(path.join(DOWNLOADED_RUNTIME_DIR, 'node', 'npm.cmd'));
   } else {
     candidates.push('/usr/local/bin/npm');
     candidates.push('/opt/homebrew/bin/npm');
@@ -132,12 +172,251 @@ function findNpmCli(): string | null {
   return null;
 }
 
+function getInstallPrereqMessage(installOpts: any[]): string | null {
+  const preferred = Array.isArray(installOpts) && installOpts.length > 0 ? installOpts[0] : null;
+  const kind = typeof preferred?.kind === 'string' ? preferred.kind : '';
+  const label = typeof preferred?.label === 'string' ? preferred.label.trim() : '';
+
+  if (!kind) return null;
+
+  if (process.platform === 'win32') {
+    const supportedKinds = new Set(['node', 'go', 'uv', 'download']);
+    if (!supportedKinds.has(kind)) return null;
+    if (kind === 'go' || kind === 'uv') return null;
+  }
+
+  if (kind === 'brew' && !findBrewCli()) {
+    return process.platform === 'linux'
+      ? `Automatic setup for ${label || 'this skill'} needs Homebrew. Install Homebrew from https://brew.sh or install the package manually on the gateway host.`
+      : `Automatic setup for ${label || 'this skill'} needs Homebrew. Install it from https://brew.sh and try again.`;
+  }
+
+  if (kind === 'node' && !findNpmCli()) {
+    return `Automatic setup for ${label || 'this skill'} needs Node.js/npm on the gateway host. Install Node.js and try again.`;
+  }
+
+  if (kind === 'uv' && !hasCommandOnHost('uv') && !findBrewCli()) {
+    return `Automatic setup for ${label || 'this skill'} needs uv. Install uv manually, or install Homebrew first so the gateway can install uv for you.`;
+  }
+
+  if (kind === 'go' && !hasCommandOnHost('go')) {
+    const canAutoInstallGo = findBrewCli() || (process.platform === 'linux' && hasCommandOnHost('apt-get'));
+    if (!canAutoInstallGo) {
+      return `Automatic setup for ${label || 'this skill'} needs Go on the gateway host. Install Go manually and try again.`;
+    }
+  }
+
+  return null;
+}
+
+function getUnsupportedInstallMessage(installOpts: any[]): string | null {
+  const preferred = Array.isArray(installOpts) && installOpts.length > 0 ? installOpts[0] : null;
+  const kind = typeof preferred?.kind === 'string' ? preferred.kind : '';
+  const label = typeof preferred?.label === 'string' ? preferred.label.trim() : '';
+
+  if (!kind) return null;
+
+  if (process.platform === 'win32') {
+    const supportedKinds = new Set(['node', 'go', 'uv', 'download']);
+    if (!supportedKinds.has(kind)) {
+      return `Automatic setup for ${label || 'this skill'} is not available on Windows in MyOpenClaw. Install the dependency manually on the gateway host first.`;
+    }
+  }
+
+  return null;
+}
+
+function execFileAsync(cmd: string, args: string[], opts: any = {}): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, {
+      encoding: 'utf8',
+      windowsHide: true,
+      ...opts,
+    }, (err, stdout, stderr) => {
+      if (err) {
+        reject(new Error(stderr || stdout || err.message));
+        return;
+      }
+      resolve(stdout || '');
+    });
+  });
+}
+
+function getManagedGoCliPath(): string {
+  return path.join(MANAGED_TOOLS_DIR, 'go', 'bin', 'go.exe');
+}
+
+function getManagedUvCliPath(): string {
+  return path.join(MANAGED_TOOLS_DIR, 'uv', 'uv.exe');
+}
+
+function findFileRecursive(baseDir: string, targetFile: string, maxDepth = 6): string | null {
+  if (!fs.existsSync(baseDir)) return null;
+
+  const queue: Array<{ dir: string; depth: number }> = [{ dir: baseDir, depth: 0 }];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    let entries: fs.Dirent[] = [];
+    try {
+      entries = fs.readdirSync(current.dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      const fullPath = path.join(current.dir, entry.name);
+      if (entry.isFile() && entry.name.toLowerCase() === targetFile.toLowerCase()) {
+        return fullPath;
+      }
+      if (entry.isDirectory() && current.depth < maxDepth) {
+        queue.push({ dir: fullPath, depth: current.depth + 1 });
+      }
+    }
+  }
+
+  return null;
+}
+
+async function extractZipArchive(zipPath: string, targetDir: string): Promise<void> {
+  fs.mkdirSync(targetDir, { recursive: true });
+  await execFileAsync('tar', ['-xf', zipPath, '-C', targetDir], {
+    env: {
+      ...process.env,
+      PATH: buildNodeEnhancedPath(),
+    },
+  });
+}
+
+async function resolveLatestGoDownloadUrl(): Promise<string> {
+  const arch = process.arch === 'arm64' ? 'arm64' : 'amd64';
+  const response = await fetch('https://go.dev/dl/?mode=json');
+  if (!response.ok) {
+    throw new Error(`Failed to query latest Go release (HTTP ${response.status})`);
+  }
+
+  const releases = await response.json() as Array<{
+    stable?: boolean;
+    files?: Array<{
+      os?: string;
+      arch?: string;
+      kind?: string;
+      filename?: string;
+    }>;
+  }>;
+  for (const release of releases) {
+    if (release?.stable === false) continue;
+    const files = Array.isArray(release?.files) ? release.files : [];
+    const match = files.find((file) =>
+      file?.os === 'windows'
+      && file?.arch === arch
+      && file?.kind === 'archive'
+      && typeof file?.filename === 'string'
+      && file.filename.endsWith('.zip'));
+    if (match && typeof match.filename === 'string') {
+      return `https://go.dev/dl/${match.filename}`;
+    }
+  }
+
+  throw new Error(`Could not find a Go zip archive for Windows ${arch}`);
+}
+
+function getLatestUvDownloadUrl(): string {
+  const arch = process.arch === 'arm64' ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-msvc';
+  return `https://github.com/astral-sh/uv/releases/latest/download/uv-${arch}.zip`;
+}
+
+async function ensureManagedWindowsGo(): Promise<string> {
+  const goCli = getManagedGoCliPath();
+  if (fs.existsSync(goCli)) return goCli;
+
+  fs.mkdirSync(MANAGED_TOOLS_DIR, { recursive: true });
+  const zipPath = path.join(os.tmpdir(), `myopenclaw-go-${process.arch}.zip`);
+  const installRoot = path.join(MANAGED_TOOLS_DIR, 'go');
+
+  try {
+    const downloadUrl = await resolveLatestGoDownloadUrl();
+    await downloadFile(downloadUrl, zipPath);
+    fs.rmSync(installRoot, { recursive: true, force: true });
+    await extractZipArchive(zipPath, MANAGED_TOOLS_DIR);
+  } finally {
+    try { fs.unlinkSync(zipPath); } catch {}
+  }
+
+  if (!fs.existsSync(goCli)) {
+    throw new Error('Go download completed, but go.exe was not found in the managed tools directory.');
+  }
+
+  return goCli;
+}
+
+async function ensureManagedWindowsUv(): Promise<string> {
+  const uvCli = getManagedUvCliPath();
+  if (fs.existsSync(uvCli)) return uvCli;
+
+  fs.mkdirSync(MANAGED_TOOLS_DIR, { recursive: true });
+  const zipPath = path.join(os.tmpdir(), `myopenclaw-uv-${process.arch}.zip`);
+  const installRoot = path.join(MANAGED_TOOLS_DIR, 'uv');
+
+  try {
+    await downloadFile(getLatestUvDownloadUrl(), zipPath);
+    fs.rmSync(installRoot, { recursive: true, force: true });
+    fs.mkdirSync(installRoot, { recursive: true });
+    await extractZipArchive(zipPath, installRoot);
+
+    const extractedUv = findFileRecursive(installRoot, 'uv.exe');
+    if (!extractedUv) {
+      throw new Error('uv download completed, but uv.exe was not found in the extracted archive.');
+    }
+    if (path.resolve(extractedUv) !== path.resolve(uvCli)) {
+      fs.copyFileSync(extractedUv, uvCli);
+    }
+
+    const extractedUvx = findFileRecursive(installRoot, 'uvx.exe');
+    if (extractedUvx) {
+      const uvxCli = path.join(installRoot, 'uvx.exe');
+      if (path.resolve(extractedUvx) !== path.resolve(uvxCli)) {
+        fs.copyFileSync(extractedUvx, uvxCli);
+      }
+    }
+  } finally {
+    try { fs.unlinkSync(zipPath); } catch {}
+  }
+
+  if (!fs.existsSync(uvCli)) {
+    throw new Error('uv download completed, but uv.exe was not found in the managed tools directory.');
+  }
+
+  return uvCli;
+}
+
+async function ensureWindowsSkillPrereq(installSpec: any): Promise<void> {
+  if (process.platform !== 'win32' || !installSpec || typeof installSpec !== 'object') return;
+
+  const kind = typeof installSpec.kind === 'string' ? installSpec.kind : '';
+  if (kind === 'go' && !hasCommandOnHost('go')) {
+    await ensureManagedWindowsGo();
+    return;
+  }
+
+  if (kind === 'uv' && !hasCommandOnHost('uv')) {
+    await ensureManagedWindowsUv();
+  }
+}
+
 function findBrewCli(): string | null {
   const candidates: string[] = [];
 
   try {
     const cmd = process.platform === 'win32' ? 'where' : 'which';
-    const result = execFileSync(cmd, ['brew'], { encoding: 'utf8', timeout: 3000, windowsHide: true }).trim();
+    const result = execFileSync(cmd, ['brew'], {
+      encoding: 'utf8',
+      timeout: 3000,
+      windowsHide: true,
+      env: {
+        ...process.env,
+        PATH: buildNodeEnhancedPath(),
+      },
+    }).trim();
     if (result) candidates.push(result.split(/\r?\n/)[0]);
   } catch { /* not in PATH */ }
 
@@ -408,10 +687,10 @@ async function resolveGatewayInstallTarget(
   gw: GatewayHandle,
   skillKey: string,
   requestedInstallId?: string,
-): Promise<{ name: string; installId: string } | null> {
+): Promise<{ name: string; installId: string; installSpec: any | null } | null> {
   const skill = await waitForGatewaySkill(gw, skillKey);
   if (!skill) {
-    if (requestedInstallId) return { name: skillKey, installId: requestedInstallId };
+    if (requestedInstallId) return { name: skillKey, installId: requestedInstallId, installSpec: null };
     throw new Error(`Skill not found: ${skillKey}`);
   }
 
@@ -421,15 +700,19 @@ async function resolveGatewayInstallTarget(
       ? skill.skillKey.trim()
       : skillKey;
 
+  const installOpts = Array.isArray(skill?.install) ? skill.install : [];
+  const installSpec = requestedInstallId
+    ? installOpts.find((opt: any) => typeof opt?.id === 'string' && opt.id.trim() === requestedInstallId) || null
+    : installOpts.find((opt: any) => typeof opt?.id === 'string' && opt.id.trim().length > 0) || null;
+
   if (requestedInstallId) {
-    return { name: resolvedName, installId: requestedInstallId };
+    return { name: resolvedName, installId: requestedInstallId, installSpec };
   }
 
-  const installOpts = Array.isArray(skill?.install) ? skill.install : [];
-  const installId = installOpts.find((opt: any) => typeof opt?.id === 'string' && opt.id.trim().length > 0)?.id?.trim();
+  const installId = typeof installSpec?.id === 'string' ? installSpec.id.trim() : '';
 
   if (!installId) return null;
-  return { name: resolvedName, installId };
+  return { name: resolvedName, installId, installSpec };
 }
 
 async function installGatewaySkill(
@@ -443,6 +726,7 @@ async function installGatewaySkill(
     return false;
   }
   console.log('[marketplace] gateway install target', JSON.stringify(target));
+  await ensureWindowsSkillPrereq(target.installSpec);
   await gatewayRpc(gw, 'skills.install', {
     name: target.name,
     installId: target.installId,
@@ -677,6 +961,9 @@ export function registerSkillsHandlers(
       // Annotate each skill with 'enabled' based on config entries
       for (const s of skills) {
         (s as any).enabled = enabledKeys.has(s.skillKey);
+        const installOpts = Array.isArray((s as any).install) ? (s as any).install : [];
+        (s as any).installUnsupportedMessage = getUnsupportedInstallMessage(installOpts);
+        (s as any).installPrereqMessage = getInstallPrereqMessage(installOpts);
       }
 
       return { success: true, skills };

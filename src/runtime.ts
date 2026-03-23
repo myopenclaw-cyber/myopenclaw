@@ -8,6 +8,7 @@ import {
   CONFIG_FILE,
   DEFAULT_PORT,
   DOWNLOADED_RUNTIME_DIR,
+  MANAGED_TOOLS_DIR,
   MIN_NODE_MAJOR_VERSION,
 } from './constants';
 import type { LoadingStatusCallback } from './types';
@@ -330,7 +331,16 @@ export function buildNodeEnhancedPath(): string {
     ...(shouldUseDownloadedRuntime() ? [path.join(DOWNLOADED_RUNTIME_DIR, 'node')] : []),
   ];
   const extra = nodeDirs.filter(d => fs.existsSync(path.join(d, nodeExe)));
-  return extra.length > 0 ? `${extra.join(path.delimiter)}${path.delimiter}${process.env.PATH}` : process.env.PATH!;
+
+  if (process.platform === 'win32') {
+    extra.unshift(
+      path.join(MANAGED_TOOLS_DIR, 'go', 'bin'),
+      path.join(MANAGED_TOOLS_DIR, 'uv'),
+    );
+  }
+
+  const deduped = extra.filter((entry, index) => extra.indexOf(entry) === index);
+  return deduped.length > 0 ? `${deduped.join(path.delimiter)}${path.delimiter}${process.env.PATH}` : process.env.PATH!;
 }
 
 export function verifyOpenClawCli(binPath: string): boolean {

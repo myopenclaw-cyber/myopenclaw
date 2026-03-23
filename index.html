@@ -997,6 +997,15 @@ function formatSkillErrorMessage(error) {
   if (lower.indexOf('clawhub') !== -1 && (lower.indexOf('npm') !== -1 || lower.indexOf('not found') !== -1 || lower.indexOf('enoent') !== -1)) {
     return 'Skill installation helper is unavailable. Install Node.js/npm or the clawhub CLI, then try again.';
   }
+  if (lower.indexOf('brew not installed') !== -1 || lower.indexOf('homebrew is not installed') !== -1) {
+    return 'Automatic setup requires Homebrew on the gateway host. Install it from https://brew.sh, then try again.';
+  }
+  if (lower.indexOf('go not installed') !== -1) {
+    return 'Automatic setup requires Go on the gateway host. Install Go from https://go.dev/doc/install, then try again.';
+  }
+  if (lower.indexOf('uv not installed') !== -1) {
+    return 'Automatic setup requires uv on the gateway host. Install it from https://docs.astral.sh/uv/getting-started/installation/, then try again.';
+  }
   return message;
 }
 
@@ -2165,13 +2174,14 @@ function getSkillUiState(skill) {
   const missingConfig = Array.isArray(missing.config) ? missing.config : [];
   const missingOs = Array.isArray(missing.os) ? missing.os : [];
   const hasInstallOptions = Array.isArray(skill.install) && skill.install.length > 0;
+  const installUnsupported = typeof skill.installUnsupportedMessage === 'string' && skill.installUnsupportedMessage.trim().length > 0;
   const hasMissingRequirements =
     missingBins.length > 0 ||
     missingAnyBins.length > 0 ||
     missingEnv.length > 0 ||
     missingConfig.length > 0 ||
     missingOs.length > 0;
-  const blocked = skill.blockedByAllowlist === true || (hasMissingRequirements && !hasInstallOptions);
+  const blocked = skill.blockedByAllowlist === true || installUnsupported || (hasMissingRequirements && !hasInstallOptions);
 
   return {
     missingBins: missingBins,
@@ -2180,6 +2190,7 @@ function getSkillUiState(skill) {
     missingConfig: missingConfig,
     missingOs: missingOs,
     hasInstallOptions: hasInstallOptions,
+    installUnsupported: installUnsupported,
     blocked: blocked,
     disabled: !skill.enabled && !blocked,
   };
@@ -2193,6 +2204,8 @@ function buildSkillCard(skill) {
   const missingConfig = uiState.missingConfig;
   const missingOs = uiState.missingOs;
   const hasInstallOptions = uiState.hasInstallOptions;
+  const installUnsupportedMessage = typeof skill.installUnsupportedMessage === 'string' ? skill.installUnsupportedMessage : '';
+  const installPrereqMessage = typeof skill.installPrereqMessage === 'string' ? skill.installPrereqMessage : '';
 
   const card = document.createElement('div');
   const trulyBlocked = uiState.blocked;
@@ -2237,7 +2250,7 @@ function buildSkillCard(skill) {
   const checkbox = document.createElement('input');
   checkbox.type = 'checkbox';
   checkbox.checked = !!skill.enabled;
-  checkbox.disabled = trulyBlocked;
+  checkbox.disabled = trulyBlocked && !skill.enabled;
 
   checkbox.onchange = async () => {
     checkbox.disabled = true;
@@ -2257,6 +2270,13 @@ function buildSkillCard(skill) {
     }
 
     if (checkbox.checked && installOpts.length > 0) {
+      if (installPrereqMessage) {
+        if (statusEl) {
+          statusEl.textContent = installPrereqMessage;
+          statusEl.style.display = '';
+        }
+        checkbox.checked = false; checkbox.disabled = false; return;
+      }
       if (statusEl) {
         statusEl.textContent = 'Setting up skill...';
         statusEl.style.display = '';
@@ -2307,6 +2327,20 @@ function buildSkillCard(skill) {
     missingEl.className = 'skill-missing';
     missingEl.textContent = 'Missing: ' + missingParts.join(', ');
     card.appendChild(missingEl);
+  }
+
+  if (installUnsupportedMessage) {
+    const prereqEl = document.createElement('div');
+    prereqEl.className = 'skill-missing';
+    prereqEl.textContent = installUnsupportedMessage;
+    card.appendChild(prereqEl);
+  }
+
+  if (installPrereqMessage) {
+    const prereqEl = document.createElement('div');
+    prereqEl.className = 'skill-missing';
+    prereqEl.textContent = installPrereqMessage;
+    card.appendChild(prereqEl);
   }
 
   // Status line for install progress
