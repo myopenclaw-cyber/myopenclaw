@@ -740,6 +740,7 @@ async function gatewayRpc(
   gw: GatewayHandle,
   method: string,
   params: Record<string, unknown> = {},
+  timeoutMs: number = 15000,
 ): Promise<unknown> {
   const id = crypto.randomUUID();
   const token = readGatewayTokenFromConfig();
@@ -764,7 +765,7 @@ async function gatewayRpc(
     const timer = setTimeout(() => {
       try { socket.close(); } catch {}
       reject(new Error(`Gateway RPC timeout for method "${method}"`));
-    }, 15000);
+    }, timeoutMs);
 
     let connected = false;
     let challengeNonce: string | null = null;
@@ -891,8 +892,8 @@ async function installGatewaySkill(
   await gatewayRpc(gw, 'skills.install', {
     name: target.name,
     installId: target.installId,
-    timeoutMs: 60000,
-  });
+    timeoutMs: 120000,
+  }, 130000);
   return true;
 }
 
