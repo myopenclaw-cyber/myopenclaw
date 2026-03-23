@@ -172,24 +172,38 @@ function findNpmCli(): string | null {
   return null;
 }
 
+function findBestInstallOption(installOpts: any[]): any | null {
+  if (!Array.isArray(installOpts) || installOpts.length === 0) return null;
+
+  const priority = process.platform === 'win32'
+    ? ['node', 'uv', 'go', 'download']
+    : ['brew', 'node', 'uv', 'go', 'download'];
+
+  for (const k of priority) {
+    const match = installOpts.find((opt: any) => opt?.kind === k);
+    if (match) return match;
+  }
+  return installOpts[0];
+}
+
 function getInstallPrereqMessage(installOpts: any[]): string | null {
-  const preferred = Array.isArray(installOpts) && installOpts.length > 0 ? installOpts[0] : null;
+  const preferred = findBestInstallOption(installOpts);
   const kind = typeof preferred?.kind === 'string' ? preferred.kind : '';
   const label = typeof preferred?.label === 'string' ? preferred.label.trim() : '';
 
   if (!kind) return null;
 
   if (process.platform === 'win32') {
-    const supportedKinds = new Set(['node', 'go', 'uv', 'download']);
-    if (!supportedKinds.has(kind)) return null;
     if (kind === 'go' || kind === 'uv') return null;
+    if (kind === 'node' && !findNpmCli()) {
+      return `Automatic setup for ${label || 'this skill'} needs Node.js/npm on the gateway host. Install Node.js and try again.`;
+    }
+    return null;
   }
 
   if (kind === 'brew' && !findBrewCli()) {
     if (process.platform === 'darwin') return null;
-    return process.platform === 'linux'
-      ? `Automatic setup for ${label || 'this skill'} needs Homebrew. Install Homebrew from https://brew.sh or install the package manually on the gateway host.`
-      : `Automatic setup for ${label || 'this skill'} needs Homebrew. Install it from https://brew.sh and try again.`;
+    return `Automatic setup for ${label || 'this skill'} needs Homebrew. Install Homebrew from https://brew.sh or install the package manually on the gateway host.`;
   }
 
   if (kind === 'node' && !findNpmCli()) {
@@ -197,21 +211,20 @@ function getInstallPrereqMessage(installOpts: any[]): string | null {
   }
 
   if (kind === 'uv' && !hasCommandOnHost('uv') && !findBrewCli()) {
+    if (process.platform === 'darwin') return null;
     return `Automatic setup for ${label || 'this skill'} needs uv. Install uv manually, or install Homebrew first so the gateway can install uv for you.`;
   }
 
-  if (kind === 'go' && !hasCommandOnHost('go')) {
-    const canAutoInstallGo = findBrewCli() || (process.platform === 'linux' && hasCommandOnHost('apt-get'));
-    if (!canAutoInstallGo) {
-      return `Automatic setup for ${label || 'this skill'} needs Go on the gateway host. Install Go manually and try again.`;
-    }
+  if (kind === 'go' && !hasCommandOnHost('go') && !findBrewCli()) {
+    if (process.platform === 'darwin') return null;
+    return `Automatic setup for ${label || 'this skill'} needs Go on the gateway host. Install Go manually and try again.`;
   }
 
   return null;
 }
 
 function getUnsupportedInstallMessage(installOpts: any[]): string | null {
-  const preferred = Array.isArray(installOpts) && installOpts.length > 0 ? installOpts[0] : null;
+  const preferred = findBestInstallOption(installOpts);
   const kind = typeof preferred?.kind === 'string' ? preferred.kind : '';
   const label = typeof preferred?.label === 'string' ? preferred.label.trim() : '';
 
@@ -424,10 +437,10 @@ async function ensureMacosHomebrew(): Promise<string> {
 
 async function ensureSkillInstallPrereq(installSpec: any): Promise<void> {
   if (!installSpec || typeof installSpec !== 'object') return;
+  const kind = typeof installSpec.kind === 'string' ? installSpec.kind : '';
 
   if (process.platform === 'darwin') {
-    const kind = typeof installSpec.kind === 'string' ? installSpec.kind : '';
-    if (kind === 'brew' && !findBrewCli()) {
+    if (['brew', 'uv', 'go'].includes(kind) && !findBrewCli()) {
       await ensureMacosHomebrew();
     }
     return;
@@ -435,7 +448,6 @@ async function ensureSkillInstallPrereq(installSpec: any): Promise<void> {
 
   if (process.platform !== 'win32') return;
 
-  const kind = typeof installSpec.kind === 'string' ? installSpec.kind : '';
   if (kind === 'go' && !hasCommandOnHost('go')) {
     await ensureManagedWindowsGo();
     return;
@@ -746,7 +758,7 @@ async function resolveGatewayInstallTarget(
   const installOpts = Array.isArray(skill?.install) ? skill.install : [];
   const installSpec = requestedInstallId
     ? installOpts.find((opt: any) => typeof opt?.id === 'string' && opt.id.trim() === requestedInstallId) || null
-    : installOpts.find((opt: any) => typeof opt?.id === 'string' && opt.id.trim().length > 0) || null;
+    : findBestInstallOption(installOpts);
 
   if (requestedInstallId) {
     return { name: resolvedName, installId: requestedInstallId, installSpec };
@@ -1043,57 +1055,6 @@ export function registerSkillsHandlers(
     } catch (e: any) {
       return { success: false, error: e.message };
     }
-  });
-
-  ipcMain.handle('skills-install-deps', async (_event, payload) => {
-    const { bins } = payload || {};
-    if (!Array.isArray(bins) || bins.length === 0) {
-      return { success: true, installed: [] };
-    }
-
-    // Only allow simple alphanumeric package names to prevent injection
-    const safeBins = bins.filter((b: string) => /^[a-zA-Z0-9_-]+$/.test(b));
-    if (safeBins.length === 0) {
-      return { success: false, error: 'No valid package names' };
-    }
-
-    const brewCmd = findBrewCli();
-    if (!brewCmd) {
-      return {
-        success: false,
-        error: 'Homebrew was not found. Install Homebrew first, then try again.',
-        results: safeBins.map((bin: string) => ({ bin, ok: false, error: 'brew not found' })),
-      };
-    }
-
-    const brewBinDir = path.dirname(brewCmd);
-    const envPath = process.env.PATH?.includes(brewBinDir)
-      ? buildNodeEnhancedPath()
-      : `${brewBinDir}${path.delimiter}${buildNodeEnhancedPath()}`;
-
-    const results: { bin: string; ok: boolean; error?: string }[] = [];
-    for (const bin of safeBins) {
-      try {
-        await new Promise<void>((resolve, reject) => {
-          execFile(brewCmd, ['install', bin], {
-            timeout: 120000,
-            env: {
-              ...process.env,
-              PATH: envPath,
-            },
-          }, (err, stdout, stderr) => {
-            if (err) reject(new Error(stderr || stdout || err.message));
-            else resolve();
-          });
-        });
-        results.push({ bin, ok: true });
-      } catch (e: any) {
-        results.push({ bin, ok: false, error: e.message });
-      }
-    }
-
-    const allOk = results.every(r => r.ok);
-    return { success: allOk, results };
   });
 
   // -----------------------------------------------------------------------

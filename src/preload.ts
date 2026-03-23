@@ -80,7 +80,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   skillsList: () => ipcRenderer.invoke('skills-list'),
   skillsToggle: (payload: Record<string, unknown>) => ipcRenderer.invoke('skills-toggle', payload),
   skillsInstall: (payload: Record<string, unknown>) => ipcRenderer.invoke('skills-install', payload),
-  skillsInstallDeps: (payload: Record<string, unknown>) => ipcRenderer.invoke('skills-install-deps', payload),
   skillsConfigure: (payload: Record<string, unknown>) => ipcRenderer.invoke('skills-configure', payload),
 
   // Marketplace
