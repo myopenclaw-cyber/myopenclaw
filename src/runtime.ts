@@ -181,8 +181,6 @@ function repairRuntimePermissions(baseDir: string): void {
     } catch (e: any) {
       console.log(`[runtime] Permission repair skipped for ${dir}: ${e.message}`);
     }
-    try { execFileSync('xattr', ['-rd', 'com.apple.quarantine', dir], { stdio: 'pipe' }); } catch { /* ok */ }
-    try { execFileSync('xattr', ['-rd', 'com.apple.provenance', dir], { stdio: 'pipe' }); } catch { /* ok */ }
   }
 
   _repairedRuntimeDirs.add(resolvedBase);

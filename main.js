@@ -16205,14 +16205,6 @@ function repairRuntimePermissions(baseDir) {
     } catch (e) {
       console.log(`[runtime] Permission repair skipped for ${dir}: ${e.message}`);
     }
-    try {
-      (0, import_child_process2.execFileSync)("xattr", ["-rd", "com.apple.quarantine", dir], { stdio: "pipe" });
-    } catch {
-    }
-    try {
-      (0, import_child_process2.execFileSync)("xattr", ["-rd", "com.apple.provenance", dir], { stdio: "pipe" });
-    } catch {
-    }
   }
   _repairedRuntimeDirs.add(resolvedBase);
 }
