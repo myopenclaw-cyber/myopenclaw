@@ -18768,11 +18768,13 @@ function execFileAsync2(cmd, args, opts = {}) {
       windowsHide: true,
       ...opts
     }, (err, stdout, stderr) => {
+      const stdoutText = typeof stdout === "string" ? stdout : stdout?.toString("utf8") || "";
+      const stderrText = typeof stderr === "string" ? stderr : stderr?.toString("utf8") || "";
       if (err) {
-        reject(new Error(stderr || stdout || err.message));
+        reject(new Error(stderrText || stdoutText || err.message));
         return;
       }
-      resolve5(stdout || "");
+      resolve5(stdoutText);
     });
   });
 }
