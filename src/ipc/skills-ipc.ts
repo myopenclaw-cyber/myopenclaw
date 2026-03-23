@@ -531,15 +531,7 @@ async function ensureSkillInstallPrereq(installSpec: any): Promise<void> {
       await ensureMacosHomebrew();
     }
     if (kind === 'node' && !findNpmCli()) {
-      if (!findBrewCli()) await ensureMacosHomebrew();
-      await ensureMacosCommandLineTools();
-      const brewCmd = findBrewCli();
-      if (brewCmd) {
-        await execFileAsync(brewCmd, ['install', 'node'], {
-          timeout: 300000,
-          env: { ...process.env, PATH: buildNodeEnhancedPath() },
-        });
-      }
+      await ensureManagedNode();
     }
     if (['brew', 'uv', 'go'].includes(kind)) {
       await ensureMacosCommandLineTools();
