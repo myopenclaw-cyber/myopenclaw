@@ -331,6 +331,160 @@ function formatMarketplaceError(error: unknown): string {
   return message;
 }
 
+function clampMarketplaceLimit(limit: unknown): number {
+  const value = typeof limit === 'number' ? limit : Number(limit);
+  if (!Number.isFinite(value) || value <= 0) return 25;
+  return Math.max(1, Math.min(50, Math.floor(value)));
+}
+
+function normalizeMarketplaceSort(sort: unknown): string {
+  switch (String(sort || '').trim()) {
+    case 'downloads':
+      return 'downloads';
+    case 'updated':
+      return 'newest';
+    case 'stars':
+      return 'stars';
+    case 'installs':
+      return 'installs';
+    case 'name':
+      return 'name';
+    case 'newest':
+      return 'newest';
+    // The desktop UI still exposes "Trending"; the public page no longer does.
+    // Fallback to downloads so this tab remains useful instead of failing.
+    case 'trending':
+      return 'downloads';
+    default:
+      return 'stars';
+  }
+}
+
+function normalizeMarketplaceConvexEntry(entry: any): Record<string, unknown> | null {
+  const skill = entry?.skill;
+  if (!skill || typeof skill.slug !== 'string') return null;
+
+  const latestVersion = entry?.latestVersion && typeof entry.latestVersion === 'object'
+    ? {
+        version: typeof entry.latestVersion.version === 'string' ? entry.latestVersion.version : '',
+        createdAt: Number(entry.latestVersion.createdAt || 0),
+        changelog: typeof entry.latestVersion.changelog === 'string' ? entry.latestVersion.changelog : '',
+        license: entry.latestVersion.license ?? null,
+      }
+    : undefined;
+
+  return {
+    slug: skill.slug,
+    displayName: typeof skill.displayName === 'string' && skill.displayName.trim() ? skill.displayName : skill.slug,
+    summary: typeof skill.summary === 'string' ? skill.summary : null,
+    tags: skill.tags ?? null,
+    stats: skill.stats ?? {},
+    createdAt: Number(skill.createdAt || 0),
+    updatedAt: Number(skill.updatedAt || 0),
+    latestVersion,
+  };
+}
+
+async function fetchMarketplaceListViaConvex(
+  sort: unknown,
+  cursor: unknown,
+  limit: unknown,
+): Promise<{ items: Record<string, unknown>[]; nextCursor: string | null }> {
+  const args: Record<string, unknown> = {
+    dir: 'desc',
+    highlightedOnly: false,
+    nonSuspiciousOnly: false,
+    numItems: clampMarketplaceLimit(limit),
+    sort: normalizeMarketplaceSort(sort),
+  };
+  if (typeof cursor === 'string' && cursor.trim()) args.cursor = cursor;
+
+  const resp = await fetch('https://wry-manatee-359.convex.cloud/api/query', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      path: 'skills:listPublicPageV4',
+      format: 'convex_encoded_json',
+      args: [args],
+    }),
+  });
+
+  if (!resp.ok) throw new Error(formatMarketplaceHttpError(resp));
+
+  const data = await resp.json();
+  const page = Array.isArray(data?.value?.page) ? data.value.page : [];
+  const items = page
+    .map((entry: any) => normalizeMarketplaceConvexEntry(entry))
+    .filter((entry: Record<string, unknown> | null): entry is Record<string, unknown> => Boolean(entry));
+  const nextCursor = typeof data?.value?.nextCursor === 'string' ? data.value.nextCursor : null;
+
+  return { items, nextCursor };
+}
+
+function normalizeMarketplaceDetailViaConvex(data: any): Record<string, unknown> {
+  const value = data?.value ?? {};
+  const skill = value?.skill ?? null;
+  const latestVersion = value?.latestVersion ?? null;
+  const owner = value?.owner ?? null;
+
+  return {
+    skill: skill ? {
+      slug: typeof skill.slug === 'string' ? skill.slug : '',
+      displayName: typeof skill.displayName === 'string' ? skill.displayName : (typeof skill.slug === 'string' ? skill.slug : ''),
+      summary: typeof skill.summary === 'string' ? skill.summary : null,
+      tags: skill.tags ?? null,
+      stats: skill.stats ?? {},
+      createdAt: Number(skill.createdAt || 0),
+      updatedAt: Number(skill.updatedAt || 0),
+    } : null,
+    latestVersion: latestVersion ? {
+      version: typeof latestVersion.version === 'string' ? latestVersion.version : '',
+      createdAt: Number(latestVersion.createdAt || 0),
+      changelog: typeof latestVersion.changelog === 'string' ? latestVersion.changelog : '',
+      license: latestVersion.license ?? null,
+    } : null,
+    metadata: {
+      os: latestVersion?.parsed?.clawdis?.os ?? null,
+      systems: latestVersion?.parsed?.clawdis?.systems ?? null,
+    },
+    owner: owner ? {
+      handle: typeof owner.handle === 'string' ? owner.handle : null,
+      userId: typeof owner._id === 'string' ? owner._id : null,
+      displayName: typeof owner.displayName === 'string' ? owner.displayName : null,
+      image: typeof owner.image === 'string' ? owner.image : null,
+    } : null,
+    moderation: value?.moderationInfo ?? null,
+    canonical: value?.canonical ?? null,
+    forkOf: value?.forkOf ?? null,
+    pendingReview: Boolean(value?.pendingReview),
+    requestedSlug: typeof value?.requestedSlug === 'string' ? value.requestedSlug : null,
+    resolvedSlug: typeof value?.resolvedSlug === 'string' ? value.resolvedSlug : null,
+  };
+}
+
+async function fetchMarketplaceDetailViaConvex(slug: string): Promise<Record<string, unknown>> {
+  const resp = await fetch('https://wry-manatee-359.convex.cloud/api/query', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      path: 'skills:getBySlug',
+      format: 'convex_encoded_json',
+      args: [{ slug }],
+    }),
+  });
+
+  if (!resp.ok) throw new Error(formatMarketplaceHttpError(resp));
+
+  const data = await resp.json();
+  return normalizeMarketplaceDetailViaConvex(data);
+}
+
 export function registerSkillsHandlers(
   getGatewayHandle: () => GatewayHandle | null,
 ): void {
@@ -434,14 +588,8 @@ export function registerSkillsHandlers(
   ipcMain.handle('marketplace-list', async (_event, payload) => {
     try {
       const { sort, cursor, limit } = payload || {};
-      const params = new URLSearchParams();
-      params.set('limit', String(limit || 25));
-      if (sort) params.set('sort', sort);
-      if (cursor) params.set('cursor', cursor);
-      const resp = await fetch(`${CLAWHUB_API}/skills?${params}`);
-      if (!resp.ok) return { success: false, error: formatMarketplaceHttpError(resp) };
-      const data = await resp.json();
-      return { success: true, items: data.items || [], nextCursor: data.nextCursor || null };
+      const data = await fetchMarketplaceListViaConvex(sort, cursor, limit);
+      return { success: true, items: data.items, nextCursor: data.nextCursor };
     } catch (e: any) {
       return { success: false, error: formatMarketplaceError(e) };
     }
@@ -465,10 +613,15 @@ export function registerSkillsHandlers(
     try {
       const { slug } = payload || {};
       if (!slug) return { success: false, error: 'slug is required' };
-      const resp = await fetch(`${CLAWHUB_API}/skills/${encodeURIComponent(slug)}`);
-      if (!resp.ok) return { success: false, error: formatMarketplaceHttpError(resp) };
-      const data = await resp.json();
-      return { success: true, ...data };
+      try {
+        const data = await fetchMarketplaceDetailViaConvex(slug);
+        return { success: true, ...data };
+      } catch {
+        const resp = await fetch(`${CLAWHUB_API}/skills/${encodeURIComponent(slug)}`);
+        if (!resp.ok) return { success: false, error: formatMarketplaceHttpError(resp) };
+        const data = await resp.json();
+        return { success: true, ...data };
+      }
     } catch (e: any) {
       return { success: false, error: formatMarketplaceError(e) };
     }

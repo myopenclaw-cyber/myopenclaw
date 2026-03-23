@@ -2380,7 +2380,7 @@ function switchSkillsTab(tab) {
   event.target.classList.add('active');
   document.getElementById('skillsTabInstalled').style.display = tab === 'installed' ? '' : 'none';
   document.getElementById('skillsTabMarketplace').style.display = tab === 'marketplace' ? '' : 'none';
-  if (tab === 'marketplace' && mpItems.length === 0) mpLoad();
+  if (tab === 'marketplace' && !mpHasLoaded && !mpLoading) mpLoad();
 }
 
 // ---------------------------------------------------------------------------
@@ -2390,20 +2390,24 @@ let mpItems = [];
 let mpCursor = null;
 let mpSort = 'stars';
 let mpSearchMode = false;
+let mpHasLoaded = false;
+let mpLoading = false;
 
 function mpSetSort(sort) {
   mpSort = sort;
   mpSearchMode = false;
   mpItems = [];
   mpCursor = null;
+  mpHasLoaded = false;
   document.querySelectorAll('#mpSortBar button').forEach(function(b) { b.classList.remove('active'); });
   event.target.classList.add('active');
   mpLoad();
 }
 
 async function mpDoSearch(q) {
-  if (!q.trim()) { mpSearchMode = false; mpItems = []; mpCursor = null; mpLoad(); return; }
+  if (!q.trim()) { mpSearchMode = false; mpItems = []; mpCursor = null; mpHasLoaded = false; mpLoad(); return; }
   mpSearchMode = true;
+  mpHasLoaded = false;
   document.getElementById('mpStatus').textContent = 'Searching...';
   document.getElementById('mpGrid').innerHTML = '';
   document.getElementById('mpLoadMore').style.display = 'none';
@@ -2413,21 +2417,27 @@ async function mpDoSearch(q) {
     return;
   }
   mpItems = (r.results || []).map(function(s) { return { slug: s.slug, displayName: s.displayName, summary: s.summary, stats: {}, score: s.score }; });
+  mpHasLoaded = true;
   document.getElementById('mpStatus').textContent = mpItems.length + ' result' + (mpItems.length === 1 ? '' : 's');
   mpRender();
 }
 
 async function mpLoad() {
+  if (mpLoading) return;
   var statusEl = document.getElementById('mpStatus');
   var gridEl = document.getElementById('mpGrid');
+  mpLoading = true;
   if (mpItems.length === 0) { statusEl.textContent = 'Loading...'; gridEl.innerHTML = ''; }
   var r = await window.electronAPI.marketplaceList({ sort: mpSort, cursor: mpCursor, limit: 25 });
   if (!r || !r.success) {
+    mpLoading = false;
     statusEl.textContent = 'Failed: ' + formatMarketplaceErrorMessage(r && r.error);
     return;
   }
   mpItems = mpItems.concat(r.items || []);
   mpCursor = r.nextCursor || null;
+  mpHasLoaded = true;
+  mpLoading = false;
   statusEl.textContent = mpItems.length + ' skills';
   document.getElementById('mpLoadMore').style.display = mpCursor ? '' : 'none';
   mpRender();
