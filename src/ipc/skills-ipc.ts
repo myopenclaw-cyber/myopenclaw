@@ -157,12 +157,14 @@ function findNpmCli(): string | null {
     candidates.push(path.join(pf, 'nodejs', 'npm'));
     candidates.push(path.join(__dirname, 'resources', 'node', 'npm.cmd'));
     candidates.push(path.join(DOWNLOADED_RUNTIME_DIR, 'node', 'npm.cmd'));
+    candidates.push(path.join(MANAGED_TOOLS_DIR, 'node', 'npm.cmd'));
   } else {
     candidates.push('/usr/local/bin/npm');
     candidates.push('/opt/homebrew/bin/npm');
     candidates.push(path.join(home, 'homebrew', 'bin', 'npm'));
     candidates.push(path.join(DOWNLOADED_RUNTIME_DIR, 'node', 'npm'));
     candidates.push(path.join(__dirname, 'resources', 'node', 'npm'));
+    candidates.push(path.join(MANAGED_TOOLS_DIR, 'node', 'bin', 'npm'));
   }
 
   const seen = new Set<string>();
@@ -197,10 +199,7 @@ function getInstallPrereqMessage(installOpts: any[]): string | null {
   if (!kind) return null;
 
   if (process.platform === 'win32') {
-    if (kind === 'go' || kind === 'uv') return null;
-    if (kind === 'node' && !findNpmCli()) {
-      return `Automatic setup for ${label || 'this skill'} needs Node.js/npm on the gateway host. Install Node.js and try again.`;
-    }
+    if (kind === 'go' || kind === 'uv' || kind === 'node') return null;
     return null;
   }
 
@@ -260,6 +259,10 @@ function execFileAsync(cmd: string, args: string[], opts: any = {}): Promise<str
       resolve(stdoutText);
     });
   });
+}
+
+function getManagedNpmCliPath(): string {
+  return path.join(MANAGED_TOOLS_DIR, 'node', process.platform === 'win32' ? 'npm.cmd' : 'bin/npm');
 }
 
 function getManagedGoCliPath(): string {
@@ -343,6 +346,64 @@ async function resolveLatestGoDownloadUrl(): Promise<string> {
 function getLatestUvDownloadUrl(): string {
   const arch = process.arch === 'arm64' ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-msvc';
   return `https://github.com/astral-sh/uv/releases/latest/download/uv-${arch}.zip`;
+}
+
+async function ensureManagedNode(): Promise<string> {
+  const npmCli = getManagedNpmCliPath();
+  if (fs.existsSync(npmCli)) return npmCli;
+
+  fs.mkdirSync(MANAGED_TOOLS_DIR, { recursive: true });
+  const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
+  const platform = process.platform === 'win32' ? 'win' : 'darwin';
+  const ext = process.platform === 'win32' ? 'zip' : 'tar.gz';
+  const archivePath = path.join(os.tmpdir(), `myopenclaw-node-${arch}.${ext}`);
+  const installRoot = path.join(MANAGED_TOOLS_DIR, 'node');
+
+  try {
+    const resp = await fetch('https://nodejs.org/dist/index.json');
+    if (!resp.ok) throw new Error(`Failed to query Node.js releases (HTTP ${resp.status})`);
+    const releases = await resp.json() as Array<{ version?: string; lts?: string | false }>;
+    const lts = releases.find(r => r.lts);
+    const version = lts?.version || 'v22.14.0';
+    const url = `https://nodejs.org/dist/${version}/node-${version}-${platform}-${arch}.${ext}`;
+
+    await downloadFile(url, archivePath);
+    fs.rmSync(installRoot, { recursive: true, force: true });
+    fs.mkdirSync(installRoot, { recursive: true });
+
+    if (ext === 'zip') {
+      await extractZipArchive(archivePath, installRoot);
+      // Windows zip extracts into a nested dir (e.g. node-v22.14.0-win-x64/)
+      // Promote contents up to installRoot
+      const entries = fs.readdirSync(installRoot);
+      if (entries.length === 1) {
+        const nested = path.join(installRoot, entries[0]);
+        if (fs.statSync(nested).isDirectory()) {
+          for (const item of fs.readdirSync(nested)) {
+            fs.renameSync(path.join(nested, item), path.join(installRoot, item));
+          }
+          fs.rmSync(nested, { recursive: true });
+        }
+      }
+    } else {
+      await execFileAsync('/usr/bin/tar', [
+        'xzf', archivePath, '--strip-components=1', '-C', installRoot,
+      ]);
+    }
+
+    const npmTarget = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+    if (!findFileRecursive(installRoot, npmTarget, 3)) {
+      throw new Error('Node.js download completed, but npm was not found in the extracted archive.');
+    }
+  } finally {
+    try { fs.unlinkSync(archivePath); } catch {}
+  }
+
+  if (!fs.existsSync(npmCli)) {
+    throw new Error('Node.js download completed, but npm was not found in the managed tools directory.');
+  }
+
+  return npmCli;
 }
 
 async function ensureManagedWindowsGo(): Promise<string> {
@@ -469,6 +530,11 @@ async function ensureSkillInstallPrereq(installSpec: any): Promise<void> {
 
   if (kind === 'uv' && !hasCommandOnHost('uv')) {
     await ensureManagedWindowsUv();
+    return;
+  }
+
+  if (kind === 'node' && !findNpmCli()) {
+    await ensureManagedNode();
   }
 }
 

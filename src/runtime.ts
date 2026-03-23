@@ -335,6 +335,7 @@ export function buildNodeEnhancedPath(): string {
 
   if (process.platform === 'win32') {
     extra.unshift(
+      path.join(MANAGED_TOOLS_DIR, 'node'),
       path.join(MANAGED_TOOLS_DIR, 'go', 'bin'),
       path.join(MANAGED_TOOLS_DIR, 'uv'),
     );
@@ -344,6 +345,7 @@ export function buildNodeEnhancedPath(): string {
       '/usr/local/bin',
       path.join(home, '.linuxbrew', 'bin'),
       path.join(home, 'homebrew', 'bin'),
+      path.join(MANAGED_TOOLS_DIR, 'node', 'bin'),
     );
   }
 
