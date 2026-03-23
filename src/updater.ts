@@ -2,6 +2,9 @@ import { app, BrowserWindow, dialog } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import type { UpdateChannel } from './types';
 
+const GITHUB_OWNER = 'myopenclaw-cyber';
+const GITHUB_REPO = 'myopenclaw';
+
 type UpdaterInitOptions = {
   beforeInstall: () => Promise<void>;
   getMainWindow: () => BrowserWindow | null;
@@ -195,6 +198,11 @@ export async function checkForAppUpdates(options: CheckForUpdatesOptions = {}): 
   }
 
   manualCheckInProgress = manual;
+
+  if (autoUpdater.allowPrerelease) {
+    await applyBetaFeedUrl();
+  }
+
   activeCheckPromise = autoUpdater.checkForUpdates()
     .then(() => undefined)
     .catch((error) => {
@@ -208,8 +216,37 @@ export async function checkForAppUpdates(options: CheckForUpdatesOptions = {}): 
   return activeCheckPromise;
 }
 
+async function applyBetaFeedUrl(): Promise<void> {
+  try {
+    const resp = await fetch(
+      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases`,
+      { headers: { Accept: 'application/vnd.github+json' } },
+    );
+    if (!resp.ok) return;
+    const releases = await resp.json() as Array<{
+      prerelease?: boolean;
+      draft?: boolean;
+      tag_name?: string;
+    }>;
+    const latest = releases.find(r => r.prerelease && !r.draft);
+    if (!latest?.tag_name) return;
+    const url = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/${latest.tag_name}/`;
+    autoUpdater.setFeedURL({ provider: 'generic', url });
+    console.log(`[updater] Beta feed URL set to ${url}`);
+  } catch (e) {
+    console.warn('[updater] Failed to resolve beta feed URL, falling back to default', e);
+  }
+}
+
 export function setUpdateChannel(channel: UpdateChannel): void {
   autoUpdater.allowPrerelease = channel === 'beta';
+  if (channel !== 'beta') {
+    autoUpdater.setFeedURL({
+      provider: 'github',
+      owner: GITHUB_OWNER,
+      repo: GITHUB_REPO,
+    } as any);
+  }
   console.log(`[updater] Update channel set to: ${channel}`);
 }
 
