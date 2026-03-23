@@ -16338,6 +16338,7 @@ function addWindowsFirewallRule(nodeExePath) {
 function buildNodeEnhancedPath() {
   repairKnownRuntimePermissions();
   const nodeExe = process.platform === "win32" ? "node.exe" : "node";
+  const home = os2.homedir();
   const nodeDirs = [
     path4.join(__dirname, "resources", "node"),
     ...shouldUseDownloadedRuntime() ? [path4.join(DOWNLOADED_RUNTIME_DIR, "node")] : []
@@ -16347,6 +16348,13 @@ function buildNodeEnhancedPath() {
     extra.unshift(
       path4.join(MANAGED_TOOLS_DIR, "go", "bin"),
       path4.join(MANAGED_TOOLS_DIR, "uv")
+    );
+  } else {
+    extra.unshift(
+      "/opt/homebrew/bin",
+      "/usr/local/bin",
+      path4.join(home, ".linuxbrew", "bin"),
+      path4.join(home, "homebrew", "bin")
     );
   }
   const deduped = extra.filter((entry, index) => extra.indexOf(entry) === index);
@@ -18732,6 +18740,7 @@ function getInstallPrereqMessage(installOpts) {
     if (kind === "go" || kind === "uv") return null;
   }
   if (kind === "brew" && !findBrewCli()) {
+    if (process.platform === "darwin") return null;
     return process.platform === "linux" ? `Automatic setup for ${label || "this skill"} needs Homebrew. Install Homebrew from https://brew.sh or install the package manually on the gateway host.` : `Automatic setup for ${label || "this skill"} needs Homebrew. Install it from https://brew.sh and try again.`;
   }
   if (kind === "node" && !findNpmCli()) {
@@ -18895,8 +18904,45 @@ async function ensureManagedWindowsUv() {
   }
   return uvCli;
 }
-async function ensureWindowsSkillPrereq(installSpec) {
-  if (process.platform !== "win32" || !installSpec || typeof installSpec !== "object") return;
+async function ensureMacosHomebrew() {
+  const brewCli = findBrewCli();
+  if (brewCli) return brewCli;
+  const scriptPath = path11.join(os5.tmpdir(), "myopenclaw-homebrew-install.sh");
+  try {
+    await downloadFile("https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh", scriptPath);
+    fs11.chmodSync(scriptPath, 493);
+    await execFileAsync2("/bin/bash", [scriptPath], {
+      env: {
+        ...process.env,
+        NONINTERACTIVE: "1",
+        CI: "1",
+        PATH: buildNodeEnhancedPath()
+      }
+    });
+  } catch (e) {
+    throw new Error(`Failed to install Homebrew automatically: ${e.message}`);
+  } finally {
+    try {
+      fs11.unlinkSync(scriptPath);
+    } catch {
+    }
+  }
+  const installedBrew = findBrewCli();
+  if (!installedBrew) {
+    throw new Error("Homebrew install completed, but brew was not found on the gateway host.");
+  }
+  return installedBrew;
+}
+async function ensureSkillInstallPrereq(installSpec) {
+  if (!installSpec || typeof installSpec !== "object") return;
+  if (process.platform === "darwin") {
+    const kind2 = typeof installSpec.kind === "string" ? installSpec.kind : "";
+    if (kind2 === "brew" && !findBrewCli()) {
+      await ensureMacosHomebrew();
+    }
+    return;
+  }
+  if (process.platform !== "win32") return;
   const kind = typeof installSpec.kind === "string" ? installSpec.kind : "";
   if (kind === "go" && !hasCommandOnHost("go")) {
     await ensureManagedWindowsGo();
@@ -19169,7 +19215,7 @@ async function installGatewaySkill(gw, skillKey, requestedInstallId) {
     return false;
   }
   console.log("[marketplace] gateway install target", JSON.stringify(target));
-  await ensureWindowsSkillPrereq(target.installSpec);
+  await ensureSkillInstallPrereq(target.installSpec);
   await gatewayRpc(gw, "skills.install", {
     name: target.name,
     installId: target.installId,

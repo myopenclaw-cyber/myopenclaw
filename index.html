@@ -1000,6 +1000,9 @@ function formatSkillErrorMessage(error) {
   if (lower.indexOf('brew not installed') !== -1 || lower.indexOf('homebrew is not installed') !== -1) {
     return 'Automatic setup requires Homebrew on the gateway host. Install it from https://brew.sh, then try again.';
   }
+  if (lower.indexOf('failed to install homebrew automatically') !== -1) {
+    return 'Homebrew setup failed. Install Homebrew from https://brew.sh, then try again.';
+  }
   if (lower.indexOf('go not installed') !== -1) {
     return 'Automatic setup requires Go on the gateway host. Install Go from https://go.dev/doc/install, then try again.';
   }

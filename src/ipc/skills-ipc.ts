@@ -186,6 +186,7 @@ function getInstallPrereqMessage(installOpts: any[]): string | null {
   }
 
   if (kind === 'brew' && !findBrewCli()) {
+    if (process.platform === 'darwin') return null;
     return process.platform === 'linux'
       ? `Automatic setup for ${label || 'this skill'} needs Homebrew. Install Homebrew from https://brew.sh or install the package manually on the gateway host.`
       : `Automatic setup for ${label || 'this skill'} needs Homebrew. Install it from https://brew.sh and try again.`;
@@ -391,8 +392,48 @@ async function ensureManagedWindowsUv(): Promise<string> {
   return uvCli;
 }
 
-async function ensureWindowsSkillPrereq(installSpec: any): Promise<void> {
-  if (process.platform !== 'win32' || !installSpec || typeof installSpec !== 'object') return;
+async function ensureMacosHomebrew(): Promise<string> {
+  const brewCli = findBrewCli();
+  if (brewCli) return brewCli;
+
+  const scriptPath = path.join(os.tmpdir(), 'myopenclaw-homebrew-install.sh');
+  try {
+    await downloadFile('https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh', scriptPath);
+    fs.chmodSync(scriptPath, 0o755);
+    await execFileAsync('/bin/bash', [scriptPath], {
+      env: {
+        ...process.env,
+        NONINTERACTIVE: '1',
+        CI: '1',
+        PATH: buildNodeEnhancedPath(),
+      },
+    });
+  } catch (e: any) {
+    throw new Error(`Failed to install Homebrew automatically: ${e.message}`);
+  } finally {
+    try { fs.unlinkSync(scriptPath); } catch {}
+  }
+
+  const installedBrew = findBrewCli();
+  if (!installedBrew) {
+    throw new Error('Homebrew install completed, but brew was not found on the gateway host.');
+  }
+
+  return installedBrew;
+}
+
+async function ensureSkillInstallPrereq(installSpec: any): Promise<void> {
+  if (!installSpec || typeof installSpec !== 'object') return;
+
+  if (process.platform === 'darwin') {
+    const kind = typeof installSpec.kind === 'string' ? installSpec.kind : '';
+    if (kind === 'brew' && !findBrewCli()) {
+      await ensureMacosHomebrew();
+    }
+    return;
+  }
+
+  if (process.platform !== 'win32') return;
 
   const kind = typeof installSpec.kind === 'string' ? installSpec.kind : '';
   if (kind === 'go' && !hasCommandOnHost('go')) {
@@ -728,7 +769,7 @@ async function installGatewaySkill(
     return false;
   }
   console.log('[marketplace] gateway install target', JSON.stringify(target));
-  await ensureWindowsSkillPrereq(target.installSpec);
+  await ensureSkillInstallPrereq(target.installSpec);
   await gatewayRpc(gw, 'skills.install', {
     name: target.name,
     installId: target.installId,

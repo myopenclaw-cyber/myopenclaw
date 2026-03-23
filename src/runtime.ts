@@ -326,6 +326,7 @@ function addWindowsFirewallRule(nodeExePath: string): void {
 export function buildNodeEnhancedPath(): string {
   repairKnownRuntimePermissions();
   const nodeExe = process.platform === 'win32' ? 'node.exe' : 'node';
+  const home = os.homedir();
   const nodeDirs = [
     path.join(__dirname, 'resources', 'node'),
     ...(shouldUseDownloadedRuntime() ? [path.join(DOWNLOADED_RUNTIME_DIR, 'node')] : []),
@@ -336,6 +337,13 @@ export function buildNodeEnhancedPath(): string {
     extra.unshift(
       path.join(MANAGED_TOOLS_DIR, 'go', 'bin'),
       path.join(MANAGED_TOOLS_DIR, 'uv'),
+    );
+  } else {
+    extra.unshift(
+      '/opt/homebrew/bin',
+      '/usr/local/bin',
+      path.join(home, '.linuxbrew', 'bin'),
+      path.join(home, 'homebrew', 'bin'),
     );
   }
 
