@@ -409,22 +409,22 @@ async function ensureMacosHomebrew(): Promise<string> {
   const brewCli = findBrewCli();
   if (brewCli) return brewCli;
 
-  const scriptPath = path.join(os.tmpdir(), 'myopenclaw-homebrew-install.sh');
+  // Install Homebrew via tarball to ~/homebrew (no sudo, no Xcode CLT required)
+  const homebrewDir = path.join(os.homedir(), 'homebrew');
+  const tarballPath = path.join(os.tmpdir(), 'myopenclaw-homebrew.tar.gz');
+
   try {
-    await downloadFile('https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh', scriptPath);
-    fs.chmodSync(scriptPath, 0o755);
-    await execFileAsync('/bin/bash', [scriptPath], {
-      env: {
-        ...process.env,
-        NONINTERACTIVE: '1',
-        CI: '1',
-        PATH: buildNodeEnhancedPath(),
-      },
-    });
+    fs.mkdirSync(homebrewDir, { recursive: true });
+    await downloadFile('https://github.com/Homebrew/brew/tarball/master', tarballPath);
+    await execFileAsync('/usr/bin/tar', [
+      'xzf', tarballPath,
+      '--strip-components=1',
+      '-C', homebrewDir,
+    ]);
   } catch (e: any) {
     throw new Error(`Failed to install Homebrew automatically: ${e.message}`);
   } finally {
-    try { fs.unlinkSync(scriptPath); } catch {}
+    try { fs.unlinkSync(tarballPath); } catch {}
   }
 
   const installedBrew = findBrewCli();
