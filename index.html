@@ -2208,8 +2208,9 @@ function buildSkillCard(skill) {
   checkbox.onchange = async () => {
     checkbox.disabled = true;
     const statusEl = card.querySelector('.skill-status');
+    const installOpts = Array.isArray(skill.install) ? skill.install : [];
 
-    if (checkbox.checked && missingBins.length > 0) {
+    if (checkbox.checked && missingBins.length > 0 && installOpts.length === 0) {
       if (statusEl) { statusEl.textContent = 'Installing: ' + missingBins.join(', ') + '...'; statusEl.style.display = ''; }
       const depR = await window.electronAPI.skillsInstallDeps({ bins: missingBins });
       if (!depR || !depR.success) {
@@ -2220,7 +2221,6 @@ function buildSkillCard(skill) {
       if (statusEl) statusEl.textContent = 'Dependencies installed. Enabling...';
     }
 
-    const installOpts = Array.isArray(skill.install) ? skill.install : [];
     if (checkbox.checked && installOpts.length > 0) {
       if (statusEl) { statusEl.textContent = 'Setting up skill...'; statusEl.style.display = ''; }
       const installR = await window.electronAPI.skillsInstall({ name: skill.skillKey, installId: installOpts[0].id });

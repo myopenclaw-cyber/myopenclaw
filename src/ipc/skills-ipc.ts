@@ -8,6 +8,7 @@ import { readGatewayTokenFromConfig } from '../config-store';
 import { CONFIG_FILE, OPENCLAW_CONFIG_DIR, DOWNLOADED_RUNTIME_DIR } from '../constants';
 import type { GatewayHandle } from '../types';
 import { buildConnectParams, handleConnectResponse } from '../device-identity';
+import { buildNodeEnhancedPath } from '../runtime';
 
 function findBundledClawHubCliScript(): string | null {
   try {
@@ -120,6 +121,33 @@ function findNpmCli(): string | null {
     candidates.push('/usr/local/bin/npm');
     candidates.push('/opt/homebrew/bin/npm');
   }
+
+  const seen = new Set<string>();
+  for (const p of candidates) {
+    const resolved = path.resolve(p);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+function findBrewCli(): string | null {
+  const candidates: string[] = [];
+
+  try {
+    const cmd = process.platform === 'win32' ? 'where' : 'which';
+    const result = execFileSync(cmd, ['brew'], { encoding: 'utf8', timeout: 3000, windowsHide: true }).trim();
+    if (result) candidates.push(result.split(/\r?\n/)[0]);
+  } catch { /* not in PATH */ }
+
+  const home = os.homedir();
+  candidates.push(
+    '/opt/homebrew/bin/brew',
+    '/usr/local/bin/brew',
+    path.join(home, '.linuxbrew', 'bin', 'brew'),
+    path.join(home, 'homebrew', 'bin', 'brew'),
+  );
 
   const seen = new Set<string>();
   for (const p of candidates) {
@@ -561,12 +589,32 @@ export function registerSkillsHandlers(
       return { success: false, error: 'No valid package names' };
     }
 
+    const brewCmd = findBrewCli();
+    if (!brewCmd) {
+      return {
+        success: false,
+        error: 'Homebrew was not found. Install Homebrew first, then try again.',
+        results: safeBins.map((bin: string) => ({ bin, ok: false, error: 'brew not found' })),
+      };
+    }
+
+    const brewBinDir = path.dirname(brewCmd);
+    const envPath = process.env.PATH?.includes(brewBinDir)
+      ? buildNodeEnhancedPath()
+      : `${brewBinDir}${path.delimiter}${buildNodeEnhancedPath()}`;
+
     const results: { bin: string; ok: boolean; error?: string }[] = [];
     for (const bin of safeBins) {
       try {
         await new Promise<void>((resolve, reject) => {
-          execFile('brew', ['install', bin], { timeout: 120000 }, (err, _stdout, stderr) => {
-            if (err) reject(new Error(stderr || err.message));
+          execFile(brewCmd, ['install', bin], {
+            timeout: 120000,
+            env: {
+              ...process.env,
+              PATH: envPath,
+            },
+          }, (err, stdout, stderr) => {
+            if (err) reject(new Error(stderr || stdout || err.message));
             else resolve();
           });
         });

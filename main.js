@@ -2824,8 +2824,8 @@ var require_common = __commonJS({
         }
         return debug;
       }
-      function extend(namespace, delimiter2) {
-        const newDebug = createDebug(this.namespace + (typeof delimiter2 === "undefined" ? ":" : delimiter2) + namespace);
+      function extend(namespace, delimiter3) {
+        const newDebug = createDebug(this.namespace + (typeof delimiter3 === "undefined" ? ":" : delimiter3) + namespace);
         newDebug.log = this.log;
         return newDebug;
       }
@@ -18674,6 +18674,30 @@ function findNpmCli() {
   }
   return null;
 }
+function findBrewCli() {
+  const candidates = [];
+  try {
+    const cmd = process.platform === "win32" ? "where" : "which";
+    const result = (0, import_child_process4.execFileSync)(cmd, ["brew"], { encoding: "utf8", timeout: 3e3, windowsHide: true }).trim();
+    if (result) candidates.push(result.split(/\r?\n/)[0]);
+  } catch {
+  }
+  const home = os5.homedir();
+  candidates.push(
+    "/opt/homebrew/bin/brew",
+    "/usr/local/bin/brew",
+    path11.join(home, ".linuxbrew", "bin", "brew"),
+    path11.join(home, "homebrew", "bin", "brew")
+  );
+  const seen = /* @__PURE__ */ new Set();
+  for (const p of candidates) {
+    const resolved = path11.resolve(p);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    if (fs11.existsSync(p)) return p;
+  }
+  return null;
+}
 function installClawHubCli() {
   return new Promise((resolve5, reject) => {
     console.log("[skills] clawhub not found, auto-installing via npm...");
@@ -19026,12 +19050,28 @@ function registerSkillsHandlers(getGatewayHandle) {
     if (safeBins.length === 0) {
       return { success: false, error: "No valid package names" };
     }
+    const brewCmd = findBrewCli();
+    if (!brewCmd) {
+      return {
+        success: false,
+        error: "Homebrew was not found. Install Homebrew first, then try again.",
+        results: safeBins.map((bin) => ({ bin, ok: false, error: "brew not found" }))
+      };
+    }
+    const brewBinDir = path11.dirname(brewCmd);
+    const envPath = process.env.PATH?.includes(brewBinDir) ? buildNodeEnhancedPath() : `${brewBinDir}${path11.delimiter}${buildNodeEnhancedPath()}`;
     const results = [];
     for (const bin of safeBins) {
       try {
         await new Promise((resolve5, reject) => {
-          (0, import_child_process4.execFile)("brew", ["install", bin], { timeout: 12e4 }, (err, _stdout, stderr) => {
-            if (err) reject(new Error(stderr || err.message));
+          (0, import_child_process4.execFile)(brewCmd, ["install", bin], {
+            timeout: 12e4,
+            env: {
+              ...process.env,
+              PATH: envPath
+            }
+          }, (err, stdout, stderr) => {
+            if (err) reject(new Error(stderr || stdout || err.message));
             else resolve5();
           });
         });
