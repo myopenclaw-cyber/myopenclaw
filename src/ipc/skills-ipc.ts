@@ -160,6 +160,9 @@ function findNpmCli(): string | null {
   } else {
     candidates.push('/usr/local/bin/npm');
     candidates.push('/opt/homebrew/bin/npm');
+    candidates.push(path.join(home, 'homebrew', 'bin', 'npm'));
+    candidates.push(path.join(DOWNLOADED_RUNTIME_DIR, 'node', 'npm'));
+    candidates.push(path.join(__dirname, 'resources', 'node', 'npm'));
   }
 
   const seen = new Set<string>();
@@ -207,6 +210,7 @@ function getInstallPrereqMessage(installOpts: any[]): string | null {
   }
 
   if (kind === 'node' && !findNpmCli()) {
+    if (process.platform === 'darwin') return null;
     return `Automatic setup for ${label || 'this skill'} needs Node.js/npm on the gateway host. Install Node.js and try again.`;
   }
 
@@ -442,6 +446,16 @@ async function ensureSkillInstallPrereq(installSpec: any): Promise<void> {
   if (process.platform === 'darwin') {
     if (['brew', 'uv', 'go'].includes(kind) && !findBrewCli()) {
       await ensureMacosHomebrew();
+    }
+    if (kind === 'node' && !findNpmCli()) {
+      if (!findBrewCli()) await ensureMacosHomebrew();
+      const brewCmd = findBrewCli();
+      if (brewCmd) {
+        await execFileAsync(brewCmd, ['install', 'node'], {
+          timeout: 300000,
+          env: { ...process.env, PATH: buildNodeEnhancedPath() },
+        });
+      }
     }
     return;
   }
