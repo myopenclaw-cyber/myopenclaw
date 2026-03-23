@@ -237,6 +237,7 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
 .skill-badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
 .skill-badge.badge-eligible { background: rgba(4,200,62,0.1); color: #04C83E; }
 .skill-badge.badge-enabled { background: rgba(4,200,62,0.15); color: #04C83E; }
+.skill-badge.badge-disabled { background: rgba(22,24,53,0.08); color: rgba(22,24,53,0.72); }
 .skill-badge.badge-blocked { background: rgba(255,96,146,0.1); color: #FF6092; }
 .skill-desc { font-size: 13px; color: rgba(0,0,0,0.5); line-height: 1.5; }
 .skill-missing { font-size: 12px; color: rgba(0,0,0,0.4); padding: 2px 0; }
@@ -2156,15 +2157,45 @@ async function loadSkills() {
 let skillsFilter = '';
 function filterSkills(q) { skillsFilter = (q || '').toLowerCase(); renderSkills(); }
 
-function buildSkillCard(skill) {
+function getSkillUiState(skill) {
   const missing = skill.missing || {};
   const missingBins = Array.isArray(missing.bins) ? missing.bins : [];
+  const missingAnyBins = Array.isArray(missing.anyBins) ? missing.anyBins : [];
   const missingEnv = Array.isArray(missing.env) ? missing.env : [];
   const missingConfig = Array.isArray(missing.config) ? missing.config : [];
+  const missingOs = Array.isArray(missing.os) ? missing.os : [];
   const hasInstallOptions = Array.isArray(skill.install) && skill.install.length > 0;
+  const hasMissingRequirements =
+    missingBins.length > 0 ||
+    missingAnyBins.length > 0 ||
+    missingEnv.length > 0 ||
+    missingConfig.length > 0 ||
+    missingOs.length > 0;
+  const blocked = skill.blockedByAllowlist === true || (hasMissingRequirements && !hasInstallOptions);
+
+  return {
+    missingBins: missingBins,
+    missingAnyBins: missingAnyBins,
+    missingEnv: missingEnv,
+    missingConfig: missingConfig,
+    missingOs: missingOs,
+    hasInstallOptions: hasInstallOptions,
+    blocked: blocked,
+    disabled: !skill.enabled && !blocked,
+  };
+}
+
+function buildSkillCard(skill) {
+  const uiState = getSkillUiState(skill);
+  const missingBins = uiState.missingBins;
+  const missingAnyBins = uiState.missingAnyBins;
+  const missingEnv = uiState.missingEnv;
+  const missingConfig = uiState.missingConfig;
+  const missingOs = uiState.missingOs;
+  const hasInstallOptions = uiState.hasInstallOptions;
 
   const card = document.createElement('div');
-  const trulyBlocked = skill.eligible === false && !hasInstallOptions;
+  const trulyBlocked = uiState.blocked;
   card.className = 'skill-card' + (trulyBlocked ? ' ineligible' : '') + (skill.enabled ? ' enabled' : '');
 
   // Header: emoji + name + badge + toggle
@@ -2188,12 +2219,15 @@ function buildSkillCard(skill) {
   if (skill.enabled) {
     badge.classList.add('badge-enabled');
     badge.textContent = 'enabled';
-  } else if (skill.eligible) {
-    badge.classList.add('badge-eligible');
-    badge.textContent = 'eligible';
-  } else {
+  } else if (trulyBlocked) {
     badge.classList.add('badge-blocked');
     badge.textContent = 'blocked';
+  } else if (uiState.disabled) {
+    badge.classList.add('badge-disabled');
+    badge.textContent = 'disabled';
+  } else {
+    badge.classList.add('badge-eligible');
+    badge.textContent = 'eligible';
   }
   nameWrap.appendChild(badge);
   header.appendChild(nameWrap);
@@ -2210,20 +2244,24 @@ function buildSkillCard(skill) {
     const statusEl = card.querySelector('.skill-status');
     const installOpts = Array.isArray(skill.install) ? skill.install : [];
 
-    if (checkbox.checked && missingBins.length > 0 && installOpts.length === 0) {
-      if (statusEl) { statusEl.textContent = 'Installing: ' + missingBins.join(', ') + '...'; statusEl.style.display = ''; }
-      const depR = await window.electronAPI.skillsInstallDeps({ bins: missingBins });
-      if (!depR || !depR.success) {
-        const failedBins = (depR?.results || []).filter(function(r) { return !r.ok; }).map(function(r) { return r.bin; });
-        if (statusEl) { statusEl.textContent = 'Install failed: ' + (failedBins.join(', ') || depR?.error || 'unknown'); }
-        checkbox.checked = false; checkbox.disabled = false; return;
+    if (checkbox.checked && (missingBins.length > 0 || missingAnyBins.length > 0 || missingOs.length > 0) && installOpts.length === 0) {
+      var missingDepParts = [];
+      if (missingBins.length > 0) missingDepParts.push(missingBins.join(', '));
+      if (missingAnyBins.length > 0) missingDepParts.push('any of: ' + missingAnyBins.join(', '));
+      if (missingOs.length > 0) missingDepParts.push('supported OS: ' + missingOs.join(', '));
+      if (statusEl) {
+        statusEl.textContent = 'Missing dependency: ' + missingDepParts.join('; ') + '. Install it on the gateway host first.';
+        statusEl.style.display = '';
       }
-      if (statusEl) statusEl.textContent = 'Dependencies installed. Enabling...';
+      checkbox.checked = false; checkbox.disabled = false; return;
     }
 
     if (checkbox.checked && installOpts.length > 0) {
-      if (statusEl) { statusEl.textContent = 'Setting up skill...'; statusEl.style.display = ''; }
-      const installR = await window.electronAPI.skillsInstall({ name: skill.skillKey, installId: installOpts[0].id });
+      if (statusEl) {
+        statusEl.textContent = 'Setting up skill...';
+        statusEl.style.display = '';
+      }
+      var installR = await window.electronAPI.skillsInstall({ name: skill.skillKey });
       if (!installR || !installR.success) {
         if (statusEl) statusEl.textContent = 'Setup failed: ' + formatSkillErrorMessage(installR && installR.error);
         checkbox.checked = false; checkbox.disabled = false; return;
@@ -2260,8 +2298,10 @@ function buildSkillCard(skill) {
   // Missing requirements info
   const missingParts = [];
   if (missingBins.length) missingParts.push(missingBins.map(function(b) { return 'bin:' + b; }).join(', '));
+  if (missingAnyBins.length) missingParts.push('any-bin:' + missingAnyBins.join(' | '));
   if (missingEnv.length) missingParts.push(missingEnv.map(function(e) { return 'env:' + e; }).join(', '));
   if (missingConfig.length) missingParts.push(missingConfig.map(function(c) { return 'config:' + c; }).join(', '));
+  if (missingOs.length) missingParts.push('os:' + missingOs.join(', '));
   if (missingParts.length > 0) {
     const missingEl = document.createElement('div');
     missingEl.className = 'skill-missing';
@@ -2306,10 +2346,9 @@ function renderSkills() {
 
   // Hide only truly blocked skills (disabled + ineligible + no install option)
   const visible = skillsData.filter(function(s) {
+    if (s.source !== 'openclaw-bundled') return true;
     if (s.enabled) return true;
-    if (s.eligible !== false) return true;
-    if (Array.isArray(s.install) && s.install.length > 0) return true;
-    return false;
+    return !getSkillUiState(s).blocked;
   });
 
   // Filter by search
@@ -2332,8 +2371,10 @@ function renderSkills() {
   // Sort: enabled first, then eligible, then blocked
   function sortSkills(arr) {
     return arr.sort(function(a, b) {
-      var wa = a.enabled ? 0 : (a.eligible ? 1 : 2);
-      var wb = b.enabled ? 0 : (b.eligible ? 1 : 2);
+      var sa = getSkillUiState(a);
+      var sb = getSkillUiState(b);
+      var wa = a.enabled ? 0 : (sa.blocked ? 2 : 1);
+      var wb = b.enabled ? 0 : (sb.blocked ? 2 : 1);
       if (wa !== wb) return wa - wb;
       return (a.name || a.skillKey).localeCompare(b.name || b.skillKey);
     });
@@ -2448,8 +2489,13 @@ function mpLoadNext() { if (mpCursor) mpLoad(); }
 function mpRender() {
   var gridEl = document.getElementById('mpGrid');
   gridEl.innerHTML = '';
-  // Get set of locally installed skill keys for comparison
-  var localKeys = new Set(skillsData.filter(function(s) { return s.enabled; }).map(function(s) { return s.skillKey; }));
+  // Treat any non-bundled local skill as installed, even when disabled,
+  // so the marketplace still offers a way back in.
+  var localKeys = new Set(
+    skillsData
+      .filter(function(s) { return s.source !== 'openclaw-bundled'; })
+      .map(function(s) { return s.skillKey; })
+  );
 
   mpItems.forEach(function(item) {
     var card = document.createElement('div');
@@ -2507,7 +2553,11 @@ function mpRender() {
       installBtn.onclick = async function() {
         installBtn.disabled = true; installBtn.textContent = 'Installing...';
         var r = await window.electronAPI.marketplaceInstall({ slug: item.slug });
-        if (r && r.success) { showToast('Installed ' + item.slug); await loadSkills(); mpRender(); }
+        if (r && r.success) {
+          if (r.enabled === false && r.warning) showToast('Downloaded ' + item.slug + '. ' + r.warning);
+          else showToast('Installed ' + item.slug);
+          await loadSkills(); mpRender();
+        }
         else { showToast('Failed: ' + formatMarketplaceErrorMessage(r && r.error)); installBtn.disabled = false; installBtn.textContent = 'Install'; }
       };
       actions.appendChild(installBtn);

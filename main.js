@@ -18727,7 +18727,9 @@ function installClawHubCli() {
 }
 function runClawHubCli(args) {
   const bundledScript = findBundledClawHubCliScript();
+  console.log("[marketplace] clawhub start", JSON.stringify(args));
   if (bundledScript) {
+    console.log("[marketplace] clawhub using bundled script", bundledScript);
     return runClawHubCliWithBundledScript(bundledScript, args);
   }
   let bin = findClawHubCli();
@@ -18735,6 +18737,41 @@ function runClawHubCli(args) {
     return installClawHubCli().then((installedBin) => runClawHubCliWithBin(installedBin, args));
   }
   return runClawHubCliWithBin(bin, args);
+}
+function sleep(ms) {
+  return new Promise((resolve5) => setTimeout(resolve5, ms));
+}
+function summarizeCommandText(value) {
+  const text = typeof value === "string" ? value : String(value || "");
+  const normalized = stripAnsi(text).replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+  return normalized.length > 400 ? `${normalized.slice(0, 399)}\u2026` : normalized;
+}
+function isRateLimitedError(error) {
+  const lower = stripAnsi(error instanceof Error ? error.message : String(error || "")).toLowerCase();
+  return lower.includes("rate limit exceeded") || lower.includes("rate limited") || lower.includes("http 429") || lower.includes("too many requests");
+}
+function parseRetryDelayMs(error) {
+  const message = stripAnsi(error instanceof Error ? error.message : String(error || ""));
+  const match = message.match(/retry in\s*([0-9]+(?:\.[0-9]+)?)s/i);
+  if (!match) return null;
+  const seconds = Number(match[1]);
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+  return Math.max(1e3, Math.ceil(seconds * 1e3));
+}
+async function runClawHubCliWithRetry(args, maxRetries = 3) {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await runClawHubCli(args);
+    } catch (e) {
+      if (!isRateLimitedError(e) || attempt >= maxRetries) throw e;
+      const delayMs = parseRetryDelayMs(e) ?? 1500;
+      attempt += 1;
+      console.warn(`[marketplace] clawhub rate limited, retrying in ${delayMs}ms (${attempt}/${maxRetries})`);
+      await sleep(delayMs);
+    }
+  }
 }
 function runClawHubCliWithBundledScript(scriptPath, args) {
   return new Promise((resolve5, reject) => {
@@ -18747,8 +18784,17 @@ function runClawHubCliWithBundledScript(scriptPath, args) {
         ELECTRON_RUN_AS_NODE: "1"
       }
     }, (err, stdout, stderr) => {
-      if (err) reject(new Error(formatSkillServiceError(stderr || stdout || err.message)));
-      else resolve5(stdout);
+      const stdoutSummary = summarizeCommandText(stdout);
+      const stderrSummary = summarizeCommandText(stderr);
+      if (stdoutSummary) console.log("[marketplace] clawhub stdout", stdoutSummary);
+      if (stderrSummary) console.warn("[marketplace] clawhub stderr", stderrSummary);
+      if (err) {
+        console.error("[marketplace] clawhub failed", err.message);
+        reject(new Error(stderr || stdout || err.message));
+      } else {
+        console.log("[marketplace] clawhub completed");
+        resolve5(stdout);
+      }
     });
   });
 }
@@ -18761,8 +18807,17 @@ function runClawHubCliWithBin(bin, args) {
       shell: useShell ? true : void 0,
       windowsHide: true
     }, (err, stdout, stderr) => {
-      if (err) reject(new Error(formatSkillServiceError(stderr || stdout || err.message)));
-      else resolve5(stdout);
+      const stdoutSummary = summarizeCommandText(stdout);
+      const stderrSummary = summarizeCommandText(stderr);
+      if (stdoutSummary) console.log("[marketplace] clawhub stdout", stdoutSummary);
+      if (stderrSummary) console.warn("[marketplace] clawhub stderr", stderrSummary);
+      if (err) {
+        console.error("[marketplace] clawhub failed", err.message);
+        reject(new Error(stderr || stdout || err.message));
+      } else {
+        console.log("[marketplace] clawhub completed");
+        resolve5(stdout);
+      }
     });
   });
 }
@@ -18835,6 +18890,58 @@ async function gatewayRpc(gw, method, params = {}) {
       reject(new Error(`Gateway WebSocket error: ${err.message || String(err)}`));
     };
   });
+}
+async function getGatewaySkillsStatus(gw) {
+  const payload = await gatewayRpc(gw, "skills.status", {});
+  return Array.isArray(payload?.skills) ? payload.skills : Array.isArray(payload) ? payload : [];
+}
+async function waitForGatewaySkill(gw, skillKey, attempts = 6) {
+  for (let i = 0; i < attempts; i += 1) {
+    const skills = await getGatewaySkillsStatus(gw);
+    const skill = skills.find((item) => item?.skillKey === skillKey || item?.name === skillKey);
+    if (skill) return skill;
+    if (i < attempts - 1) {
+      await new Promise((resolve5) => setTimeout(resolve5, 500));
+    }
+  }
+  return null;
+}
+async function resolveGatewayInstallTarget(gw, skillKey, requestedInstallId) {
+  const skill = await waitForGatewaySkill(gw, skillKey);
+  if (!skill) {
+    if (requestedInstallId) return { name: skillKey, installId: requestedInstallId };
+    throw new Error(`Skill not found: ${skillKey}`);
+  }
+  const resolvedName = typeof skill?.name === "string" && skill.name.trim().length > 0 ? skill.name.trim() : typeof skill?.skillKey === "string" && skill.skillKey.trim().length > 0 ? skill.skillKey.trim() : skillKey;
+  if (requestedInstallId) {
+    return { name: resolvedName, installId: requestedInstallId };
+  }
+  const installOpts = Array.isArray(skill?.install) ? skill.install : [];
+  const installId = installOpts.find((opt) => typeof opt?.id === "string" && opt.id.trim().length > 0)?.id?.trim();
+  if (!installId) return null;
+  return { name: resolvedName, installId };
+}
+async function installGatewaySkill(gw, skillKey, requestedInstallId) {
+  const target = await resolveGatewayInstallTarget(gw, skillKey, requestedInstallId);
+  if (!target) {
+    console.log("[marketplace] no gateway installer for skill", skillKey);
+    return false;
+  }
+  console.log("[marketplace] gateway install target", JSON.stringify(target));
+  await gatewayRpc(gw, "skills.install", {
+    name: target.name,
+    installId: target.installId,
+    timeoutMs: 6e4
+  });
+  return true;
+}
+function summarizeMissingRequirements(skill) {
+  const missing = skill?.missing || {};
+  const parts = [];
+  if (Array.isArray(missing.bins) && missing.bins.length > 0) parts.push(`bins: ${missing.bins.join(", ")}`);
+  if (Array.isArray(missing.env) && missing.env.length > 0) parts.push(`env: ${missing.env.join(", ")}`);
+  if (Array.isArray(missing.config) && missing.config.length > 0) parts.push(`config: ${missing.config.join(", ")}`);
+  return parts.length > 0 ? parts.join(" | ") : null;
 }
 function formatMarketplaceHttpError(resp) {
   if (resp.status === 429) {
@@ -19034,8 +19141,8 @@ function registerSkillsHandlers(getGatewayHandle) {
       const gw = getGatewayHandle();
       if (!gw?.baseUrl) return { success: false, error: "Gateway not running" };
       const { name, installId } = payload || {};
-      if (!name || !installId) return { success: false, error: "name and installId are required" };
-      await gatewayRpc(gw, "skills.install", { name, installId, timeoutMs: 6e4 });
+      if (!name) return { success: false, error: "name is required" };
+      await installGatewaySkill(gw, String(name), typeof installId === "string" ? installId : void 0);
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
@@ -19127,27 +19234,40 @@ function registerSkillsHandlers(getGatewayHandle) {
     try {
       const { slug } = payload || {};
       if (!slug || !/^[a-zA-Z0-9_-]+$/.test(slug)) return { success: false, error: "Invalid slug" };
-      await runClawHubCli([
+      console.log("[marketplace] install requested", slug);
+      await runClawHubCliWithRetry([
         "install",
         slug,
         "--workdir",
-        OPENCLAW_CONFIG_DIR,
+        GATEWAY_WORKSPACE_DIR,
         "--no-input",
         "--force"
       ]);
+      console.log("[marketplace] skill downloaded", slug);
       const gw = getGatewayHandle();
       if (gw?.baseUrl) {
-        try {
-          await gatewayRpc(gw, "skills.install", { name: slug, installId: slug, timeoutMs: 6e4 });
-        } catch {
-        }
-        try {
-          await gatewayRpc(gw, "skills.update", { skillKey: slug, enabled: true });
-        } catch {
+        await installGatewaySkill(gw, slug);
+        const gatewaySkill = await waitForGatewaySkill(gw, slug);
+        const autoEnable = gatewaySkill?.eligible !== false;
+        if (autoEnable) {
+          try {
+            await gatewayRpc(gw, "skills.update", { skillKey: slug, enabled: true });
+            console.log("[marketplace] skill enabled", slug);
+          } catch {
+          }
+        } else {
+          console.log("[marketplace] skill downloaded but still blocked", slug, summarizeMissingRequirements(gatewaySkill) || "unknown reason");
+          return {
+            success: true,
+            enabled: false,
+            warning: summarizeMissingRequirements(gatewaySkill) || "Skill downloaded, but it is still blocked."
+          };
         }
       }
-      return { success: true };
+      console.log("[marketplace] install completed", slug);
+      return { success: true, enabled: true };
     } catch (e) {
+      console.error("[marketplace] install failed", e);
       return { success: false, error: formatMarketplaceError(e) };
     }
   });
@@ -19167,7 +19287,7 @@ function registerSkillsHandlers(getGatewayHandle) {
           "uninstall",
           slug,
           "--workdir",
-          OPENCLAW_CONFIG_DIR,
+          GATEWAY_WORKSPACE_DIR,
           "--no-input"
         ]);
       } catch (clawErr) {
