@@ -335,17 +335,17 @@ export function buildNodeEnhancedPath(): string {
 
   if (process.platform === 'win32') {
     extra.unshift(
-      path.join(MANAGED_TOOLS_DIR, 'npm-bin'),
+      path.join(MANAGED_TOOLS_DIR, 'node-shims'),
       path.join(MANAGED_TOOLS_DIR, 'go', 'bin'),
       path.join(MANAGED_TOOLS_DIR, 'uv'),
     );
   } else {
     extra.unshift(
+      path.join(MANAGED_TOOLS_DIR, 'node-shims'),
       '/opt/homebrew/bin',
       '/usr/local/bin',
       path.join(home, '.linuxbrew', 'bin'),
       path.join(home, 'homebrew', 'bin'),
-      path.join(MANAGED_TOOLS_DIR, 'npm-bin'),
     );
   }
 

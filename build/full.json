@@ -52,5 +52,8 @@
   "nsis": {
     "oneClick": false,
     "allowToChangeInstallationDirectory": true
-  }
+  },
+  "asarUnpack": [
+    "node_modules/npm/**"
+  ]
 }

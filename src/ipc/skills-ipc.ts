@@ -3,12 +3,26 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFile, execFileSync } from 'child_process';
-import { ipcMain } from 'electron';
+import { app, ipcMain } from 'electron';
 import { readGatewayTokenFromConfig } from '../config-store';
 import { CONFIG_FILE, MANAGED_TOOLS_DIR, OPENCLAW_CONFIG_DIR, DOWNLOADED_RUNTIME_DIR, GATEWAY_WORKSPACE_DIR } from '../constants';
 import type { GatewayHandle } from '../types';
 import { buildConnectParams, handleConnectResponse } from '../device-identity';
 import { buildNodeEnhancedPath, downloadFile } from '../runtime';
+
+/**
+ * Resolve the bundled npm-cli.js path (unpacked from asar).
+ * Uses Electron itself as the Node runtime via ELECTRON_RUN_AS_NODE=1.
+ */
+function resolveBundledNpmCliJs(): string | null {
+  const candidates = app.isPackaged
+    ? [path.join(process.resourcesPath!, 'app.asar.unpacked', 'node_modules', 'npm', 'bin', 'npm-cli.js')]
+    : [
+        path.join(app.getAppPath(), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+        path.join(process.cwd(), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+      ];
+  return candidates.find(c => fs.existsSync(c)) || null;
+}
 
 function findBundledClawHubCliScript(): string | null {
   try {
@@ -119,7 +133,53 @@ function hasCommandOnHost(command: string): boolean {
   }
 }
 
+/**
+ * Ensure Electron node/npm shim scripts exist in the managed tools directory.
+ * These let the gateway (and any child processes) use Electron as a Node runtime
+ * without requiring a system Node.js installation.
+ */
+function ensureElectronNodeShims(): string {
+  const shimDir = path.join(MANAGED_TOOLS_DIR, 'node-shims');
+  const npmCliJs = resolveBundledNpmCliJs();
+
+  if (!npmCliJs) return shimDir;
+
+  fs.mkdirSync(shimDir, { recursive: true });
+
+  if (process.platform === 'win32') {
+    const nodeShim = path.join(shimDir, 'node.cmd');
+    const npmShim = path.join(shimDir, 'npm.cmd');
+    if (!fs.existsSync(nodeShim)) {
+      fs.writeFileSync(nodeShim, `@set ELECTRON_RUN_AS_NODE=1\r\n@"${process.execPath}" %*\r\n`);
+    }
+    if (!fs.existsSync(npmShim)) {
+      fs.writeFileSync(npmShim, `@set ELECTRON_RUN_AS_NODE=1\r\n@"${process.execPath}" "${npmCliJs}" %*\r\n`);
+    }
+  } else {
+    const nodeShim = path.join(shimDir, 'node');
+    const npmShim = path.join(shimDir, 'npm');
+    if (!fs.existsSync(nodeShim)) {
+      fs.writeFileSync(nodeShim, `#!/bin/sh\nELECTRON_RUN_AS_NODE=1 exec "${process.execPath}" "$@"\n`);
+      fs.chmodSync(nodeShim, 0o755);
+    }
+    if (!fs.existsSync(npmShim)) {
+      fs.writeFileSync(npmShim, `#!/bin/sh\nELECTRON_RUN_AS_NODE=1 exec "${process.execPath}" "${npmCliJs}" "$@"\n`);
+      fs.chmodSync(npmShim, 0o755);
+    }
+  }
+
+  return shimDir;
+}
+
 function findNpmCli(): string | null {
+  // Prefer bundled npm (via Electron node shim)
+  const npmCliJs = resolveBundledNpmCliJs();
+  if (npmCliJs) {
+    const shimDir = ensureElectronNodeShims();
+    const shimNpm = path.join(shimDir, process.platform === 'win32' ? 'npm.cmd' : 'npm');
+    if (fs.existsSync(shimNpm)) return shimNpm;
+  }
+
   const candidates: string[] = [];
 
   try {
@@ -155,16 +215,10 @@ function findNpmCli(): string | null {
     const pf = process.env.ProgramFiles || 'C:\\Program Files';
     candidates.push(path.join(pf, 'nodejs', 'npm.cmd'));
     candidates.push(path.join(pf, 'nodejs', 'npm'));
-    candidates.push(path.join(__dirname, 'resources', 'node', 'npm.cmd'));
-    candidates.push(path.join(DOWNLOADED_RUNTIME_DIR, 'node', 'npm.cmd'));
-    candidates.push(path.join(MANAGED_TOOLS_DIR, 'npm-bin', 'npm.cmd'));
   } else {
     candidates.push('/usr/local/bin/npm');
     candidates.push('/opt/homebrew/bin/npm');
     candidates.push(path.join(home, 'homebrew', 'bin', 'npm'));
-    candidates.push(path.join(DOWNLOADED_RUNTIME_DIR, 'node', 'npm'));
-    candidates.push(path.join(__dirname, 'resources', 'node', 'npm'));
-    candidates.push(path.join(MANAGED_TOOLS_DIR, 'npm-bin', 'npm'));
   }
 
   const seen = new Set<string>();
@@ -261,9 +315,6 @@ function execFileAsync(cmd: string, args: string[], opts: any = {}): Promise<str
   });
 }
 
-function getManagedNpmCliPath(): string {
-  return path.join(MANAGED_TOOLS_DIR, 'npm-bin', process.platform === 'win32' ? 'npm.cmd' : 'npm');
-}
 
 function getManagedGoCliPath(): string {
   return path.join(MANAGED_TOOLS_DIR, 'go', 'bin', 'go.exe');
@@ -348,69 +399,6 @@ function getLatestUvDownloadUrl(): string {
   return `https://github.com/astral-sh/uv/releases/latest/download/uv-${arch}.zip`;
 }
 
-async function ensureManagedNpm(): Promise<string> {
-  const npmCli = getManagedNpmCliPath();
-  if (fs.existsSync(npmCli)) return npmCli;
-
-  // Find the runtime node binary (bundled with the app)
-  const runtimeNode = path.join(DOWNLOADED_RUNTIME_DIR, 'node', 'node');
-  const nodeCmd = fs.existsSync(runtimeNode) ? runtimeNode : 'node';
-
-  const npmDir = path.join(MANAGED_TOOLS_DIR, 'npm');
-  const tarballPath = path.join(os.tmpdir(), 'myopenclaw-npm.tgz');
-
-  try {
-    fs.mkdirSync(npmDir, { recursive: true });
-
-    // Use existing node to fetch latest npm tarball URL
-    const tarballUrl = await new Promise<string>((resolve, reject) => {
-      execFile(nodeCmd, ['-e', `
-        const https = require('https');
-        https.get('https://registry.npmjs.org/npm/latest', r => {
-          let d = '';
-          r.on('data', c => d += c);
-          r.on('end', () => { try { resolve(JSON.parse(d).dist.tarball); } catch(e) { reject(e); } });
-        }).on('error', reject);
-        function resolve(v) { process.stdout.write(v); }
-        function reject(e) { process.stderr.write(e.message); process.exit(1); }
-      `], { encoding: 'utf8', timeout: 15000 }, (err, stdout) => {
-        if (err) reject(new Error(`Failed to query npm registry: ${err.message}`));
-        else resolve(stdout.trim());
-      });
-    });
-
-    await downloadFile(tarballUrl, tarballPath);
-
-    if (process.platform === 'win32') {
-      await extractZipArchive(tarballPath, npmDir);
-    } else {
-      await execFileAsync('/usr/bin/tar', ['xzf', tarballPath, '--strip-components=1', '-C', npmDir]);
-    }
-
-    // Create npm/npx wrapper scripts that use the runtime node
-    const binDir = path.join(MANAGED_TOOLS_DIR, 'npm-bin');
-    fs.mkdirSync(binDir, { recursive: true });
-    const npmJs = path.join(npmDir, 'bin', 'npm-cli.js');
-
-    if (process.platform === 'win32') {
-      fs.writeFileSync(path.join(binDir, 'npm.cmd'), `@"${nodeCmd}" "${npmJs}" %*\r\n`);
-    } else {
-      fs.writeFileSync(path.join(binDir, 'npm'), `#!/bin/sh\nexec "${nodeCmd}" "${npmJs}" "$@"\n`);
-      fs.chmodSync(path.join(binDir, 'npm'), 0o755);
-    }
-  } catch (e: any) {
-    throw new Error(`Failed to install npm automatically: ${e.message}`);
-  } finally {
-    try { fs.unlinkSync(tarballPath); } catch {}
-  }
-
-  const installedNpm = getManagedNpmCliPath();
-  if (!fs.existsSync(installedNpm)) {
-    throw new Error('npm download completed, but npm was not found in the managed tools directory.');
-  }
-
-  return installedNpm;
-}
 
 async function ensureManagedWindowsGo(): Promise<string> {
   const goCli = getManagedGoCliPath();
@@ -536,12 +524,10 @@ async function ensureSkillInstallPrereq(installSpec: any): Promise<void> {
     if (['brew', 'uv', 'go'].includes(kind) && !findBrewCli()) {
       await ensureMacosHomebrew();
     }
-    if (kind === 'node' && !findNpmCli()) {
-      await ensureManagedNpm();
-    }
     if (['brew', 'uv', 'go'].includes(kind)) {
       await ensureMacosCommandLineTools();
     }
+    // node kind: findNpmCli() auto-creates shims from bundled npm
     return;
   }
 
@@ -554,12 +540,8 @@ async function ensureSkillInstallPrereq(installSpec: any): Promise<void> {
 
   if (kind === 'uv' && !hasCommandOnHost('uv')) {
     await ensureManagedWindowsUv();
-    return;
   }
-
-  if (kind === 'node' && !findNpmCli()) {
-    await ensureManagedNpm();
-  }
+  // node kind: findNpmCli() auto-creates shims from bundled npm
 }
 
 function findBrewCli(): string | null {
