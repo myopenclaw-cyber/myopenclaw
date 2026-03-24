@@ -494,27 +494,6 @@ async function ensureMacosHomebrew(): Promise<string> {
   return installedBrew;
 }
 
-function hasMacosCommandLineTools(): boolean {
-  try {
-    execFileSync('/usr/bin/xcode-select', ['-p'], { encoding: 'utf8', timeout: 3000, stdio: 'pipe' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function ensureMacosCommandLineTools(): Promise<void> {
-  if (hasMacosCommandLineTools()) return;
-  try {
-    await execFileAsync('/usr/bin/xcode-select', ['--install']);
-  } catch { /* dialog may already be showing */ }
-  // Wait up to 10 minutes for user to complete CLT install
-  for (let i = 0; i < 120; i++) {
-    await new Promise(r => setTimeout(r, 5000));
-    if (hasMacosCommandLineTools()) return;
-  }
-  throw new Error('Xcode Command Line Tools are required but were not installed. Please run "xcode-select --install" and try again.');
-}
 
 async function ensureSkillInstallPrereq(installSpec: any): Promise<void> {
   if (!installSpec || typeof installSpec !== 'object') return;
@@ -523,9 +502,6 @@ async function ensureSkillInstallPrereq(installSpec: any): Promise<void> {
   if (process.platform === 'darwin') {
     if (['brew', 'uv', 'go'].includes(kind) && !findBrewCli()) {
       await ensureMacosHomebrew();
-    }
-    if (['brew', 'uv', 'go'].includes(kind)) {
-      await ensureMacosCommandLineTools();
     }
     // node kind: findNpmCli() auto-creates shims from bundled npm
     return;
