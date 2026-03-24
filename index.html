@@ -882,7 +882,7 @@ function groupModels(models) {
     let family = 'Other';
     const id = (m.id || '').toLowerCase();
     if (id.startsWith('claude')) family = 'Claude';
-    else if (id.startsWith('gpt')) family = 'GPT';
+    else if (id.startsWith('gpt')) family = 'OpenAI';
     else if (id.startsWith('gemini')) family = 'Gemini';
     else if (id.startsWith('deepseek')) family = 'DeepSeek';
     if (!groups[family]) groups[family] = [];
