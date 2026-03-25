@@ -3273,13 +3273,20 @@ function renderCronJobList() {
 // Keyboard shortcuts
 // ---------------------------------------------------------------------------
 function initKeyboard() {
-  const msgEl = document.getElementById('msg');
-  msgEl.addEventListener('input', () => {
-    msgEl.style.height = 'auto';
-    msgEl.style.height = Math.min(msgEl.scrollHeight, 160) + 'px';
+  document.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      document.getElementById('msg').focus();
+    }
   });
+
+  const msgEl = document.getElementById('msg');
+  let msgIsComposing = false;
+  msgEl.addEventListener('compositionstart', () => { msgIsComposing = true; });
+  msgEl.addEventListener('compositionend', () => { msgIsComposing = false; });
   msgEl.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.isComposing || msgIsComposing || e.keyCode === 229) return;
       e.preventDefault();
       sendMsg();
     }
