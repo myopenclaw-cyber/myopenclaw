@@ -94,12 +94,13 @@ hr { border: none; border-top: 1px solid rgba(107,70,255,0.15); margin: 18px 0; 
 .model-tag { display: inline-flex; align-items: center; gap: 4px; padding: 12px; font-size: 14px; font-weight: 500; color: #6b46ff; background: rgba(107,70,255,.08); border-radius: 20px; cursor: pointer; user-select: none; transition: background .15s; line-height: 18px;}
 .model-tag:hover { background: rgba(107,70,255,.16); }
 .model-tag::after { content: ''; width: 14px; height: 14px; background: url('./build/assets/angle-down-small.png') no-repeat center; background-size: cover;}
-.model-picker { display: none; position: absolute; bottom: 60px; left: 42px; margin-bottom: 6px; min-width: 220px; background: #ffffff; border: 1px solid rgba(107, 70, 255, 0.20); border-radius: 20px; box-shadow: 0 10px 40px 0 rgba(0, 0, 0, 0.04); padding: 12px; z-index: 100; }
+.model-picker { display: none; position: absolute; bottom: 60px; left: 42px; margin-bottom: 6px; width: min(420px, calc(100vw - 84px)); background: #ffffff; border: 1px solid rgba(107, 70, 255, 0.20); border-radius: 20px; box-shadow: 0 10px 40px 0 rgba(0, 0, 0, 0.04); padding: 10px; z-index: 100; }
 .model-picker.open { display: block; }
-.model-picker-group { padding: 4px 0; }
-.model-picker-label { font-size: 16px; font-weight: 700; color: #000000; text-transform: uppercase; line-height: 24px; display:flex;align-items:center;margin-bottom: 12px;}
+.model-picker-section { max-height: min(56vh, 420px); overflow: auto; padding-right: 4px; }
+.model-picker-group { padding: 2px 0 6px; }
+.model-picker-label { font-size: 14px; font-weight: 700; color: #000000; text-transform: uppercase; line-height: 18px; display:flex;align-items:center;margin-bottom: 8px;}
 .model-picker-label img { width:24px;height:24px;margin-right:8px;}
-.model-picker-item { min-width:261px; display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; color: #000000; font-weight: 500;}
+.model-picker-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-radius: 8px; cursor: pointer; font-size: 13px; color: #000000; font-weight: 500;}
 .model-picker-item:hover { background: rgba(151, 143, 143, 0.08); }
 .model-picker-item.active { background: rgba(107,70,255,.1); }
 .model-picker-item .mp-check { width: 14px; text-align: center; font-size: 11px; color: #a78bfa; }
