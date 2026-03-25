@@ -252,11 +252,24 @@ export async function ensureGatewayProviderOrRelay(): Promise<void> {
       // Use cached models immediately, refresh async in background
       console.log('[auth] Using cached relay models, refreshing in background');
       relayModels = cachedModels.map((m: any) => ({ id: m.id, name: m.name || m.id, available: true }));
-      // Fire-and-forget background refresh
+      // Fire-and-forget background refresh — update config when new models arrive
       axios.get(`${relayUrl}/models`, { headers, timeout: 10000 }).then(res => {
         const fresh = res.data?.data || [];
         if (fresh.length) {
           console.log('[auth] Background relay models refresh complete:', fresh.length, 'models');
+          try {
+            const cfg: any = fs.existsSync(CONFIG_FILE)
+              ? JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8').replace(/^\uFEFF/, ''))
+              : {};
+            const gwModels = fresh.map((m: any) => ({ id: m.id, name: m.name || m.id, contextWindow: 180000, maxTokens: 8192 }));
+            if (cfg.models?.providers?.relay) {
+              cfg.models.providers.relay.models = gwModels;
+              fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
+              console.log('[auth] Updated relay models in config:', gwModels.length);
+            }
+          } catch (writeErr: any) {
+            console.error('[auth] Failed to write refreshed models to config:', writeErr.message);
+          }
         }
       }).catch((error: any) => {
         void logDnsDiagnostics('relay-models-refresh-background', error, `${relayUrl}/models`);

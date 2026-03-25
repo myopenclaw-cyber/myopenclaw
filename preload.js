@@ -68,7 +68,6 @@ import_electron.contextBridge.exposeInMainWorld("electronAPI", {
   skillsList: () => import_electron.ipcRenderer.invoke("skills-list"),
   skillsToggle: (payload) => import_electron.ipcRenderer.invoke("skills-toggle", payload),
   skillsInstall: (payload) => import_electron.ipcRenderer.invoke("skills-install", payload),
-  skillsInstallDeps: (payload) => import_electron.ipcRenderer.invoke("skills-install-deps", payload),
   skillsConfigure: (payload) => import_electron.ipcRenderer.invoke("skills-configure", payload),
   // Marketplace
   marketplaceList: (payload) => import_electron.ipcRenderer.invoke("marketplace-list", payload),

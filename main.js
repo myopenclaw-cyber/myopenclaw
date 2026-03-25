@@ -2824,8 +2824,8 @@ var require_common = __commonJS({
         }
         return debug;
       }
-      function extend(namespace, delimiter3) {
-        const newDebug = createDebug(this.namespace + (typeof delimiter3 === "undefined" ? ":" : delimiter3) + namespace);
+      function extend(namespace, delimiter2) {
+        const newDebug = createDebug(this.namespace + (typeof delimiter2 === "undefined" ? ":" : delimiter2) + namespace);
         newDebug.log = this.log;
         return newDebug;
       }
@@ -11623,8 +11623,8 @@ var require_ElectronAppAdapter = __commonJS({
     var path16 = require("path");
     var AppAdapter_1 = require_AppAdapter();
     var ElectronAppAdapter = class {
-      constructor(app6 = require("electron").app) {
-        this.app = app6;
+      constructor(app7 = require("electron").app) {
+        this.app = app7;
       }
       whenReady() {
         return this.app.whenReady();
@@ -13648,7 +13648,7 @@ var require_AppUpdater = __commonJS({
           this._isUserWithinRollout = value;
         }
       }
-      constructor(options, app6) {
+      constructor(options, app7) {
         super();
         this.autoDownload = true;
         this.autoInstallOnAppQuit = true;
@@ -13678,11 +13678,11 @@ var require_AppUpdater = __commonJS({
         this.on("error", (error) => {
           this._logger.error(`Error: ${error.stack || error.message}`);
         });
-        if (app6 == null) {
+        if (app7 == null) {
           this.app = new ElectronAppAdapter_1.ElectronAppAdapter();
           this.httpExecutor = new electronHttpExecutor_1.ElectronHttpExecutor((authInfo, callback) => this.emit("login", authInfo, callback));
         } else {
-          this.app = app6;
+          this.app = app7;
           this.httpExecutor = null;
         }
         const currentVersionString = this.app.version;
@@ -14181,8 +14181,8 @@ var require_BaseUpdater = __commonJS({
     var child_process_1 = require("child_process");
     var AppUpdater_1 = require_AppUpdater();
     var BaseUpdater = class extends AppUpdater_1.AppUpdater {
-      constructor(options, app6) {
-        super(options, app6);
+      constructor(options, app7) {
+        super(options, app7);
         this.quitAndInstallCalled = false;
         this.quitHandlerAdded = false;
       }
@@ -14363,8 +14363,8 @@ var require_AppImageUpdater = __commonJS({
     var Provider_1 = require_Provider();
     var types_1 = require_types();
     var AppImageUpdater = class extends BaseUpdater_1.BaseUpdater {
-      constructor(options, app6) {
-        super(options, app6);
+      constructor(options, app7) {
+        super(options, app7);
       }
       isUpdaterActive() {
         if (process.env["APPIMAGE"] == null && !this.forceDevUpdateConfig) {
@@ -14465,8 +14465,8 @@ var require_LinuxUpdater = __commonJS({
     exports2.LinuxUpdater = void 0;
     var BaseUpdater_1 = require_BaseUpdater();
     var LinuxUpdater = class extends BaseUpdater_1.BaseUpdater {
-      constructor(options, app6) {
-        super(options, app6);
+      constructor(options, app7) {
+        super(options, app7);
       }
       /**
        * Returns true if the current process is running as root.
@@ -14564,8 +14564,8 @@ var require_DebUpdater = __commonJS({
     var types_1 = require_types();
     var LinuxUpdater_1 = require_LinuxUpdater();
     var DebUpdater = class _DebUpdater extends LinuxUpdater_1.LinuxUpdater {
-      constructor(options, app6) {
-        super(options, app6);
+      constructor(options, app7) {
+        super(options, app7);
       }
       /*** @private */
       doDownloadUpdate(downloadUpdateOptions) {
@@ -14648,8 +14648,8 @@ var require_PacmanUpdater = __commonJS({
     var Provider_1 = require_Provider();
     var LinuxUpdater_1 = require_LinuxUpdater();
     var PacmanUpdater = class _PacmanUpdater extends LinuxUpdater_1.LinuxUpdater {
-      constructor(options, app6) {
-        super(options, app6);
+      constructor(options, app7) {
+        super(options, app7);
       }
       /*** @private */
       doDownloadUpdate(downloadUpdateOptions) {
@@ -14715,8 +14715,8 @@ var require_RpmUpdater = __commonJS({
     var Provider_1 = require_Provider();
     var LinuxUpdater_1 = require_LinuxUpdater();
     var RpmUpdater = class _RpmUpdater extends LinuxUpdater_1.LinuxUpdater {
-      constructor(options, app6) {
-        super(options, app6);
+      constructor(options, app7) {
+        super(options, app7);
       }
       /*** @private */
       doDownloadUpdate(downloadUpdateOptions) {
@@ -14790,8 +14790,8 @@ var require_MacUpdater = __commonJS({
     var child_process_1 = require("child_process");
     var crypto_1 = require("crypto");
     var MacUpdater = class extends AppUpdater_1.AppUpdater {
-      constructor(options, app6) {
-        super(options, app6);
+      constructor(options, app7) {
+        super(options, app7);
         this.nativeUpdater = require("electron").autoUpdater;
         this.squirrelDownloadedUpdate = false;
         this.nativeUpdater.on("error", (it) => {
@@ -15146,8 +15146,8 @@ var require_NsisUpdater = __commonJS({
     var windowsExecutableCodeSignatureVerifier_1 = require_windowsExecutableCodeSignatureVerifier();
     var url_1 = require("url");
     var NsisUpdater = class extends BaseUpdater_1.BaseUpdater {
-      constructor(options, app6) {
-        super(options, app6);
+      constructor(options, app7) {
+        super(options, app7);
         this._verifyUpdateCodeSignature = (publisherNames, unescapedTempUpdateFile) => (0, windowsExecutableCodeSignatureVerifier_1.verifySignature)(publisherNames, unescapedTempUpdateFile, this._logger);
       }
       /**
@@ -15961,6 +15961,17 @@ async function ensureGatewayProviderOrRelay() {
         const fresh = res.data?.data || [];
         if (fresh.length) {
           console.log("[auth] Background relay models refresh complete:", fresh.length, "models");
+          try {
+            const cfg = fs2.existsSync(CONFIG_FILE) ? JSON.parse(fs2.readFileSync(CONFIG_FILE, "utf8").replace(/^\uFEFF/, "")) : {};
+            const gwModels = fresh.map((m) => ({ id: m.id, name: m.name || m.id, contextWindow: 18e4, maxTokens: 8192 }));
+            if (cfg.models?.providers?.relay) {
+              cfg.models.providers.relay.models = gwModels;
+              fs2.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
+              console.log("[auth] Updated relay models in config:", gwModels.length);
+            }
+          } catch (writeErr) {
+            console.error("[auth] Failed to write refreshed models to config:", writeErr.message);
+          }
         }
       }).catch((error) => {
         void logDnsDiagnostics("relay-models-refresh-background", error, `${relayUrl}/models`);
@@ -16346,11 +16357,13 @@ function buildNodeEnhancedPath() {
   const extra = nodeDirs.filter((d) => fs3.existsSync(path4.join(d, nodeExe)));
   if (process.platform === "win32") {
     extra.unshift(
+      path4.join(MANAGED_TOOLS_DIR, "node-shims"),
       path4.join(MANAGED_TOOLS_DIR, "go", "bin"),
       path4.join(MANAGED_TOOLS_DIR, "uv")
     );
   } else {
     extra.unshift(
+      path4.join(MANAGED_TOOLS_DIR, "node-shims"),
       "/opt/homebrew/bin",
       "/usr/local/bin",
       path4.join(home, ".linuxbrew", "bin"),
@@ -17294,6 +17307,34 @@ var WsManager = class {
     return this.ws !== null && this.ws.readyState === import_ws.WebSocket.OPEN;
   }
   /**
+   * Send a fire-and-forget RPC request and wait for the ack response.
+   */
+  _sendRpc(method, params) {
+    return new Promise((resolve5, reject) => {
+      if (!this.ws || this.ws.readyState !== import_ws.WebSocket.OPEN) {
+        return reject(new Error("WebSocket not connected"));
+      }
+      const id = (0, import_crypto.randomUUID)();
+      const req = { type: "req", id, method, params };
+      const timeout = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`${method} timed out`));
+      }, 5e3);
+      this.pending.set(id, (err) => {
+        clearTimeout(timeout);
+        if (err) reject(err);
+        else resolve5(void 0);
+      });
+      this.ws.send(JSON.stringify(req), (sendErr) => {
+        if (sendErr) {
+          this.pending.delete(id);
+          clearTimeout(timeout);
+          reject(sendErr);
+        }
+      });
+    });
+  }
+  /**
    * Send a chat message via WebSocket JSON-RPC.
    * Streams delta events to the renderer window.
    * Returns the fully assembled text content when streaming completes.
@@ -17304,6 +17345,14 @@ var WsManager = class {
     }
     const id = (0, import_crypto.randomUUID)();
     const sessionKey = `agent:${agentId}:myopenclaw:${this._getSessionId(agentId)}`;
+    if (model) {
+      const qualifiedModel = model.includes("/") ? model : `relay/${model}`;
+      try {
+        await this._sendRpc("sessions.patch", { key: sessionKey, model: qualifiedModel });
+      } catch (err) {
+        console.warn("[WsManager] sessions.patch model failed, continuing with default:", err.message);
+      }
+    }
     this.activeStreamId = id;
     this.activeRunId = null;
     this.activeSessionKey = sessionKey;
@@ -17326,8 +17375,7 @@ var WsManager = class {
         sessionKey,
         message,
         deliver: false,
-        idempotencyKey: id,
-        ...model ? { model } : {}
+        idempotencyKey: id
       }
     };
     return new Promise((resolve5, reject) => {
@@ -17425,6 +17473,14 @@ var WsManager = class {
           cb(new Error(resp.error.message));
         }
         return;
+      }
+      if (resp.ok && resp.id !== this.activeStreamId) {
+        const cb = this.pending.get(resp.id);
+        if (cb) {
+          this.pending.delete(resp.id);
+          cb(null);
+          return;
+        }
       }
       if (resp.ok && resp.payload) {
         const p = resp.payload;
@@ -17709,7 +17765,7 @@ function registerChatHandlers(getGatewayHandle, getMainWindow2) {
         const win = getMainWindow2();
         if (win) wsManager.setWindow(win);
         try {
-          content = await wsManager.sendChatMessageStreaming(gatewayBaseUrl, gatewayToken, agentId, message);
+          content = await wsManager.sendChatMessageStreaming(gatewayBaseUrl, gatewayToken, agentId, message, model);
         } catch (streamError) {
           const recovered = await recoverGatewayReplyFromTranscript(agentId, message);
           if (recovered) {
@@ -18593,6 +18649,13 @@ var os5 = __toESM(require("os"));
 var path11 = __toESM(require("path"));
 var import_child_process4 = require("child_process");
 var import_electron11 = require("electron");
+function resolveBundledNpmCliJs() {
+  const candidates = import_electron11.app.isPackaged ? [path11.join(process.resourcesPath, "app.asar.unpacked", "node_modules", "npm", "bin", "npm-cli.js")] : [
+    path11.join(import_electron11.app.getAppPath(), "node_modules", "npm", "bin", "npm-cli.js"),
+    path11.join(process.cwd(), "node_modules", "npm", "bin", "npm-cli.js")
+  ];
+  return candidates.find((c) => fs11.existsSync(c)) || null;
+}
 function findBundledClawHubCliScript() {
   try {
     const packageJsonPath = require.resolve("clawhub/package.json");
@@ -18681,7 +18744,49 @@ function hasCommandOnHost(command) {
     return false;
   }
 }
+function ensureElectronNodeShims() {
+  const shimDir = path11.join(MANAGED_TOOLS_DIR, "node-shims");
+  const npmCliJs = resolveBundledNpmCliJs();
+  if (!npmCliJs) return shimDir;
+  fs11.mkdirSync(shimDir, { recursive: true });
+  if (process.platform === "win32") {
+    const nodeShim = path11.join(shimDir, "node.cmd");
+    const npmShim = path11.join(shimDir, "npm.cmd");
+    if (!fs11.existsSync(nodeShim)) {
+      fs11.writeFileSync(nodeShim, `@set ELECTRON_RUN_AS_NODE=1\r
+@"${process.execPath}" %*\r
+`);
+    }
+    if (!fs11.existsSync(npmShim)) {
+      fs11.writeFileSync(npmShim, `@set ELECTRON_RUN_AS_NODE=1\r
+@"${process.execPath}" "${npmCliJs}" %*\r
+`);
+    }
+  } else {
+    const nodeShim = path11.join(shimDir, "node");
+    const npmShim = path11.join(shimDir, "npm");
+    if (!fs11.existsSync(nodeShim)) {
+      fs11.writeFileSync(nodeShim, `#!/bin/sh
+ELECTRON_RUN_AS_NODE=1 exec "${process.execPath}" "$@"
+`);
+      fs11.chmodSync(nodeShim, 493);
+    }
+    if (!fs11.existsSync(npmShim)) {
+      fs11.writeFileSync(npmShim, `#!/bin/sh
+ELECTRON_RUN_AS_NODE=1 exec "${process.execPath}" "${npmCliJs}" "$@"
+`);
+      fs11.chmodSync(npmShim, 493);
+    }
+  }
+  return shimDir;
+}
 function findNpmCli() {
+  const npmCliJs = resolveBundledNpmCliJs();
+  if (npmCliJs) {
+    const shimDir = ensureElectronNodeShims();
+    const shimNpm = path11.join(shimDir, process.platform === "win32" ? "npm.cmd" : "npm");
+    if (fs11.existsSync(shimNpm)) return shimNpm;
+  }
   const candidates = [];
   try {
     const cmd = process.platform === "win32" ? "where" : "which";
@@ -18714,11 +18819,10 @@ function findNpmCli() {
     const pf = process.env.ProgramFiles || "C:\\Program Files";
     candidates.push(path11.join(pf, "nodejs", "npm.cmd"));
     candidates.push(path11.join(pf, "nodejs", "npm"));
-    candidates.push(path11.join(__dirname, "resources", "node", "npm.cmd"));
-    candidates.push(path11.join(DOWNLOADED_RUNTIME_DIR, "node", "npm.cmd"));
   } else {
     candidates.push("/usr/local/bin/npm");
     candidates.push("/opt/homebrew/bin/npm");
+    candidates.push(path11.join(home, "homebrew", "bin", "npm"));
   }
   const seen = /* @__PURE__ */ new Set();
   for (const p of candidates) {
@@ -18729,36 +18833,44 @@ function findNpmCli() {
   }
   return null;
 }
+function findBestInstallOption(installOpts) {
+  if (!Array.isArray(installOpts) || installOpts.length === 0) return null;
+  const priority = process.platform === "win32" ? ["node", "uv", "go", "download"] : ["brew", "node", "uv", "go", "download"];
+  for (const k of priority) {
+    const match = installOpts.find((opt) => opt?.kind === k);
+    if (match) return match;
+  }
+  return installOpts[0];
+}
 function getInstallPrereqMessage(installOpts) {
-  const preferred = Array.isArray(installOpts) && installOpts.length > 0 ? installOpts[0] : null;
+  const preferred = findBestInstallOption(installOpts);
   const kind = typeof preferred?.kind === "string" ? preferred.kind : "";
   const label = typeof preferred?.label === "string" ? preferred.label.trim() : "";
   if (!kind) return null;
   if (process.platform === "win32") {
-    const supportedKinds = /* @__PURE__ */ new Set(["node", "go", "uv", "download"]);
-    if (!supportedKinds.has(kind)) return null;
-    if (kind === "go" || kind === "uv") return null;
+    if (kind === "go" || kind === "uv" || kind === "node") return null;
+    return null;
   }
   if (kind === "brew" && !findBrewCli()) {
     if (process.platform === "darwin") return null;
-    return process.platform === "linux" ? `Automatic setup for ${label || "this skill"} needs Homebrew. Install Homebrew from https://brew.sh or install the package manually on the gateway host.` : `Automatic setup for ${label || "this skill"} needs Homebrew. Install it from https://brew.sh and try again.`;
+    return `Automatic setup for ${label || "this skill"} needs Homebrew. Install Homebrew from https://brew.sh or install the package manually on the gateway host.`;
   }
   if (kind === "node" && !findNpmCli()) {
+    if (process.platform === "darwin") return null;
     return `Automatic setup for ${label || "this skill"} needs Node.js/npm on the gateway host. Install Node.js and try again.`;
   }
   if (kind === "uv" && !hasCommandOnHost("uv") && !findBrewCli()) {
+    if (process.platform === "darwin") return null;
     return `Automatic setup for ${label || "this skill"} needs uv. Install uv manually, or install Homebrew first so the gateway can install uv for you.`;
   }
-  if (kind === "go" && !hasCommandOnHost("go")) {
-    const canAutoInstallGo = findBrewCli() || process.platform === "linux" && hasCommandOnHost("apt-get");
-    if (!canAutoInstallGo) {
-      return `Automatic setup for ${label || "this skill"} needs Go on the gateway host. Install Go manually and try again.`;
-    }
+  if (kind === "go" && !hasCommandOnHost("go") && !findBrewCli()) {
+    if (process.platform === "darwin") return null;
+    return `Automatic setup for ${label || "this skill"} needs Go on the gateway host. Install Go manually and try again.`;
   }
   return null;
 }
 function getUnsupportedInstallMessage(installOpts) {
-  const preferred = Array.isArray(installOpts) && installOpts.length > 0 ? installOpts[0] : null;
+  const preferred = findBestInstallOption(installOpts);
   const kind = typeof preferred?.kind === "string" ? preferred.kind : "";
   const label = typeof preferred?.label === "string" ? preferred.label.trim() : "";
   if (!kind) return null;
@@ -18907,23 +19019,23 @@ async function ensureManagedWindowsUv() {
 async function ensureMacosHomebrew() {
   const brewCli = findBrewCli();
   if (brewCli) return brewCli;
-  const scriptPath = path11.join(os5.tmpdir(), "myopenclaw-homebrew-install.sh");
+  const homebrewDir = path11.join(os5.homedir(), "homebrew");
+  const tarballPath = path11.join(os5.tmpdir(), "myopenclaw-homebrew.tar.gz");
   try {
-    await downloadFile("https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh", scriptPath);
-    fs11.chmodSync(scriptPath, 493);
-    await execFileAsync2("/bin/bash", [scriptPath], {
-      env: {
-        ...process.env,
-        NONINTERACTIVE: "1",
-        CI: "1",
-        PATH: buildNodeEnhancedPath()
-      }
-    });
+    fs11.mkdirSync(homebrewDir, { recursive: true });
+    await downloadFile("https://github.com/Homebrew/brew/tarball/master", tarballPath);
+    await execFileAsync2("/usr/bin/tar", [
+      "xzf",
+      tarballPath,
+      "--strip-components=1",
+      "-C",
+      homebrewDir
+    ]);
   } catch (e) {
     throw new Error(`Failed to install Homebrew automatically: ${e.message}`);
   } finally {
     try {
-      fs11.unlinkSync(scriptPath);
+      fs11.unlinkSync(tarballPath);
     } catch {
     }
   }
@@ -18935,15 +19047,14 @@ async function ensureMacosHomebrew() {
 }
 async function ensureSkillInstallPrereq(installSpec) {
   if (!installSpec || typeof installSpec !== "object") return;
+  const kind = typeof installSpec.kind === "string" ? installSpec.kind : "";
   if (process.platform === "darwin") {
-    const kind2 = typeof installSpec.kind === "string" ? installSpec.kind : "";
-    if (kind2 === "brew" && !findBrewCli()) {
+    if (["brew", "uv", "go"].includes(kind) && !findBrewCli()) {
       await ensureMacosHomebrew();
     }
     return;
   }
   if (process.platform !== "win32") return;
-  const kind = typeof installSpec.kind === "string" ? installSpec.kind : "";
   if (kind === "go" && !hasCommandOnHost("go")) {
     await ensureManagedWindowsGo();
     return;
@@ -19107,7 +19218,7 @@ function runClawHubCliWithBin(bin, args) {
     });
   });
 }
-async function gatewayRpc(gw, method, params = {}) {
+async function gatewayRpc(gw, method, params = {}, timeoutMs = 15e3) {
   const id = crypto6.randomUUID();
   const token = readGatewayTokenFromConfig();
   const wsUrl = gw.baseUrl.replace(/^http/, "ws") + "/ws";
@@ -19129,7 +19240,7 @@ async function gatewayRpc(gw, method, params = {}) {
       } catch {
       }
       reject(new Error(`Gateway RPC timeout for method "${method}"`));
-    }, 15e3);
+    }, timeoutMs);
     let connected = false;
     let challengeNonce = null;
     const connectId = crypto6.randomUUID();
@@ -19200,7 +19311,7 @@ async function resolveGatewayInstallTarget(gw, skillKey, requestedInstallId) {
   }
   const resolvedName = typeof skill?.name === "string" && skill.name.trim().length > 0 ? skill.name.trim() : typeof skill?.skillKey === "string" && skill.skillKey.trim().length > 0 ? skill.skillKey.trim() : skillKey;
   const installOpts = Array.isArray(skill?.install) ? skill.install : [];
-  const installSpec = requestedInstallId ? installOpts.find((opt) => typeof opt?.id === "string" && opt.id.trim() === requestedInstallId) || null : installOpts.find((opt) => typeof opt?.id === "string" && opt.id.trim().length > 0) || null;
+  const installSpec = requestedInstallId ? installOpts.find((opt) => typeof opt?.id === "string" && opt.id.trim() === requestedInstallId) || null : findBestInstallOption(installOpts);
   if (requestedInstallId) {
     return { name: resolvedName, installId: requestedInstallId, installSpec };
   }
@@ -19219,8 +19330,8 @@ async function installGatewaySkill(gw, skillKey, requestedInstallId) {
   await gatewayRpc(gw, "skills.install", {
     name: target.name,
     installId: target.installId,
-    timeoutMs: 6e4
-  });
+    timeoutMs: 12e4
+  }, 13e4);
   return true;
 }
 function summarizeMissingRequirements(skill) {
@@ -19438,48 +19549,6 @@ function registerSkillsHandlers(getGatewayHandle) {
     } catch (e) {
       return { success: false, error: e.message };
     }
-  });
-  import_electron11.ipcMain.handle("skills-install-deps", async (_event, payload) => {
-    const { bins } = payload || {};
-    if (!Array.isArray(bins) || bins.length === 0) {
-      return { success: true, installed: [] };
-    }
-    const safeBins = bins.filter((b) => /^[a-zA-Z0-9_-]+$/.test(b));
-    if (safeBins.length === 0) {
-      return { success: false, error: "No valid package names" };
-    }
-    const brewCmd = findBrewCli();
-    if (!brewCmd) {
-      return {
-        success: false,
-        error: "Homebrew was not found. Install Homebrew first, then try again.",
-        results: safeBins.map((bin) => ({ bin, ok: false, error: "brew not found" }))
-      };
-    }
-    const brewBinDir = path11.dirname(brewCmd);
-    const envPath = process.env.PATH?.includes(brewBinDir) ? buildNodeEnhancedPath() : `${brewBinDir}${path11.delimiter}${buildNodeEnhancedPath()}`;
-    const results = [];
-    for (const bin of safeBins) {
-      try {
-        await new Promise((resolve5, reject) => {
-          (0, import_child_process4.execFile)(brewCmd, ["install", bin], {
-            timeout: 12e4,
-            env: {
-              ...process.env,
-              PATH: envPath
-            }
-          }, (err, stdout, stderr) => {
-            if (err) reject(new Error(stderr || stdout || err.message));
-            else resolve5();
-          });
-        });
-        results.push({ bin, ok: true });
-      } catch (e) {
-        results.push({ bin, ok: false, error: e.message });
-      }
-    }
-    const allOk = results.every((r) => r.ok);
-    return { success: allOk, results };
   });
   const CLAWHUB_API = "https://clawhub.ai/api/v1";
   import_electron11.ipcMain.handle("marketplace-list", async (_event, payload) => {
@@ -20197,6 +20266,8 @@ function registerPairingHandlers() {
 // src/updater.ts
 var import_electron14 = require("electron");
 var import_electron_updater = __toESM(require_main2());
+var GITHUB_OWNER = "myopenclaw-cyber";
+var GITHUB_REPO = "myopenclaw";
 var initialized = false;
 var activeCheckPromise = null;
 var manualCheckInProgress = false;
@@ -20344,6 +20415,9 @@ async function checkForAppUpdates(options = {}) {
     return activeCheckPromise;
   }
   manualCheckInProgress = manual;
+  if (import_electron_updater.autoUpdater.allowPrerelease) {
+    await applyBetaFeedUrl();
+  }
   activeCheckPromise = import_electron_updater.autoUpdater.checkForUpdates().then(() => void 0).catch((error) => {
     console.error("[updater] checkForUpdates failed:", formatErrorMessage(error));
   }).finally(() => {
@@ -20352,8 +20426,32 @@ async function checkForAppUpdates(options = {}) {
   });
   return activeCheckPromise;
 }
+async function applyBetaFeedUrl() {
+  try {
+    const resp = await fetch(
+      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases`,
+      { headers: { Accept: "application/vnd.github+json" } }
+    );
+    if (!resp.ok) return;
+    const releases = await resp.json();
+    const latest = releases.find((r) => r.prerelease && !r.draft);
+    if (!latest?.tag_name) return;
+    const url = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/${latest.tag_name}/`;
+    import_electron_updater.autoUpdater.setFeedURL({ provider: "generic", url });
+    console.log(`[updater] Beta feed URL set to ${url}`);
+  } catch (e) {
+    console.warn("[updater] Failed to resolve beta feed URL, falling back to default", e);
+  }
+}
 function setUpdateChannel(channel) {
   import_electron_updater.autoUpdater.allowPrerelease = channel === "beta";
+  if (channel !== "beta") {
+    import_electron_updater.autoUpdater.setFeedURL({
+      provider: "github",
+      owner: GITHUB_OWNER,
+      repo: GITHUB_REPO
+    });
+  }
   console.log(`[updater] Update channel set to: ${channel}`);
 }
 function scheduleAutoUpdateCheck(delayMs = 1e4) {
