@@ -130,7 +130,7 @@ export function registerChatHandlers(
         const win = getMainWindow();
         if (win) wsManager.setWindow(win);
         try {
-          content = await wsManager.sendChatMessageStreaming(gatewayBaseUrl, gatewayToken, agentId, message);
+          content = await wsManager.sendChatMessageStreaming(gatewayBaseUrl, gatewayToken, agentId, message, model);
         } catch (streamError) {
           const recovered = await recoverGatewayReplyFromTranscript(agentId, message);
           if (recovered) {
