@@ -181,6 +181,34 @@ export class WsManager {
   }
 
   /**
+   * Send a fire-and-forget RPC request and wait for the ack response.
+   */
+  private _sendRpc(method: string, params: Record<string, unknown>): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        return reject(new Error('WebSocket not connected'));
+      }
+      const id = randomUUID();
+      const req: RpcRequest = { type: 'req', id, method, params };
+      const timeout = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`${method} timed out`));
+      }, 5000);
+      this.pending.set(id, (err) => {
+        clearTimeout(timeout);
+        if (err) reject(err); else resolve(undefined);
+      });
+      this.ws.send(JSON.stringify(req), (sendErr) => {
+        if (sendErr) {
+          this.pending.delete(id);
+          clearTimeout(timeout);
+          reject(sendErr);
+        }
+      });
+    });
+  }
+
+  /**
    * Send a chat message via WebSocket JSON-RPC.
    * Streams delta events to the renderer window.
    * Returns the fully assembled text content when streaming completes.
@@ -198,6 +226,17 @@ export class WsManager {
 
     const id = randomUUID();
     const sessionKey = `agent:${agentId}:myopenclaw:${this._getSessionId(agentId)}`;
+
+    // Patch session model before sending if user selected a specific model
+    if (model) {
+      const qualifiedModel = model.includes('/') ? model : `relay/${model}`;
+      try {
+        await this._sendRpc('sessions.patch', { key: sessionKey, model: qualifiedModel });
+      } catch (err) {
+        console.warn('[WsManager] sessions.patch model failed, continuing with default:', (err as Error).message);
+      }
+    }
+
     this.activeStreamId = id;
     this.activeRunId = null;
     this.activeSessionKey = sessionKey;
@@ -227,7 +266,6 @@ export class WsManager {
         message,
         deliver: false,
         idempotencyKey: id,
-        ...(model ? { model } : {}),
       },
     };
 
@@ -339,6 +377,16 @@ export class WsManager {
           cb(new Error(resp.error.message));
         }
         return;
+      }
+
+      // Resolve non-streaming RPC calls (e.g. sessions.patch)
+      if (resp.ok && resp.id !== this.activeStreamId) {
+        const cb = this.pending.get(resp.id);
+        if (cb) {
+          this.pending.delete(resp.id);
+          cb(null);
+          return;
+        }
       }
 
       // ok response — check if payload already contains chat content (some
